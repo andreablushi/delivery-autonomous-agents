@@ -65,17 +65,16 @@ export class Executor {
         if (!me?.lastPosition) return false;
         const currentPosition = me.lastPosition;
 
-        this.planner.plan(this.beliefs); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
-        const plan = this.planner.getCurrentPlan();
+        const plan =this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
         if (!plan) {
             // Let the executor explain why there's nothing to do when PDDL is in-flight.
-            if (this.debug && this.planner.isWaitingForPddl())
-                console.log("[EXECUTE] Waiting for PDDL solver...");
+            if (this.debug)
+                console.log("[EXECUTE] Waiting...");
             return false;
         }
 
         // Get the next step; "wait" means an agent is blocking our tile, null means no safe move.
-        const step = this.planner.nextStep(currentPosition, this.beliefs);
+        const step = this.planner.nextStep(currentPosition);
         if (step === "wait") {
             if (this.debug) console.log("[EXECUTE] Waiting for blocked tile to clear.");
             return false;
@@ -98,12 +97,12 @@ export class Executor {
             // so no manual injection is needed here.
             const desires = generateDesires(this.beliefs);
             this.intentions.update(this.beliefs, desires);
-            this.planner.plan(this.beliefs);
+            this.planner.plan();
         } else {
-            this.planner.invalidate(this.beliefs);
+            this.planner.invalidate();
         }
 
-        return this.planner.getCurrentPlan() !== null;
+        return plan !== null;
     }
 
     async start(): Promise<void> {

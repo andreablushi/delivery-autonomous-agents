@@ -13,6 +13,7 @@ export class MapBeliefs {
     private map: GameMap | null = null;              // Static map layout, set once at the start of the game
     private spawnTiles: Tile[] = [];                 // Precomputed on updateMap; map is static so this never changes
     private deliveryTiles: Tile[] = [];              // Precomputed on updateMap; map is static so this never changes
+    private crateSpaceTiles: Tile[] = [];            // Precomputed list of all tiles that can hold crates, used for PDDL problem generation
     
     private crates = new Tracker<Crate>();                           // Latest-only store; eviction is handled by MapBeliefs.evict()
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
@@ -46,8 +47,21 @@ export class MapBeliefs {
         this.deliveryTiles = normalizedTiles
             .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
+        this.crateSpaceTiles = normalizedTiles
+            .filter(t => t.type === TILE_TYPE.CRATE_SPACE || t.type === TILE_TYPE.CRATE_OCCUPIED)
+            .map(t => ({ x: t.x, y: t.y, type: t.type }));
     }
 
+
+    /**
+     * Width and height of the loaded map, or null if the map has not been received yet.
+     * @return An object with width and height properties, or null if map not loaded
+     */
+    getMapSize(): { width: number; height: number } | null {
+        if (!this.map) return null;
+        return { width: this.map.width, height: this.map.height };
+    }
+    
     /**
      * Retrieve the tile at a given position, or null if the position is out of bounds or the map is not yet initialized.
      * @param position The position to query for the tile.
@@ -91,8 +105,6 @@ export class MapBeliefs {
             case TILE_TYPE.CONVEYOR_UP:    return dy !== -1;  // blocked if moving down  (dy-1 against up)
             case TILE_TYPE.CONVEYOR_DOWN:  return dy !== 1;   // blocked if moving up    (dy+1 against down)
         }
-
-
 
         // Otherwise, it's walkable
         return true;
@@ -167,6 +179,15 @@ export class MapBeliefs {
     }
 
     /**
+     * All tiles that can hold crates, regardless of occupancy.
+     * Used for PDDL problem generation.
+     * @return An array of crate space tiles
+     */
+    getCrateSpaceTiles(): Tile[] {
+        return this.crateSpaceTiles;
+    }
+
+    /**
      * Update crate beliefs with the latest observed crates.
      * @param crates Array of crates from the server, converted to internal Crates type and stored in memory.
      * @param sensedPositions Array of positions that are currently sensed.
@@ -213,60 +234,12 @@ export class MapBeliefs {
 
     /**
      * Check if any known crate is currently believed to be at the given position.
+     * @param pos The position to check for crate presence.
+     * @returns True if a crate is believed to be at the position, false otherwise.
      */
     isCrateAt(pos: Position): boolean {
         return this.crates.getCurrentAll().some(
             c => c.lastPosition?.x === pos.x && c.lastPosition?.y === pos.y
         );
     }
-
-    /**
-     * Width and height of the loaded map, or null if the map has not been received yet.
-     */
-    getMapSize(): { width: number; height: number } | null {
-        if (!this.map) return null;
-        return { width: this.map.width, height: this.map.height };
-    }
-
-    /**
-     * All tiles that are of CRATE_SPACE type (can hold a crate), regardless of occupancy.
-     * Used for PDDL problem generation.
-     */
-    getCrateSpaceTiles(): Tile[] {
-        if (!this.map) return [];
-        const result: Tile[] = [];
-        for (let y = 0; y < this.map.height; y++) {
-            for (let x = 0; x < this.map.width; x++) {
-                const type = this.map.tiles[y][x];
-                if (type === TILE_TYPE.CRATE_SPACE || type === TILE_TYPE.CRATE_OCCUPIED) {
-                    result.push({ x, y, type });
-                }
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Possible tile positions a crate can move into, based on adjacent free crate spaces.
-     * @param crate The crate to query.
-     * @returns Array of positions the crate can legally move to.
-     */
-    getCratePossibleMoves(crate: Crate): Position[] {
-        if (!this.map || !crate.lastPosition) return [];
-        // Define the four adjacent positions around the crate
-        const { x, y } = crate.lastPosition;
-        const neighbours: Position[] = [
-            { x: x - 1, y },
-            { x: x + 1, y },
-            { x, y: y - 1 },
-            { x, y: y + 1 },
-        ];
-        // Filter the adjacent positions to only include those that are valid crate spaces (i.e. not walls or occupied by other crates)
-        return neighbours.filter(pos => {
-            const { x: nx, y: ny } = pos;
-            if (ny < 0 || ny >= this.map!.height || nx < 0 || nx >= this.map!.width) return false;
-            return this.map!.tiles[ny][nx] === TILE_TYPE.CRATE_SPACE;
-        });
-    }
-
 }

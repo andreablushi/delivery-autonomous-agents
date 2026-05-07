@@ -1,13 +1,14 @@
-import { Plan } from "../../../../models/plan.js";
+import type { CollisionDecision, Plan } from "../../../../models/plan.js";
 import type { Position } from "../../../../models/position.js";
-import { Beliefs } from "../../belief/beliefs.js";
-import { planAStar } from "../astar_planner.js";
+import type { NavigationDesire } from "../../../../models/desires.js";
+import type { Beliefs } from "../../belief/beliefs.js";
 import { CollisionTimer } from "./collision_timer.js";
 
-/** Decision returned by CollisionManager on each collision event. */
-export type CollisionDecision =
-    | { kind: 'wait' }
-    | { kind: 'block'; ttl: number };
+type CollisionPlanner = (
+    from: Position,
+    intention: NavigationDesire,
+    blockedTile?: Position | null,
+) => Plan | null;
 
 /**
  * Encapsulates the collision state machine: tracks how long we've been waiting on a specific
@@ -17,6 +18,8 @@ export type CollisionDecision =
 export class CollisionManager {
     private timer = new CollisionTimer();
     private invalidationCount = 0;
+
+    constructor(private readonly plan: CollisionPlanner, private readonly beliefs: Beliefs) {}
 
     // Tuning parameters — duration/counter thresholds for the collision escalation flow
     private static readonly DETOUR_THRESHOLD_STEPS = 5;                // Maximum number of steps for a detour to be considered preferable over waiting
@@ -87,17 +90,16 @@ export class CollisionManager {
      * @param plan The current plan that is being executed and may be modified with a detour if needed.
      * @param from The current position of the agent, used as the starting point for the detour A* search.
      * @param blockedTile The tile that is currently blocked by another agent, which the detour should attempt to navigate around.
-     * @param beliefs The agent's current beliefs, used to check walkability and plan the detour route.
-     * @returns 
+     * @returns A boolean indicating whether a detour was successfully planned and applied.
      */
-    tryDetour(plan: Plan, from: Position, blockedTile: Position, beliefs: Beliefs): boolean {
+    tryDetour(plan: Plan, from: Position, blockedTile: Position): boolean {
         // Check if there is a next step and if it's a move step
         const head = plan.targets[0];
         if (!head) return false; // if there's no target, we can't really detour meaningfully
         if (head.type !== "REACH_PARCEL" && head.type !== "DELIVER_PARCEL") return false; // if the target isn't a location-based desire, we don't have a meaningful way to detour
         
         // Compute a detour plan from the current position to the original plan's next target, treating the blocked tile as an obstacle
-        const detourPlan = planAStar(from, head, beliefs, blockedTile);
+        const detourPlan = this.plan(from, head, blockedTile);
         if (!detourPlan) return false;
 
         // If the detour plan is too long compared to the remaining steps in the original plan, prefer to wait instead to avoid excessive detours
@@ -108,7 +110,7 @@ export class CollisionManager {
         plan.steps.splice(plan.cursor, plan.steps.length - plan.cursor, ...detourPlan.steps);
 
         // Mark the blocked tile in beliefs to prevent other plans from trying to walk through it while we execute the detour, with a TTL to allow eventual re-attempts
-        beliefs.map.markBlocked(blockedTile, this.detourCommitTtl);
+        this.beliefs.map.markBlocked(blockedTile, this.detourCommitTtl);
 
         // Reset collision state to avoid interference with the next move attempt after the detour is spliced in
         this.reset();
@@ -124,28 +126,28 @@ export class CollisionManager {
      * @param from The current position of the agent, used as the starting point for replanning.
      * @param tile The tile to be marked as blocked.
      * @param ttl The time-to-live for the blockage.
-     * @param beliefs The agent's current beliefs.
-     * @returns 
+     * @returns A boolean indicating whether the blocked tile was successfully committed and the plan was replanned.
      */
-    commitBlocked(plan: Plan, from: Position, tile: Position, ttl: number, beliefs: Beliefs): void {
+    commitBlocked(plan: Plan, from: Position, tile: Position, ttl: number): boolean {
         // Mark the tile as blocked in beliefs to prevent it from being selected in future plans, with the specified TTL
-        beliefs.map.markBlocked(tile, ttl);
+        this.beliefs.map.markBlocked(tile, ttl);
         this.reset();
 
         // Replan toward the same target with the tile now blocked in beliefs.
         const head = plan.targets[0];
-        if (!head) return;
-        if (head.type !== "REACH_PARCEL" && head.type !== "DELIVER_PARCEL") return;
+        if (!head) return false;
+        if (head.type !== "REACH_PARCEL" && head.type !== "DELIVER_PARCEL") return false;
 
         // Compute a new plan from the current position to the original plan's next target, with the updated beliefs that include the newly blocked tile
-        const replan = planAStar(from, head, beliefs);
+        const replan = this.plan(from, head);
         if (!replan) {
             plan.steps = [];
-            return;
+            return false;
         }
 
         // Splice the new plan in place of the remaining steps in the original plan, and reset the cursor to the start of the new steps
         plan.steps = replan.steps;
         plan.cursor = 0;
+        return true;
     }
 }
