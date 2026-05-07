@@ -27,7 +27,6 @@ export type Plan = {
     steps: PlanStep[];
     cursor: number;        // index of the next step to execute
     targets: DesireType[]; // desires this plan was built for; A* has length 1, PDDL may have N
-    startPosition?: Position; // agent position when PDDL plan was requested; set only for pddl source
 };
 
 export type PddlPlanRequest = {

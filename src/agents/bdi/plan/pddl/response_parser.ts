@@ -44,14 +44,18 @@ export function parsePddlPlan(rawPlan: PddlPlanStep[]): PlanStep[] {
     // The solver may return plans that include only MOVE steps
     const steps: PlanStep[] = [];
 
-    // We want to stop executing the plan after the last PUSH step, since after that the agent re-enters the normal BDI loop
+    // Capture the push window so we only execute the crate-moving portion of the plan.
     let lastPushIdx = -1;
+    let firstPushIdx = -1;
     // Convert each raw plan step into a PlanStep for the executor, tracking the index of the last PUSH step
     for (const { action, args } of rawPlan) {
         const kind = action.toLowerCase().split("-")[0];
         if (kind === "move" || kind === "push") {
             steps.push(toMoveStep(args)); // push-X moves the agent into crateFrom (args[1])
-            if (kind === "push") lastPushIdx = steps.length - 1;
+            if (kind === "push") {
+                if (firstPushIdx < 0) firstPushIdx = steps.length - 1;
+                lastPushIdx = steps.length - 1;
+            }
             continue;
         }
         // For pickup and putdown, we can ignore the args since they are executed at the agent's current position
@@ -59,6 +63,6 @@ export function parsePddlPlan(rawPlan: PddlPlanStep[]): PlanStep[] {
         else console.warn(`[PDDL] Unknown action: ${action}`);
     }
 
-    // Stop after the last push crate step, since after that the agent re-enters the normal BDI loop to deliberate on the next intention
-    return lastPushIdx >= 0 ? steps.slice(0, lastPushIdx + 1) : [];
+    // Stop after the last push crate step, but start at the first push so we only keep the push segment.
+    return firstPushIdx >= 0 ? steps.slice(firstPushIdx, lastPushIdx + 1) : [];
 }
