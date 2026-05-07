@@ -16,6 +16,8 @@ import { IntentionQueue } from "../../../models/intentions.js";
 /**
  * Determines the priority tier of a desire type.
  * Priority tiers: REACH_PARCEL|DELIVER_PARCEL=2, CLEAR_CRATE=1, EXPLORE=0.
+ * @param desire The desire to evaluate.
+ * @returns The priority tier of the desire, where higher numbers indicate higher priority.
  */
 function getPriorityForDesire(desire: DesireType): number {
     if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL') return 2;
@@ -51,7 +53,6 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
         queue.push({ desire, score: scoreDeliverDesire(desire, beliefs)});
     }
 
-    // CLEAR_CRATE sits between goal desires (tier 2) and fallback exploration (tier 0).
     // Injected into desires by Intentions.update() from the crateDesires tracking map.
     const clears = (desires.get("CLEAR_CRATE") ?? []) as ClearCrateDesire[];
     for (const desire of clears) {
