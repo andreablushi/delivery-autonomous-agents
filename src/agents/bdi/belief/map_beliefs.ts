@@ -52,6 +52,16 @@ export class MapBeliefs {
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
     }
 
+
+    /**
+     * Width and height of the loaded map, or null if the map has not been received yet.
+     * @return An object with width and height properties, or null if map not loaded
+     */
+    getMapSize(): { width: number; height: number } | null {
+        if (!this.map) return null;
+        return { width: this.map.width, height: this.map.height };
+    }
+    
     /**
      * Retrieve the tile at a given position, or null if the position is out of bounds or the map is not yet initialized.
      * @param position The position to query for the tile.
@@ -95,8 +105,6 @@ export class MapBeliefs {
             case TILE_TYPE.CONVEYOR_UP:    return dy !== -1;  // blocked if moving down  (dy-1 against up)
             case TILE_TYPE.CONVEYOR_DOWN:  return dy !== 1;   // blocked if moving up    (dy+1 against down)
         }
-
-
 
         // Otherwise, it's walkable
         return true;
@@ -233,14 +241,5 @@ export class MapBeliefs {
         return this.crates.getCurrentAll().some(
             c => c.lastPosition?.x === pos.x && c.lastPosition?.y === pos.y
         );
-    }
-
-    /**
-     * Width and height of the loaded map, or null if the map has not been received yet.
-     * @return An object with width and height properties, or null if map not loaded
-     */
-    getMapSize(): { width: number; height: number } | null {
-        if (!this.map) return null;
-        return { width: this.map.width, height: this.map.height };
     }
 }

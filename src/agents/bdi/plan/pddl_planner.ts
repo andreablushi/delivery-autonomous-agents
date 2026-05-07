@@ -4,7 +4,7 @@ import type { ClearCrateDesire } from "../../../models/desires.js";
 import type { Plan } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
-import { parsePddlPlan, type PddlPlanStep } from "./pddl/plan_parser.js";
+import { parsePddlPlan, type PddlPlanStep } from "./pddl/response_parser.js";
 
 /**
  * Submits a crate-clearing problem to the online PDDL solver and returns the resulting plan.
@@ -16,10 +16,10 @@ async function planPddl(
     beliefs: Beliefs,
     domain: string,
 ): Promise<Plan | null> {
-    const problem = buildProblem(from, intention, beliefs);
+    // Build the PDDL problem string from the intention and current beliefs
+    const problem = buildProblem(intention, beliefs);
     if (!problem) return null;  // map not loaded yet
 
-    console.log("[PDDL] Submitting crate-clearing problem to solver...");
     const rawPlan = await (onlineSolver as (d: string, p: string) => Promise<PddlPlanStep[] | undefined>)(domain, problem);
     console.log("[PDDL] Solver response received.");
     if (!rawPlan || rawPlan.length === 0) {
