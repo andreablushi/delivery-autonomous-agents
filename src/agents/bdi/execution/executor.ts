@@ -65,7 +65,7 @@ export class Executor {
         if (!me?.lastPosition) return false;
         const currentPosition = me.lastPosition;
 
-        const plan =this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
+        const plan = this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
         if (!plan) {
             // Let the executor explain why there's nothing to do when PDDL is in-flight.
             if (this.debug)

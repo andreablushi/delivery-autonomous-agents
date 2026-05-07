@@ -76,7 +76,7 @@ export class Intentions {
      * @param target The target position of the CLEAR_CRATE desire to check.
      * @returns True if a desire for the target is already tracked, false otherwise.
      */
-    hasCrateDesireFor(target: Position): boolean {
-        return this.crateDesires.has(posKey(target));
+    hasCrateDesireFor(crateIds: string[]): boolean {
+        return crateIds.some(id => this.crateDesires.has(id));
     }
 }

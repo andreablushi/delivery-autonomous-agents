@@ -39,7 +39,7 @@ export class PddlPlanner {
         if (!problem) return null;
 
         // Request to the onlineSolver the path
-        const rawPlan = await (onlineSolver as (d: string, p: string) => Promise<PddlPlanStep[] | undefined>)(this.domain, problem);
+        const rawPlan = await onlineSolver(this.domain, problem);
         if (!rawPlan?.length) {
             return null;
         }
@@ -92,15 +92,13 @@ export class PddlPlanner {
         if (!step) return null;
         if (step.kind !== "move") return step;
 
-        if (manhattanDistance(step.to, currentPosition) !== 1) {
-            console.warn(`[PLAN] Position drift: at [${currentPosition.x},${currentPosition.y}] step expects [${step.to.x},${step.to.y}]`);
-            this.reset();
-            plan.steps = [];
-            return null;
-        }
 
         const walkable = (a: Position, b: Position) => this.beliefs.map.isWalkable(a, b);
-        return this.beliefs.agents.isNextBlockedByAgents(step.to, walkable) ? "wait" : step;
+        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) {
+            return step;
+        }
+        this.reset();
+        return "wait";
     }
 
     /**

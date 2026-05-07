@@ -54,6 +54,11 @@ export class Planner {
             if (desire.type === "CLEAR_CRATE") {
                 this.currentPlan = this.pddlHandler(from, desire);
                 if (this.currentPlan || this.pddlPlanner.isWaiting()) return this.currentPlan;
+                if (this.currentPlan === null) {
+                    // If we failed to get a PDDL plan for the head desire, we should drop it and move on to the next one in the queue. 
+                    this.intentionManager.dropIntentionHead();
+                    continue;
+                }
                 continue;
             }
 
@@ -64,7 +69,7 @@ export class Planner {
             // If no plan could be found, check if it's because a crate is blocking the way. 
             // If so, request a PDDL plan to clear the crate. We can defer this if the desire is not at the head of the queue, to avoid requesting unnecessary PDDL plans for desires that might get dropped before we get to them.
             const crateBlock = this.detectCrateBlock(desire, from);
-            if (crateBlock && (desire.type === "REACH_PARCEL" || desire.type === "DELIVER_PARCEL")) {
+            if (crateBlock && (desire.type === "REACH_PARCEL" || desire.type === "DELIVER_PARCEL" || desire.type === "EXPLORE")) {
                 this.requestForBlock(crateBlock);
             } else if (crateBlock) {
                 // If it's a navigation desire that's not at the head of the queue, defer the crate block request until we get to it in the queue, to avoid requesting unnecessary PDDL plans
@@ -150,11 +155,6 @@ export class Planner {
      * @returns A Plan if one is ready from the PDDL planner, with a bridging A* plan prepended if necessary to get from the agent's current position to the PDDL plan's starting position. Returns null if no PDDL plan is currently ready, in which case the PDDL planner will be asynchronously working on generating a plan and will call onPddlReady when it's ready to trigger a re-plan. The Executor should call this at the start of each execution cycle when the head intention is a CLEAR_CRATE desire, to check if a PDDL plan is ready and use it if so. If this returns null, the Executor should wait and let the PDDL planner do its work, and rely on the onPddlReady callback to trigger a re-plan when the PDDL plan is ready.
      */
     private pddlHandler(from: Position, desire: ClearCrateDesire): Plan | null {
-        // If the PDDL planner is already waiting for this desire, it means a plan is in-flight but not ready yet, so we should return null and wait for it to be ready.
-        if (!this.intentionManager.hasCrateDesireFor(desire.target)) {
-            this.intentionManager.dropIntentionHead();
-            return null;
-        }
         // If the PDDL planner already has a ready plan for this desire, we can use it immediately.
         const ready = this.pddlPlanner.consume();
 
@@ -197,8 +197,8 @@ export class Planner {
      */
     private requestForBlock(crateBlock: ClearCrateDesire): void {
         // If the PDDL planner is already waiting for this crate block, or if we already have a tracked desire for it, we should not request another plan
-        if (this.pddlPlanner.isWaiting() || this.intentionManager.hasCrateDesireFor(crateBlock.target)) return;
-
+        if (this.pddlPlanner.isWaiting() || this.intentionManager.hasCrateDesireFor(crateBlock.crateIds)) return;
+        
         // Request a PDDL plan to clear the crate blocking the way to the current intention's target. 
         this.pddlPlanner.request(crateBlock, plan => {
             if (plan) this.intentionManager.addCrateDesire(crateBlock);
