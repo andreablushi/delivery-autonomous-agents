@@ -53,6 +53,11 @@ export class Planner {
 
             // For CLEAR_CRATE desires, we must use the PDDL planner, which may already have a plan ready or in-flight.
             if (desire.type === "CLEAR_CRATE") {
+                if (!this.hasCrateOnPath(from, desire.target)) {
+                    console.log("DROPPING CLEAR_CRATE desire since no crate is currently detected on the way to the target");
+                    this.intentionManager.dropIntentionHead();
+                    continue;
+                }
                 this.currentPlan = this.pddlHandler(from, desire);
                 // Update the target of the desire as the last step of the plan if provided by the planner
                 if (this.currentPlan || this.pddlPlanner.isWaiting()) return this.currentPlan;
@@ -193,6 +198,23 @@ export class Planner {
         const crateIds = crates.filter(c => crateKeys.has(posKey(c.position))).map(c => c.id);
 
         return crateIds.length > 0 ? { type: "CLEAR_CRATE", target: desire.target, crateIds } : null;
+    }
+
+    /**
+     * Check whether the current beliefs still show a crate on the path to the given target.
+     * @param from The agent's current position.
+     * @param target The target position we want to reach.
+     * @returns True if at least one believed crate still lies on the path, false otherwise.
+     */
+    private hasCrateOnPath(from: Position, target: Position): boolean {
+        const crates = this.beliefs.map.getCurrentCrates().flatMap(c =>
+            c.lastPosition ? [{ position: c.lastPosition }] : []
+        );
+        if (crates.length === 0) return false;
+
+        const crateKeys = new Set(crates.map(c => posKey(c.position)));
+        const path = this.astarPlanner.pathIgnoringCrates(from, target, crateKeys);
+        return !!path && path.some(pos => crateKeys.has(posKey(pos)));
     }
 
     /**
