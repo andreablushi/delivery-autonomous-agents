@@ -39,6 +39,7 @@ export class Planner {
      */
     plan(): Plan | null {  
         const from = this.beliefs.agents.getCurrentMe()?.lastPosition ?? undefined;
+
         if (!from) return null;
 
         // If we already have a plan and we're still in the same position, keep it.
@@ -53,6 +54,7 @@ export class Planner {
             // For CLEAR_CRATE desires, we must use the PDDL planner, which may already have a plan ready or in-flight.
             if (desire.type === "CLEAR_CRATE") {
                 this.currentPlan = this.pddlHandler(from, desire);
+                // Update the target of the desire as the last step of the plan if provided by the planner
                 if (this.currentPlan || this.pddlPlanner.isWaiting()) return this.currentPlan;
                 if (this.currentPlan === null) {
                     // If we failed to get a PDDL plan for the head desire, we should drop it and move on to the next one in the queue. 
@@ -69,7 +71,7 @@ export class Planner {
             // If no plan could be found, check if it's because a crate is blocking the way. 
             // If so, request a PDDL plan to clear the crate. We can defer this if the desire is not at the head of the queue, to avoid requesting unnecessary PDDL plans for desires that might get dropped before we get to them.
             const crateBlock = this.detectCrateBlock(desire, from);
-            if (crateBlock && (desire.type === "REACH_PARCEL" || desire.type === "DELIVER_PARCEL" || desire.type === "EXPLORE")) {
+            if (crateBlock && (desire.type === "REACH_PARCEL" || desire.type === "DELIVER_PARCEL")) {
                 this.requestForBlock(crateBlock);
             } else if (crateBlock) {
                 // If it's a navigation desire that's not at the head of the queue, defer the crate block request until we get to it in the queue, to avoid requesting unnecessary PDDL plans
@@ -189,6 +191,7 @@ export class Planner {
 
         // Convert all keys to ids taking all crates in beliefs
         const crateIds = crates.filter(c => crateKeys.has(posKey(c.position))).map(c => c.id);
+
         return crateIds.length > 0 ? { type: "CLEAR_CRATE", target: desire.target, crateIds } : null;
     }
 

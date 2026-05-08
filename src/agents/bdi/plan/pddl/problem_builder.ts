@@ -71,6 +71,9 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
     const objects = [tileList && `${tileList} - tile`, crateList && `${crateList} - crate`]
         .filter(Boolean).join(" ");
 
+    console.log("Target position:", parseTileId(intention.target.x, intention.target.y));
+    console.log("Intetion:", intention);
+
     // Construct the PDDL problem definition with the domain, objects, initial state, and goal 
     return `(define (problem crate-clear)
     (:domain deliveroo-crates)

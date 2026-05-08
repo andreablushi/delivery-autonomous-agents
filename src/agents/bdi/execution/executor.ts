@@ -95,8 +95,7 @@ export class Executor {
             this.planner.advance();
             // Rebuild desires immediately — CLEAR_CRATE flows in via intentions.crateDesires
             // so no manual injection is needed here.
-            const desires = generateDesires(this.beliefs);
-            this.intentions.update(this.beliefs, desires);
+            this.intentions.update(this.beliefs);
             this.planner.plan();
         } else {
             this.planner.invalidate();

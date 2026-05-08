@@ -87,7 +87,7 @@ export class BDIAgent {
         const desires = generateDesires(this.beliefs);
         if (this.debug) console.log("[DELIBERATE] Desires:", desires);
 
-        this.intentions.update(this.beliefs, desires);
+        this.intentions.update(this.beliefs);
 
         this.executor.start();
     }

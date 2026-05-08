@@ -4,6 +4,7 @@ import type { IntentionQueue } from "../../../models/intentions.js";
 import type { Position } from "../../../models/position.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
 import { posKey } from "../../../utils/metrics.js";
+import { generateDesires } from "../desire/desire_generator.js";
 
 /**
  * Manages the agent's intention queue an ordered list of desires to pursue,
@@ -19,9 +20,11 @@ export class Intentions {
      * Rebuild the intention queue from the provided desires, merging in any tracked crate desires.
      * Called every deliberation cycle by bdi_agent and executor (after a successful move).
      * @param beliefs Current beliefs, used by the sorter for distance-based scoring.
-     * @param desires Pre-built desire map (REACH_PARCEL, DELIVER_PARCEL, EXPLORE).
      */
-    update(beliefs: Beliefs, desires: GeneratedDesires): void {
+    update(beliefs: Beliefs): void {
+        // Generate desires from beliefs
+        const desires = generateDesires(beliefs);
+
         // If no desires and no tracked crate desires, clear the queue and return early.
         if (desires.size === 0 && this.crateDesires.size === 0) {
             this.intentionsQueue = [];
