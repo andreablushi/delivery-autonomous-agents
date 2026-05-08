@@ -2,7 +2,6 @@ import type { Position } from "../../../models/position.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Planner } from "../plan/planner.js";
 import type { Intentions } from "../intention/intentions.js";
-import { generateDesires } from "../desire/desire_generator.js";
 
 /**
  * Drives the action loop: retrieves the next step from the Planner, emits the corresponding

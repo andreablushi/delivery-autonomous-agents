@@ -104,8 +104,6 @@ export class Planner {
         // If the next step is a move and it's blocked by another agent, return "wait" to indicate we should wait for the tile to clear before
         const step = this.activePlanner(plan).nextStep(plan, currentPosition);
 
-        // If the active planner is pddl, we should not drop the plan immediately
-        if (step === null && plan.source === "pddl") return "wait";
 
         // If the step is blocked by another agent, we should wait instead of trying to execute it and failing.
         if (step === null && !plan.steps[plan.cursor]) this.currentPlan = null;

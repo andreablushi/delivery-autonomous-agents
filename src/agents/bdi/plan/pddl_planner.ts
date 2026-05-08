@@ -7,8 +7,9 @@ import type { ClearCrateDesire } from "../../../models/desires.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
-import { parsePddlPlan, type PddlPlanStep } from "./pddl/response_parser.js";
-import { manhattanDistance } from "../../../utils/metrics.js";
+import { parsePddlPlan } from "./pddl/response_parser.js";
+import { CollisionManager } from "./collision/collision_manager.js";
+import { AStarPlanner } from "./astar_planner.js";
 
 // Path to the PDDL domain file for crate clearing, which defines the actions and predicates relevant to moving crates out of the way.
 const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", "domain-crates.pddl");
@@ -22,10 +23,18 @@ export class PddlPlanner {
 
     private domain : string;                 // The PDDL domain definition, loaded from the domain file.
 
+    private aStarPlanner: AStarPlanner;   // The A* planner used for generating detour plans when a crate is detected on the path, initialized lazily to avoid circular dependencies.
+    private collision : CollisionManager;
+
     constructor(
         private readonly beliefs: Beliefs
     ) {
         this.domain = readFileSync(CRATE_DOMAIN_PATH, "utf8");
+        this.aStarPlanner = new AStarPlanner(beliefs);
+        this.collision = new CollisionManager(
+            (from, intention, blockedTile) => this.aStarPlanner?.plan(from, intention, blockedTile),
+            beliefs,
+        );
     }
 
     /**
@@ -92,10 +101,17 @@ export class PddlPlanner {
         if (!step) return null;
         if (step.kind !== "move") return step;
 
-
+        // Validate that the expected next position is walkable and not blocked by another agent
         const walkable = (a: Position, b: Position) => this.beliefs.map.isWalkable(a, b);
-        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) {
-            return step;
+        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
+
+        // If no detour is possible, consult the collision manager to decide whether to wait or to mark the tile as blocked and trigger replanning.
+        const decision = this.collision.onPreDetection(step.to);
+        if (decision.kind === "wait") return "wait";
+
+        // If no replacement route exists, drop this plan and let the queue plan again.
+        if (!this.collision.commitBlocked(plan, currentPosition, step.to, decision.ttl)) {
+            plan.steps = [];
         }
         this.reset();
         return null;

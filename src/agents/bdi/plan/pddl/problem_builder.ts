@@ -46,7 +46,7 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
         for (const { dx, dy, pred } of ADJACENCY_DIRS) {
             const neighborPos = { x: x + dx, y: y + dy };
             // Only add adjacency predicates for pairs of tiles where the neighbor is walkable or has a crate (i.e. can be moved into or have a crate pushed into it)
-            if (beliefs.map.isWalkable({ x, y }, neighborPos) || beliefs.map.isCrateAt(neighborPos) || beliefs.map.isBlocked({ x, y })) {
+            if (beliefs.map.isWalkable({ x, y }, neighborPos) || beliefs.map.isCrateAt(neighborPos)) {
                 init.push(`(${pred} ${parseTileId(x, y)} ${parseTileId(x + dx, y + dy)})`);
             }
         }
@@ -70,9 +70,6 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
     const crateList = crates.map(c => `crate_${c.id}`).join(" ");
     const objects = [tileList && `${tileList} - tile`, crateList && `${crateList} - crate`]
         .filter(Boolean).join(" ");
-
-    console.log("Target position:", parseTileId(intention.target.x, intention.target.y));
-    console.log("Intetion:", intention);
 
     // Construct the PDDL problem definition with the domain, objects, initial state, and goal 
     return `(define (problem crate-clear)
