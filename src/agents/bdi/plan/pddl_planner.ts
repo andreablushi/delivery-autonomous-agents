@@ -98,7 +98,7 @@ export class PddlPlanner {
             return step;
         }
         this.reset();
-        return "wait";
+        return null;
     }
 
     /**
@@ -119,7 +119,6 @@ export class PddlPlanner {
      * @returns true indicating the planner has been reset.
      */
     invalidate(_plan: Plan): boolean {
-        this.reset();
         return true;
     }
 

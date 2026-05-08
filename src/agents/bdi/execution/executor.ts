@@ -69,7 +69,7 @@ export class Executor {
         if (!plan) {
             // Let the executor explain why there's nothing to do when PDDL is in-flight.
             if (this.debug)
-                console.log("[EXECUTE] Waiting...");
+                console.log("[EXECUTE] Waiting for PDDL plan...");
             return false;
         }
 

@@ -20,6 +20,10 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
     const me = beliefs.agents.getCurrentMe();
     if (!me?.lastPosition) return "";
 
+    // Convert to integer the agent position to avoid issues with PDDL parsing (e.g. t_3.0_5.0 vs t_3_5)
+    const me_x = Math.round(me.lastPosition.x);
+    const me_y = Math.round(me.lastPosition.y);
+
     // Generate the list of all non-wall tiles for object declarations and adjacency predicates
     const { width: mapWidth, height: mapHeight } = size;
     const allTiles: Position[] = [];
@@ -35,14 +39,14 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
     const crateSpaces = new Set(beliefs.map.getCrateSpaceTiles().map(t => parseTileId(t.x, t.y)));
 
     // Initialize the problem with the agent's current position
-    const init: string[] = [`(at ${parseTileId(me.lastPosition.x, me.lastPosition.y)})`];
+    const init: string[] = [`(at ${parseTileId(me_x, me_y)})`];
 
     // Add adjacency predicates for all pairs of adjacent non-wall tiles
     for (const { x, y } of allTiles) {
         for (const { dx, dy, pred } of ADJACENCY_DIRS) {
             const neighborPos = { x: x + dx, y: y + dy };
             // Only add adjacency predicates for pairs of tiles where the neighbor is walkable or has a crate (i.e. can be moved into or have a crate pushed into it)
-            if (beliefs.map.isWalkable({ x, y }, neighborPos) || beliefs.map.isCrateAt(neighborPos)) {
+            if (beliefs.map.isWalkable({ x, y }, neighborPos) || beliefs.map.isCrateAt(neighborPos) || beliefs.map.isBlocked({ x, y })) {
                 init.push(`(${pred} ${parseTileId(x, y)} ${parseTileId(x + dx, y + dy)})`);
             }
         }
@@ -67,6 +71,7 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
     const objects = [tileList && `${tileList} - tile`, crateList && `${crateList} - crate`]
         .filter(Boolean).join(" ");
 
+    // Construct the PDDL problem definition with the domain, objects, initial state, and goal 
     return `(define (problem crate-clear)
     (:domain deliveroo-crates)
     (:objects ${objects})
