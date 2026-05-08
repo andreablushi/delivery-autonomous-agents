@@ -61,11 +61,6 @@ export class Planner {
                 this.currentPlan = this.pddlHandler(from, desire);
                 // Update the target of the desire as the last step of the plan if provided by the planner
                 if (this.currentPlan || this.pddlPlanner.isWaiting()) return this.currentPlan;
-                if (this.currentPlan === null) {
-                    // If we failed to get a PDDL plan for the head desire, we should drop it and move on to the next one in the queue. 
-                    this.intentionManager.dropIntentionHead();
-                    continue;
-                }
                 continue;
             }
 
@@ -77,6 +72,7 @@ export class Planner {
             // If so, request a PDDL plan to clear the crate. We can defer this if the desire is not at the head of the queue, to avoid requesting unnecessary PDDL plans for desires that might get dropped before we get to them.
             const crateBlock = this.detectCrateBlock(desire, from);
             if (crateBlock && (desire.type === "REACH_PARCEL" || desire.type === "DELIVER_PARCEL")) {
+                // if there is a CLEAR_CRATE desire already in the queue for this block
                 this.requestForBlock(crateBlock);
             } else if (crateBlock) {
                 // If it's a navigation desire that's not at the head of the queue, defer the crate block request until we get to it in the queue, to avoid requesting unnecessary PDDL plans
@@ -98,15 +94,13 @@ export class Planner {
      * @returns 
      */
     nextStep(currentPosition: Position): PlanStep | "wait" | null {
-        const plan = this.currentPlan;
-        if (!plan) return null;
+        if (!this.currentPlan){ return null };
 
         // If the next step is a move and it's blocked by another agent, return "wait" to indicate we should wait for the tile to clear before
-        const step = this.activePlanner(plan).nextStep(plan, currentPosition);
-
+        const step = this.activePlanner(this.currentPlan).nextStep(this.currentPlan, currentPosition);
 
         // If the step is blocked by another agent, we should wait instead of trying to execute it and failing.
-        if (step === null && !plan.steps[plan.cursor]) this.currentPlan = null;
+        if (step === null && !this.currentPlan.steps[this.currentPlan.cursor]) this.currentPlan = null;
         return step;
     }
 
@@ -115,9 +109,8 @@ export class Planner {
      * @returns true if the plan was successfully advanced, false if there was no plan to advance or if the plan is now complete and should be dropped.
      */
     advance(): void {
-        const plan = this.currentPlan;
-        if (!plan) return;
-        if (this.activePlanner(plan).advance(plan)) this.completePlan();
+        if (!this.currentPlan) return;
+        if (this.activePlanner(this.currentPlan).advance(this.currentPlan)) this.completePlan();
     }
 
     /**
@@ -125,9 +118,8 @@ export class Planner {
      * @returns true if the current plan was invalidated and cleared, false if there was no plan to invalidate. The Executor should call this when it detects that the current plan can no longer be executed (e.g. due to a failed move or unexpected state change), to trigger a re-plan on the next execution cycle.
      */
     invalidate(): boolean {
-        const plan = this.currentPlan;
-        if (!plan) return true;
-        if (this.activePlanner(plan).invalidate(plan)) this.currentPlan = null;
+        if (!this.currentPlan) return true;
+        if (this.activePlanner(this.currentPlan).invalidate(this.currentPlan)) this.currentPlan = null;
         return true;
     }
 
@@ -143,9 +135,12 @@ export class Planner {
         // If there's no current plan, we obviously can't keep it.
         if (!this.currentPlan) return false;
 
-        // If the current plan is from PDDL, we can keep it regardless of the agent's position
-        if (this.currentPlan.source === "pddl") return true;
-
+        if (this.currentPlan.source === "pddl"){
+            // If the intention head is no longer a CLEAR_CRATE desire, we should not keep the PDDL plan
+            const head = this.intentionManager.getIntentionHead();
+            if (!head || head.desire.type !== "CLEAR_CRATE") return false;
+            return true;
+        }
         // For A* plans, we can only keep it if the agent is still in the same position it was generated for, since A* plans are position-specific.
         if (from && this.astarPlanner.canReuse(this.currentPlan, from, this.intentionManager)) return true;
         this.astarPlanner.reset();
@@ -161,7 +156,7 @@ export class Planner {
      */
     private pddlHandler(from: Position, desire: ClearCrateDesire): Plan | null {
         // If the PDDL planner already has a ready plan for this desire, we can use it immediately.
-        const ready = this.pddlPlanner.consume();
+        const ready = this.pddlPlanner.ready;
 
         // If the plan is ready but starts from a different position, we need to prepend a bridging A* plan to get there before executing the PDDL steps. 
         if (ready) return this.withBridge(from, ready);
@@ -220,7 +215,12 @@ export class Planner {
      */
     private requestForBlock(crateBlock: ClearCrateDesire): void {
         // If the PDDL planner is already waiting for this crate block, or if we already have a tracked desire for it, we should not request another plan
-        if (this.pddlPlanner.isWaiting() || this.intentionManager.hasCrateDesireFor(crateBlock.crateIds)) return;
+        if (this.pddlPlanner.isWaiting()) return;
+
+        if (this.intentionManager.hasCrateDesireFor(crateBlock.crateIds)){
+            this.currentPlan = this.pddlPlanner.ready;
+            if (this.currentPlan) return;   
+        }
         
         // Request a PDDL plan to clear the crate blocking the way to the current intention's target. 
         this.pddlPlanner.request(crateBlock, plan => {
@@ -236,7 +236,7 @@ export class Planner {
      * @returns A new plan with the bridging steps prepended, or the original plan if no bridging is needed.
      */
     private withBridge(from: Position, plan: Plan): Plan {
-        const firstStep = plan.steps[0];
+        const firstStep = plan.steps[plan.cursor];
         if (!firstStep || firstStep.kind !== "move") return plan;
 
         // If the first step of the PDDL plan is a move but it's not from the agent's current position, we need to prepend a bridging A* plan to get there before executing the PDDL steps. 
@@ -260,5 +260,9 @@ export class Planner {
     /**
      * Helper function to complete the current plan and drop the head intention. 
      */
-    private completePlan(): void { this.currentPlan = null; this.intentionManager.dropIntentionHead(); }
+    private completePlan(): void {
+        this.intentionManager.dropIntentionHead();
+        if(this.currentPlan?.source === "pddl") this.pddlPlanner.reset();
+                this.currentPlan = null; 
+    }
 }

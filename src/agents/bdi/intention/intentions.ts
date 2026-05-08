@@ -75,11 +75,17 @@ export class Intentions {
     }
 
     /**
-     * Returns true if a CLEAR_CRATE desire for the given target is already tracked.
-     * @param target The target position of the CLEAR_CRATE desire to check.
-     * @returns True if a desire for the target is already tracked, false otherwise.
+     * Returns true if any tracked CLEAR_CRATE desire references any of the provided crate IDs.
+     * @param crateIds Array of crate IDs to check for.
+     * @returns True if at least one tracked desire contains any of the crate IDs, false otherwise.
      */
     hasCrateDesireFor(crateIds: string[]): boolean {
-        return crateIds.some(id => this.crateDesires.has(id));
+        const ids = new Set(crateIds);
+        for (const desire of this.crateDesires.values()) {
+            for (const id of desire.crateIds) {
+                if (ids.has(id)) return true;
+            }
+        }
+        return false;
     }
 }

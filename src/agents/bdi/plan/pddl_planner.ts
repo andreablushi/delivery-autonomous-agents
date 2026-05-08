@@ -19,7 +19,7 @@ const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", 
  */
 export class PddlPlanner {
     private inFlight = false;               // Indicates whether a PDDL plan request is currently in flight, to prevent multiple simultaneous requests.
-    private ready: Plan | null = null;      // Holds the most recently generated PDDL plan that is ready for consumption by the executor, or null if no plan is ready.
+    public ready: Plan | null = null;      // Holds the most recently generated PDDL plan that is ready for consumption by the executor, or null if no plan is ready.
 
     private domain : string;                 // The PDDL domain definition, loaded from the domain file.
 
@@ -57,10 +57,16 @@ export class PddlPlanner {
         const steps = parsePddlPlan(rawPlan);
         if (steps.length === 0) return null;
 
+        // Update the intention's target to the final destination after clearing crates
+        const lastStep = steps[steps.length - 1];
+        if (lastStep.kind === "move") {
+            intention.target = lastStep.to; // Update the intention's target to the final destination after clearing crates, which may differ from the original target if the crate was blocking the way.
+        }
+
         return { source: "pddl", steps, cursor: 0, targets: [intention]};
     }
 
-/**
+    /**
      * Request a plan asynchronously without blocking. Sets inFlight to true and executes the plan request in the background.
      * @param desire The CLEAR_CRATE desire to plan for.
      * @param onComplete Callback invoked when planning completes, receiving the generated plan or null if planning failed.
@@ -102,7 +108,7 @@ export class PddlPlanner {
         if (step.kind !== "move") return step;
 
         // Validate that the expected next position is walkable and not blocked by another agent
-        const walkable = (a: Position, b: Position) => this.beliefs.map.isWalkable(a, b);
+        const walkable = (a: Position, b: Position) => { return this.beliefs.map.isWalkable(a, b) && this.beliefs.map.isCrateAt(b); };
         if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
 
         // If no detour is possible, consult the collision manager to decide whether to wait or to mark the tile as blocked and trigger replanning.
@@ -111,9 +117,8 @@ export class PddlPlanner {
 
         // If no replacement route exists, drop this plan and let the queue plan again.
         if (!this.collision.commitBlocked(plan, currentPosition, step.to, decision.ttl)) {
-            plan.steps = [];
+            this.reset();
         }
-        this.reset();
         return null;
     }
 
@@ -123,10 +128,9 @@ export class PddlPlanner {
      * @returns true if the plan is now complete, false if there are more steps remaining.
      */
     advance(plan: Plan): boolean {
+        //#TODO: Update also ready cursor in a smart way in order to avoid flickering
         plan.cursor++;
-        const done = plan.cursor >= plan.steps.length;
-        if (done) this.reset();
-        return done;
+        return plan.cursor >= plan.steps.length;
     }
 
     /**
@@ -135,6 +139,7 @@ export class PddlPlanner {
      * @returns true indicating the planner has been reset.
      */
     invalidate(_plan: Plan): boolean {
+        this.reset();
         return true;
     }
 
