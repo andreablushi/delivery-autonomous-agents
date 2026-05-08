@@ -66,7 +66,7 @@ export class PddlPlanner {
      * @param onComplete Callback invoked when planning completes, receiving the generated plan or null if planning failed.
      */
     request(desire: ClearCrateDesire, onComplete: (plan: Plan | null) => void): void {
-        if (this.inFlight) return;
+        if (this.inFlight || this.ready) return;
         this.inFlight = true;
         this.plan(desire)
             .then(plan => { this.inFlight = false; this.ready = plan; onComplete(plan); })

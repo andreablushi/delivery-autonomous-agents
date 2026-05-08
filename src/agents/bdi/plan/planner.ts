@@ -53,8 +53,8 @@ export class Planner {
 
             // For CLEAR_CRATE desires, we must use the PDDL planner, which may already have a plan ready or in-flight.
             if (desire.type === "CLEAR_CRATE") {
+                // Drop the intention and move on to the next one if we no longer detect the crate on the path, to avoid requesting unnecessary PDDL plans for crates that have already been cleared by other agents.
                 if (!this.hasCrateOnPath(from, desire.target)) {
-                    console.log("DROPPING CLEAR_CRATE desire since no crate is currently detected on the way to the target");
                     this.intentionManager.dropIntentionHead();
                     continue;
                 }
