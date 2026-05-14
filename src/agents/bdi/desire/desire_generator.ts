@@ -67,20 +67,11 @@ function generateDeliverDesires(beliefs: Beliefs): DeliverParcelDesire[] {
 
 /**
  * Generate EXPLORE desires for each spawn tile as a fallback when no parcels are available.
- * Excluded the spawn tiles in my observation range
  * @param beliefs Current beliefs of the agent, used to get spawn tile positions.
  * @returns An array of EXPLORE desires, each targeting a spawn tile position.
  */
 function generateExploreDesires(beliefs: Beliefs): ExploreDesire[] {
-    const me = beliefs.agents.getCurrentMe();
-    const observationDistance = beliefs.agents.getObservationDistance();
-
-    return beliefs.map.getSpawnTiles()
-        .filter(tile => {
-            if (!me?.lastPosition || observationDistance === null) return true;
-            return manhattanDistance(me.lastPosition, tile) > observationDistance;
-        })
-        .map(tile => ({
+    return beliefs.map.getSpawnTiles().map(tile => ({
             type: "EXPLORE" as const,
             target: { x: tile.x, y: tile.y },
         }));

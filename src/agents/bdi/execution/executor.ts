@@ -90,12 +90,14 @@ export class Executor {
         else succeeded = await this.handleMove(step.direction);
 
         if (succeeded) {
+            if(this.debug) console.log("[EXECUTE] Step succeeded.");
             this.planner.advance();
             // Rebuild desires immediately — CLEAR_CRATE flows in via intentions.crateDesires
             // so no manual injection is needed here.
             this.intentions.update(this.beliefs);
             this.planner.plan();
         } else {
+            if(this.debug) console.log("[EXECUTE] Step failed, invalidating plan.");
             this.planner.invalidate();
         }
 
