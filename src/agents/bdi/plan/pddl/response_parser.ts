@@ -28,7 +28,9 @@ function toMoveStep(args: string[]): PlanStep {
 // Parses the raw PDDL plan steps into PlanSteps for the agent's executor, stopping after the last PUSH step.
 export function parsePlanString(planStr: string): PddlPlanStep[] {
     return planStr.split("\n").flatMap(line => {
-        const [action, ...args] = line.replace(/[()]/g, "").trim().split(/\s+/);
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(";") || !trimmed.startsWith("(")) return [];
+        const [action, ...args] = trimmed.replace(/[()]/g, "").trim().split(/\s+/);
         return action ? [{ parallel: false, action, args }] : [];
     });
 }

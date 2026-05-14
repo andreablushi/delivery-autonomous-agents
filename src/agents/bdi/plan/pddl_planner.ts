@@ -1,16 +1,15 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { onlineSolver } from "@unitn-asa/pddl-client";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { ClearCrateDesire } from "../../../models/desires.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
-import { parsePddlPlan } from "./pddl/response_parser.js";
+import { parsePddlPlan, parsePlanString } from "./pddl/response_parser.js";
+import { localSolver } from "./pddl/solver.js";
 
 const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", "domain-crates.pddl");
-
 /**
  * PDDL planner for generating plans to clear crates blocking the agent's path.
  * Requests are asynchronous: `plan()` kicks off a solver request and returns null until ready,
@@ -140,10 +139,9 @@ export class PddlPlanner {
         const problem = buildProblem(intention, this.beliefs);
         if (!problem) return null;
 
-        const rawPlan = await onlineSolver(this.domain, problem);
-        if (!rawPlan?.length) return null;
+        const rawOutput = localSolver(this.domain, problem);
 
-        const steps = parsePddlPlan(rawPlan);
+        const steps = parsePddlPlan(parsePlanString(rawOutput));
         if (steps.length === 0) return null;
 
         const lastStep = steps[steps.length - 1];

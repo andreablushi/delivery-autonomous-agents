@@ -162,10 +162,8 @@ export class Planner {
      * Drop the head intention and clear the current plan. Resets PDDL state if the plan was from PDDL.
      */
     private completePlan(): void {
-        console.log("[PLANNER] Plan completed.");
         if (this.currentPlan?.source === "pddl") {
             this.intentionManager.dropCrateDesire(); // stop tracking the CLEAR_CRATE desire for this target
-            console.log("\n\n\n\n[PLANNER] PDDL plan completed. Clearing CLEAR_CRATE desire for target\n\n\n\n");
             this.pddlPlanner.reset();
         }
         this.intentionManager.dropIntentionHead();
