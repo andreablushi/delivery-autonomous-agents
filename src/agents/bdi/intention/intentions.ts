@@ -1,5 +1,5 @@
 import type { Beliefs } from "../belief/beliefs.js";
-import type { GeneratedDesires, ClearCrateDesire, ReachPointDesire } from "../../../models/desires.js";
+import type { GeneratedDesires, ClearCrateDesire, ReachPointDesire, DesireType } from "../../../models/desires.js";
 import type { IntentionQueue } from "../../../models/intentions.js";
 import type { Position } from "../../../models/position.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
@@ -56,11 +56,9 @@ export class Intentions {
 
     /**
      * Stop tracking the CLEAR_CRATE desire for `target`.
-     * After this call the desire will NOT be re-injected by future update() cycles.
-     * Call only when the clear is no longer needed (path unblocked) or completed (PDDL plan finished).
      */
-    dropCrateDesire(target: Position): void {
-        this.crateDesires.delete(posKey(target));
+    dropCrateDesire(): void {
+        this.crateDesires.clear();
     }
 
     /**
@@ -68,6 +66,10 @@ export class Intentions {
      */
     getIntentionHead(): IntentionQueue[0] | null {
         return this.intentionsQueue.length > 0 ? this.intentionsQueue[0] : null;
+    }
+
+    hasIntention(desire: DesireType): boolean {
+        return this.intentionsQueue.some((intention) => intention.desire === desire);
     }
 
     /**

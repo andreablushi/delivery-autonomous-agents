@@ -82,9 +82,6 @@ export class BDIAgent {
      * CLEAR_CRATE enters the deliberation cycle automatically via intentions.crateDesires.
      */
     deliberate(): void {
-        const desires = generateDesires(this.beliefs);
-        if (this.debug) console.log("[DELIBERATE] Desires:", desires);
-
         this.intentions.update(this.beliefs);
         if (this.debug) console.log("[DELIBERATE] Intention selected:", this.intentions.getIntentionHead());
 

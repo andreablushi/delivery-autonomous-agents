@@ -68,7 +68,6 @@ export class Planner {
         if (!this.currentPlan) return true;
         if (this.activePlanner(this.currentPlan).invalidate(this.currentPlan)) {
             this.currentPlan = null;
-            this.intentionManager.update(this.beliefs);
         }
         return true;
     }
@@ -86,15 +85,18 @@ export class Planner {
             const desire = head.desire;
 
             if (desire.type === "CLEAR_CRATE") {
+                // If the CLEAR_CRATE target desire don't exist anymore in the queue, drop the desire
+                if (!this.intentionManager.hasIntention(desire)) {
+                    this.intentionManager.dropCrateDesire();
+                    return null;
+                }
                 const pddlPlan = this.pddlPlanner.plan(desire);
                 if (!pddlPlan) return null; // in-flight or just kicked off — wait
-
                 // Bridge check: if the agent isn't at the PDDL plan's expected start tile, inject a
                 // REACH_POINT and return null so the next executor tick picks up the bridge plan.
                 const start = this.pddlPlanner.getExpectedStart(pddlPlan);
                 if (start && posKey(from) !== posKey(start)) {
                     this.intentionManager.injectReachPoint(start);
-                    this.intentionManager.update(this.beliefs);
                     return null; // bridge is queued; pick it up on the next tick
                 }
 
@@ -145,6 +147,7 @@ export class Planner {
         const target = this.currentPlan.target;
         if (target.type !== head.type) return false;
         if (posKey(target.target) !== posKey(head.target)) return false;
+
         return this.activePlanner(this.currentPlan).validate(this.currentPlan, from);
     }
 
@@ -159,15 +162,13 @@ export class Planner {
      * Drop the head intention and clear the current plan. Resets PDDL state if the plan was from PDDL.
      */
     private completePlan(): void {
+        console.log("[PLANNER] Plan completed.");
         if (this.currentPlan?.source === "pddl") {
-            const head = this.intentionManager.getIntentionHead();
-            if (head?.desire.type === "CLEAR_CRATE") {
-                this.intentionManager.dropCrateDesire(head.desire.target);
-            }
+            this.intentionManager.dropCrateDesire(); // stop tracking the CLEAR_CRATE desire for this target
+            console.log("\n\n\n\n[PLANNER] PDDL plan completed. Clearing CLEAR_CRATE desire for target\n\n\n\n");
             this.pddlPlanner.reset();
         }
         this.intentionManager.dropIntentionHead();
         this.currentPlan = null;
-        this.intentionManager.update(this.beliefs);
     }
 }

@@ -67,7 +67,10 @@ export class PddlPlanner {
     /**
      * Validate a PDDL plan. PDDL plans are trusted until explicitly invalidated.
      */
-    validate(_plan: Plan, _from: Position): boolean { return true; }
+    validate(_plan: Plan, _from: Position): boolean { 
+        // If the desire target doesn't exist on the map anymore, the plan is invalid. 
+        return true;
+    }
 
     /**
      * Get the next step from the plan. Returns null if the tile is blocked; the orchestrator
@@ -79,6 +82,14 @@ export class PddlPlanner {
     nextStep(plan: Plan, currentPosition: Position): PlanStep | "wait" | null {
         const step = plan.steps[plan.cursor];
         if (!step) return null;
+
+        // If the current position doesn't match the expected position for this step, invalidate the plan. 
+        if(step.kind === "move") {
+            const expectedStart = this.getExpectedStart(plan);
+            if (!expectedStart || expectedStart.x !== currentPosition.x || expectedStart.y !== currentPosition.y) {
+                return null;
+            }
+        }
 
         return step;
     }
