@@ -8,10 +8,8 @@ import { Planner } from "./plan/planner.js";
 /**
  * BDI Agent — orchestrates the perceive → deliberate → execute cycle.
  *
- * Deliberation is event-driven: `sensing` events from the server trigger each cycle.
- * When the PDDL solver is in-flight (no sensing events fire while idle), the Planner's
- * onPddlReady callback calls deliberate() directly so the agent reacts immediately on
- * solver completion rather than waiting for the next sensing event.
+ * Deliberation is event-driven: each `sensing` event triggers one cycle.
+ * PDDL solver results are picked up on the next cycle after the async request resolves.
  */
 export class BDIAgent {
     private socket: any;
@@ -26,7 +24,7 @@ export class BDIAgent {
         this.debug = debug;
         this.beliefs = new Beliefs();
         this.intentions = new Intentions();
-        this.planner = new Planner(this.intentions, this.beliefs, () => this.deliberate());
+        this.planner = new Planner(this.intentions, this.beliefs);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, debug);
 
         this.socket.on('config', (config: IOConfig) => {
@@ -88,6 +86,7 @@ export class BDIAgent {
         if (this.debug) console.log("[DELIBERATE] Desires:", desires);
 
         this.intentions.update(this.beliefs);
+        if (this.debug) console.log("[DELIBERATE] Intention selected:", this.intentions.getIntentionHead());
 
         this.executor.start();
     }

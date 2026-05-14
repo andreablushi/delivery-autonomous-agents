@@ -21,8 +21,13 @@ export type DeliverParcelDesire = {
     target: Position;       // Nearest delivery tile position
 };
 
+export type ReachPointDesire = {
+    type: "REACH_POINT";    // Navigate to a specific tile (used as a bridge before executing a PDDL plan)
+    target: Position;       // Tile the agent must stand on before the PDDL plan starts
+};
+
 // All desires require navigation and always have a `target` position
-export type NavigationDesire = ExploreDesire | ReachParcelDesire | DeliverParcelDesire;
+export type NavigationDesire = ExploreDesire | ReachParcelDesire | DeliverParcelDesire | ReachPointDesire;
 
 export type ClearCrateDesire = {
     type: "CLEAR_CRATE";

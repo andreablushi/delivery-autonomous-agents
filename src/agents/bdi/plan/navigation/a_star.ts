@@ -1,5 +1,8 @@
 import type { Position } from "../../../../models/position.js";
 import { manhattanDistance, posKey } from "../../../../utils/metrics.js";
+import type { Beliefs } from "../../belief/beliefs.js";
+import { toMoveSteps } from "../utils/action_mapper.js";
+import type { PlanStep } from "../../../../models/plan.js";
 
 type Node = {
     pos: Position;       // Position of the node
@@ -73,4 +76,33 @@ export function aStar(
     }
 
     return null; // no path found
+}
+
+/**
+ * Find a path from `from` to `to` that treats a set of tiles as passable regardless of walkability.
+ * Used for crate-block detection: proves a target is reachable once the ignored tiles are cleared.
+ */
+export function pathIgnoring(
+    beliefs: Beliefs,
+    from: Position,
+    to: Position,
+    ignored: Set<string>,
+): Position[] | null {
+    return aStar(from, to, (f, t) => ignored.has(posKey(t)) || beliefs.map.isWalkable(f, t));
+}
+
+/**
+ * Compute the move steps from `from` to `to` using A*, optionally treating one tile as impassable.
+ */
+export function stepsTo(
+    beliefs: Beliefs,
+    from: Position,
+    to: Position,
+    blockedTile: Position | null = null,
+): PlanStep[] | null {
+    const path = aStar(from, to, (f, t) =>
+        !(blockedTile && t.x === blockedTile.x && t.y === blockedTile.y) &&
+        beliefs.map.isWalkable(f, t),
+    );
+    return path ? toMoveSteps(from, path) : null;
 }

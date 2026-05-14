@@ -4,6 +4,7 @@ import type {
     ExploreDesire,
     ReachParcelDesire,
     DeliverParcelDesire,
+    ReachPointDesire,
     ClearCrateDesire,
     GeneratedDesires,
 } from "../../../models/desires.js";
@@ -15,12 +16,13 @@ import { IntentionQueue } from "../../../models/intentions.js";
 
 /**
  * Determines the priority tier of a desire type.
- * Priority tiers: REACH_PARCEL|DELIVER_PARCEL=2, CLEAR_CRATE=1, EXPLORE=0.
+ * Priority tiers: REACH_PARCEL|DELIVER_PARCEL=3, REACH_POINT=2, CLEAR_CRATE=1, EXPLORE=0.
  * @param desire The desire to evaluate.
  * @returns The priority tier of the desire, where higher numbers indicate higher priority.
  */
 function getPriorityForDesire(desire: DesireType): number {
-    if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL') return 2;
+    if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL') return 3;
+    if (desire.type === 'REACH_POINT') return 2;
     if (desire.type === 'CLEAR_CRATE') return 1;
     return 0;
 }
@@ -29,9 +31,10 @@ function getPriorityForDesire(desire: DesireType): number {
  * Build the ordered desire queue for all candidates generated this cycle.
  *
  * Priority tiers:
- *   1. Goal     - REACH_PARCEL and DELIVER_PARCEL, scored independently and compared.
- *   2. Clear    - CLEAR_CRATE, pursued when no goal desire is currently reachable.
- *   3. Fallback - EXPLORE (nearest spawn outside the observation range).
+ *   3. Goal       - REACH_PARCEL and DELIVER_PARCEL, scored independently and compared.
+ *   2. Bridge     - REACH_POINT, injected when the agent must navigate to a PDDL plan's start tile.
+ *   1. Clear      - CLEAR_CRATE, pursued when crates block the path to a goal.
+ *   0. Fallback   - EXPLORE (nearest spawn outside the observation range).
  *
  * @param desires Grouped desires from the generator (may include CLEAR_CRATE injected by Intentions.update()).
  * @param beliefs Current beliefs of the agent.
@@ -51,6 +54,12 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
     // Score deliver desires independently
     for (const desire of delivers) {
         queue.push({ desire, score: scoreDeliverDesire(desire, beliefs)});
+    }
+
+    // Injected by Intentions.update() when bridging is needed before a PDDL plan.
+    const reachPoints = (desires.get("REACH_POINT") ?? []) as ReachPointDesire[];
+    for (const desire of reachPoints) {
+        queue.push({ desire, score: 0 });
     }
 
     // Injected into desires by Intentions.update() from the crateDesires tracking map.

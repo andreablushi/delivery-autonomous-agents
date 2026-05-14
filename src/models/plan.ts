@@ -26,10 +26,5 @@ export type Plan = {
     source: PlanSource;
     steps: PlanStep[];
     cursor: number;        // index of the next step to execute
-    targets: DesireType[]; // desires this plan was built for; A* has length 1, PDDL may have N
-};
-
-export type PddlPlanRequest = {
-    id: string;
-    targets: DesireType[];
+    target: DesireType;    // the desire this plan was built for
 };

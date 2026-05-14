@@ -8,135 +8,93 @@ import type { Plan, PlanStep } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
 import { parsePddlPlan } from "./pddl/response_parser.js";
-import { CollisionManager } from "./collision/collision_manager.js";
-import { AStarPlanner } from "./astar_planner.js";
 
-// Path to the PDDL domain file for crate clearing, which defines the actions and predicates relevant to moving crates out of the way.
 const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", "domain-crates.pddl");
 
 /**
- * PDDL planner for generating plans to clear crates that are blocking the agent's path to its current intention's target.
+ * PDDL planner for generating plans to clear crates blocking the agent's path.
+ * Requests are asynchronous: `plan()` kicks off a solver request and returns null until ready,
+ * then returns the ready plan on subsequent calls without consuming it.
+ * The orchestrator explicitly calls `consumeReady()` when it decides to use the plan.
  */
 export class PddlPlanner {
-    private inFlight = false;               // Indicates whether a PDDL plan request is currently in flight, to prevent multiple simultaneous requests.
-    public ready: Plan | null = null;      // Holds the most recently generated PDDL plan that is ready for consumption by the executor, or null if no plan is ready.
+    private inFlight = false;
+    private ready: Plan | null = null;
+    private readonly domain: string;
 
-    private domain : string;                 // The PDDL domain definition, loaded from the domain file.
-
-    private aStarPlanner: AStarPlanner;   // The A* planner used for generating detour plans when a crate is detected on the path, initialized lazily to avoid circular dependencies.
-    private collision : CollisionManager;
-
-    constructor(
-        private readonly beliefs: Beliefs
-    ) {
+    constructor(private readonly beliefs: Beliefs) {
         this.domain = readFileSync(CRATE_DOMAIN_PATH, "utf8");
-        this.aStarPlanner = new AStarPlanner(beliefs);
-        this.collision = new CollisionManager(
-            (from, intention, blockedTile) => this.aStarPlanner?.plan(from, intention, blockedTile),
-            beliefs,
-        );
     }
 
     /**
-     * Plan a sequence of steps to clear the crate(s) blocking the way to the current intention's target, based on the agent's current beliefs about the environment.
-     * @param intention The CLEAR_CRATE desire specifying which crate(s) to clear and their target location.
-     * @returns A Plan object containing the sequence of steps to clear crates, or null if planning fails.
-     */
-    async plan(intention: ClearCrateDesire): Promise<Plan | null> {
-        // Builds a PDDL problem definition based on the current beliefs and the target of the CLEAR_CRATE desire. 
-        const problem = buildProblem(intention, this.beliefs);
-        if (!problem) return null;
-
-        // Request to the onlineSolver the path
-        const rawPlan = await onlineSolver(this.domain, problem);
-        if (!rawPlan?.length) {
-            return null;
-        }
-
-        // Parse the requested plan
-        const steps = parsePddlPlan(rawPlan);
-        if (steps.length === 0) return null;
-
-        // Update the intention's target to the final destination after clearing crates
-        const lastStep = steps[steps.length - 1];
-        if (lastStep.kind === "move") {
-            intention.target = lastStep.to; // Update the intention's target to the final destination after clearing crates, which may differ from the original target if the crate was blocking the way.
-        }
-
-        return { source: "pddl", steps, cursor: 0, targets: [intention]};
-    }
-
-    /**
-     * Request a plan asynchronously without blocking. Sets inFlight to true and executes the plan request in the background.
+     * Return the ready plan if available, or kick off a solver request if neither ready nor in-flight.
+     * Does not consume the ready plan — call `consumeReady()` explicitly when the plan is accepted.
      * @param desire The CLEAR_CRATE desire to plan for.
-     * @param onComplete Callback invoked when planning completes, receiving the generated plan or null if planning failed.
+     * @returns The ready plan (not consumed), or null if still computing.
      */
-    request(desire: ClearCrateDesire, onComplete: (plan: Plan | null) => void): void {
-        if (this.inFlight || this.ready) return;
-        this.inFlight = true;
-        this.plan(desire)
-            .then(plan => { this.inFlight = false; this.ready = plan; onComplete(plan); })
-            .catch(() => { this.inFlight = false; onComplete(null); });
-    }
-
-    /**
-     * Retrieve and clear the ready plan. This should be called after request() completes to obtain the result.
-     * @returns The ready plan if available, or null; clears ready state after returning.
-     */
-    consume(): Plan | null {
-        const plan = this.ready;
-        this.ready = null;
-        return plan;
-    }
-
-    /**
-     * Check if a PDDL plan request is currently in flight.
-     * @returns true if a plan request is pending, false otherwise.
-     */
-    isWaiting(): boolean { return this.inFlight; }
-
-    /**
-     * Get the next step from the plan and validate it against the current position. If the agent has drifted from the expected position, the plan is invalidated.
-     * If the target position is blocked by other agents, returns "wait" to defer the step.
-     * @param plan The plan containing the sequence of steps.
-     * @param currentPosition The agent's current position on the map.
-     * @returns The next step to execute, "wait" if blocked, or null if the plan is exhausted or invalid.
-     */
-    nextStep(plan: Plan, currentPosition: Position): PlanStep | "wait" | null {
-        const step = plan.steps[plan.cursor];
-        if (!step) return null;
-        if (step.kind !== "move") return step;
-
-        // Validate that the expected next position is walkable and not blocked by another agent
-        const walkable = (a: Position, b: Position) => { return this.beliefs.map.isWalkable(a, b) && this.beliefs.map.isCrateAt(b); };
-        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
-
-        // If no detour is possible, consult the collision manager to decide whether to wait or to mark the tile as blocked and trigger replanning.
-        const decision = this.collision.onPreDetection(step.to);
-        if (decision.kind === "wait") return "wait";
-
-        // If no replacement route exists, drop this plan and let the queue plan again.
-        if (!this.collision.commitBlocked(plan, currentPosition, step.to, decision.ttl)) {
-            this.reset();
-        }
+    plan(desire: ClearCrateDesire): Plan | null {
+        if (this.ready) return this.ready;
+        if (!this.inFlight) this.startRequest(desire);
         return null;
     }
 
     /**
-     * Advance the plan cursor to the next step. Resets the planner if the plan is exhausted.
-     * @param plan The plan being executed.
-     * @returns true if the plan is now complete, false if there are more steps remaining.
+     * Consume and clear the ready plan. Call this once the orchestrator has decided to use it.
+     * @returns The ready plan, or null if none is available.
+     */
+    consumeReady(): Plan | null {
+        return this.ready;
+    }
+
+    /**
+     * Compute the tile the agent must stand on before the first move of `plan`.
+     * Used by the orchestrator to determine whether a REACH_POINT bridge is needed.
+     * @returns The expected start position, or null if the plan starts with a non-move step.
+     */
+    getExpectedStart(plan: Plan): Position | null {
+        const firstStep = plan.steps[plan.cursor];
+        if (!firstStep || firstStep.kind !== "move") return null;
+        const deltas: Record<string, [number, number]> = { up: [0, -1], down: [0, 1], left: [1, 0], right: [-1, 0] };
+        const [dx, dy] = deltas[firstStep.direction] ?? [0, 0];
+        return { x: firstStep.to.x + dx, y: firstStep.to.y + dy };
+    }
+
+    /**
+     * Returns true if a solver request is currently in-flight.
+     */
+    isWaiting(): boolean { return this.inFlight; }
+
+    /**
+     * Validate a PDDL plan. PDDL plans are trusted until explicitly invalidated.
+     */
+    validate(_plan: Plan, _from: Position): boolean { return true; }
+
+    /**
+     * Get the next step from the plan. Returns null if the tile is blocked; the orchestrator
+     * then invalidates the plan (no detour attempt for PDDL plans).
+     * @param plan The PDDL plan being executed.
+     * @param currentPosition The agent's current position.
+     * @returns The next step, or null if blocked or exhausted.
+     */
+    nextStep(plan: Plan, currentPosition: Position): PlanStep | "wait" | null {
+        const step = plan.steps[plan.cursor];
+        if (!step) return null;
+
+        return step;
+    }
+
+    /**
+     * Advance the plan cursor.
+     * @returns true if the plan is now complete.
      */
     advance(plan: Plan): boolean {
-        //#TODO: Update also ready cursor in a smart way in order to avoid flickering
         plan.cursor++;
         return plan.cursor >= plan.steps.length;
     }
 
     /**
-     * Mark a plan as invalid and reset the planner state. Called when the plan can no longer be executed due to environmental changes.
-     * @param _plan The plan being invalidated (parameter unused, plan is managed internally).
-     * @returns true indicating the planner has been reset.
+     * Invalidate a PDDL plan — resets all internal state so a new request can be made.
+     * @returns true, indicating the plan should be cleared by the orchestrator.
      */
     invalidate(_plan: Plan): boolean {
         this.reset();
@@ -144,10 +102,45 @@ export class PddlPlanner {
     }
 
     /**
-     * Clear all planner state, including in-flight request flag and ready plan. Used after plan execution completes or when invalidating a plan.
+     * Clear all planner state. Called on plan completion or invalidation.
      */
     reset(): void {
+        console.log("Resetting PDDL planner state.");
         this.inFlight = false;
         this.ready = null;
+    }
+
+    /**
+     * Start a solver request for the given desire. Sets in-flight state and updates ready state on completion.
+     * @param desire The desire to generate a plan for.
+     */
+    private startRequest(desire: ClearCrateDesire): void {
+        this.inFlight = true;
+        this.generatePlan(desire)
+            .then(plan => { this.inFlight = false; this.ready = plan; })
+            .catch(() => { this.inFlight = false; });
+    }
+
+    /**
+     * Generate a plan for the given desire by building a PDDL problem and sending it to the solver.
+     * @param desire The desire to generate a plan for.
+     * @returns The generated plan, or null if generation failed.
+     */
+    private async generatePlan(intention: ClearCrateDesire): Promise<Plan | null> {
+        const problem = buildProblem(intention, this.beliefs);
+        if (!problem) return null;
+
+        const rawPlan = await onlineSolver(this.domain, problem);
+        if (!rawPlan?.length) return null;
+
+        const steps = parsePddlPlan(rawPlan);
+        if (steps.length === 0) return null;
+
+        const lastStep = steps[steps.length - 1];
+        if (lastStep.kind === "move") {
+            intention.target = lastStep.to;
+        }
+
+        return { source: "pddl", steps, cursor: 0, target: intention };
     }
 }
