@@ -63,12 +63,11 @@ export class Executor {
         const me = this.beliefs.agents.getCurrentMe();
         if (!me?.lastPosition) return false;
         const currentPosition = me.lastPosition;
-
         const plan = this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
         if (!plan) {
-            // Let the executor explain why there's nothing to do when PDDL is in-flight.
-            if (this.debug)
-                console.log("[EXECUTE] Waiting for PDDL plan...");
+            // Refresh so the next executor tick gets a rebuilt queue without waiting for a sensing event.
+            this.intentions.update(this.beliefs);
+            if (this.debug) console.log("[EXECUTE] No plan to execute.");
             return false;
         }
 

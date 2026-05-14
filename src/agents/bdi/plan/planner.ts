@@ -34,7 +34,7 @@ export class Planner {
         const from = this.beliefs.agents.getCurrentMe()?.lastPosition;
         if (!from) return null;
         if (this.canReuse(from)) return this.currentPlan;
-        this.currentPlan = this.planForQueue(from);
+        this.currentPlan = this.findPlannableIntention(from);
         return this.currentPlan;
     }
 
@@ -66,62 +66,60 @@ export class Planner {
      */
     invalidate(): boolean {
         if (!this.currentPlan) return true;
-        if (this.activePlanner(this.currentPlan).invalidate(this.currentPlan)) this.currentPlan = null;
+        if (this.activePlanner(this.currentPlan).invalidate(this.currentPlan)) {
+            this.currentPlan = null;
+            this.intentionManager.update(this.beliefs);
+        }
         return true;
     }
 
     /**
-     * Walk the intention queue and find the first plannable desire.
+     * Search the intention queue for the first plannable desire and return its plan.
      * For CLEAR_CRATE, delegates to the PDDL planner (with bridge injection if needed).
      * For navigation desires, uses A* and detects crate blocks on failure.
+     * Desires that cannot be planned this call are skipped (not dropped); they remain in
+     * the queue so the next intentions.update() cycle can retry them with fresh beliefs.
      */
-    private planForQueue(from: Position): Plan | null {
-        let deferredCrateBlock: ClearCrateDesire | null = null;
+    private findPlannableIntention(from: Position): Plan | null {
 
         for (let head = this.intentionManager.getIntentionHead(); head; head = this.intentionManager.getIntentionHead()) {
             const desire = head.desire;
 
             if (desire.type === "CLEAR_CRATE") {
-                if (!hasCrateOnPath(this.beliefs, from, desire.target)) {
-                    this.intentionManager.dropIntentionHead();
-                    continue;
-                }
                 const pddlPlan = this.pddlPlanner.plan(desire);
                 if (!pddlPlan) return null; // in-flight or just kicked off — wait
 
-                // Bridge check: if the agent isn't at the PDDL plan's expected start tile, navigate there first
+                // Bridge check: if the agent isn't at the PDDL plan's expected start tile, inject a
+                // REACH_POINT and return null so the next executor tick picks up the bridge plan.
                 const start = this.pddlPlanner.getExpectedStart(pddlPlan);
                 if (start && posKey(from) !== posKey(start)) {
                     this.intentionManager.injectReachPoint(start);
-                    console.log("Injecting REACH_POINT desire for PDDL bridge:", start);
-                    this.intentionManager.update(this.beliefs); // ensure the new desire is reflected in the intention queue for the next plan tick
-                    return this.plan(); // REACH_POINT will be planned on the next tick
+                    this.intentionManager.update(this.beliefs);
+                    return null; // bridge is queued; pick it up on the next tick
                 }
 
-                return this.pddlPlanner.consumeReady(); // plan is ready synchronously since we kicked off the request above if needed
+                return this.pddlPlanner.consumeReady();
             }
 
             // Navigation desire — try A*
             const plan = this.astarPlanner.plan(from, desire);
             if (plan) return plan;
 
-            // A* failed — detect crate blocks for parcel desires only (not REACH_POINT/EXPLORE)
-            if (desire.type === "REACH_PARCEL" || desire.type === "DELIVER_PARCEL") {
+            // A* failed — detect crate blocks and swap to CLEAR_CRATE if found
+            if (desire.type === "REACH_PARCEL" || desire.type === "DELIVER_PARCEL" || desire.type === "EXPLORE") {
                 const block = detectCrateBlock(this.beliefs, from, desire);
                 if (block) {
                     this.handleCrateBlock(block);
-                    this.intentionManager.dropIntentionHead(); // drop so loop can reach CLEAR_CRATE
+                    this.intentionManager.dropIntentionHead(); // intentional swap: this nav desire is replaced by CLEAR_CRATE
                     continue;
                 }
-            } else if (desire.type === "EXPLORE") {
-                const block = detectCrateBlock(this.beliefs, from, desire);
-                if (block) deferredCrateBlock ??= block;
             }
 
+            // Unplannable this cycle — drop from the live queue. The desire will reappear on the
+            // next intentions.update() call (nav desires are regenerated from beliefs each cycle).
             this.intentionManager.dropIntentionHead();
         }
 
-        if (deferredCrateBlock) this.handleCrateBlock(deferredCrateBlock);
         return null;
     }
 
@@ -132,7 +130,6 @@ export class Planner {
         if (this.pddlPlanner.isWaiting()) return;
         if (!this.intentionManager.hasCrateDesireFor(block.crateIds)) {
             this.intentionManager.addCrateDesire(block);
-            // this.intentionManager.update(this.beliefs); // ensure the new desire is reflected in the intention queue for the next plan tick
         }
         this.pddlPlanner.plan(block); // kicks off request if not already in-flight
     }
@@ -145,9 +142,9 @@ export class Planner {
         if (!this.currentPlan) return false;
         const head = this.intentionManager.getIntentionHead()?.desire;
         if (!head) return false;
-        const tgt = this.currentPlan.target;
-        if (tgt.type !== head.type) return false;
-        if (posKey(tgt.target) !== posKey(head.target)) return false;
+        const target = this.currentPlan.target;
+        if (target.type !== head.type) return false;
+        if (posKey(target.target) !== posKey(head.target)) return false;
         return this.activePlanner(this.currentPlan).validate(this.currentPlan, from);
     }
 
@@ -162,8 +159,15 @@ export class Planner {
      * Drop the head intention and clear the current plan. Resets PDDL state if the plan was from PDDL.
      */
     private completePlan(): void {
+        if (this.currentPlan?.source === "pddl") {
+            const head = this.intentionManager.getIntentionHead();
+            if (head?.desire.type === "CLEAR_CRATE") {
+                this.intentionManager.dropCrateDesire(head.desire.target);
+            }
+            this.pddlPlanner.reset();
+        }
         this.intentionManager.dropIntentionHead();
-        if (this.currentPlan?.source === "pddl") this.pddlPlanner.reset();
         this.currentPlan = null;
+        this.intentionManager.update(this.beliefs);
     }
 }

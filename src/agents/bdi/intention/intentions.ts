@@ -42,17 +42,25 @@ export class Intentions {
 
     /**
      * Drop the head of the queue (e.g. after a plan completes or is unrecoverable).
-     * Also removes tracked crate or reach-point entries for the dropped desire.
+     * Also removes tracked reach-point entries for the dropped desire.
+     * Does NOT remove CLEAR_CRATE entries from crateDesires — use dropCrateDesire() explicitly
+     * so the desire is re-injected on the next update() if it was dropped without being resolved.
      */
     dropIntentionHead(): void {
         const head = this.intentionsQueue[0];
-        if (head?.desire.type === "CLEAR_CRATE") {
-            this.crateDesires.delete(posKey(head.desire.target));
-        }
         if (head?.desire.type === "REACH_POINT") {
             this.reachPointDesires.delete(posKey(head.desire.target));
         }
         this.intentionsQueue.shift();
+    }
+
+    /**
+     * Stop tracking the CLEAR_CRATE desire for `target`.
+     * After this call the desire will NOT be re-injected by future update() cycles.
+     * Call only when the clear is no longer needed (path unblocked) or completed (PDDL plan finished).
+     */
+    dropCrateDesire(target: Position): void {
+        this.crateDesires.delete(posKey(target));
     }
 
     /**

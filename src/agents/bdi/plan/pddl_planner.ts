@@ -105,7 +105,6 @@ export class PddlPlanner {
      * Clear all planner state. Called on plan completion or invalidation.
      */
     reset(): void {
-        console.log("Resetting PDDL planner state.");
         this.inFlight = false;
         this.ready = null;
     }
