@@ -4,8 +4,6 @@ import type {
     ExploreDesire,
     ReachParcelDesire,
     DeliverParcelDesire,
-    ReachPointDesire,
-    ClearCrateDesire,
     GeneratedDesires,
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
@@ -16,14 +14,12 @@ import { IntentionQueue } from "../../../models/intentions.js";
 
 /**
  * Determines the priority tier of a desire type.
- * Priority tiers: REACH_PARCEL|DELIVER_PARCEL=3, REACH_POINT=2, CLEAR_CRATE=1, EXPLORE=0.
+ * Priority tiers: REACH_PARCEL|DELIVER_PARCEL=1, EXPLORE=0.
  * @param desire The desire to evaluate.
  * @returns The priority tier of the desire, where higher numbers indicate higher priority.
  */
 function getPriorityForDesire(desire: DesireType): number {
-    if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL') return 3;
-    if (desire.type === 'REACH_POINT') return 2;
-    if (desire.type === 'CLEAR_CRATE') return 1;
+    if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL') return 1;
     return 0;
 }
 
@@ -31,47 +27,30 @@ function getPriorityForDesire(desire: DesireType): number {
  * Build the ordered desire queue for all candidates generated this cycle.
  *
  * Priority tiers:
- *   3. Goal       - REACH_PARCEL and DELIVER_PARCEL, scored independently and compared.
- *   2. Bridge     - REACH_POINT, injected when the agent must navigate to a PDDL plan's start tile.
- *   1. Clear      - CLEAR_CRATE, pursued when crates block the path to a goal.
- *   0. Fallback   - EXPLORE (nearest spawn outside the observation range).
+ *   1. Goal     - REACH_PARCEL and DELIVER_PARCEL, scored independently and compared.
+ *   0. Fallback - EXPLORE (nearest spawn outside the observation range).
  *
- * @param desires Grouped desires from the generator (may include CLEAR_CRATE injected by Intentions.update()).
+ * @param desires Grouped desires from the generator.
  * @param beliefs Current beliefs of the agent.
  * @returns The ordered desire queue, or an empty array if no candidates are available.
  */
 export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): IntentionQueue {
     const queue: IntentionQueue = [];
 
-    // Goal desires require scoring and comparison
+    // Goal desires — scored and compared
     const reaches = (desires.get("REACH_PARCEL") ?? []) as ReachParcelDesire[];
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];
 
-    // Score each desire independently
     for (const desire of reaches) {
-        queue.push({ desire, score: scoreReachDesire(desire, beliefs)});
+        queue.push({ desire, score: scoreReachDesire(desire, beliefs) });
     }
-    // Score deliver desires independently
     for (const desire of delivers) {
-        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs)});
-    }
-
-    // Injected by Intentions.update() when bridging is needed before a PDDL plan.
-    const reachPoints = (desires.get("REACH_POINT") ?? []) as ReachPointDesire[];
-    for (const desire of reachPoints) {
-        queue.push({ desire, score: 0 });
-    }
-
-    // Injected into desires by Intentions.update() from the crateDesires tracking map.
-    const clears = (desires.get("CLEAR_CRATE") ?? []) as ClearCrateDesire[];
-    for (const desire of clears) {
-        queue.push({ desire, score: 0 });
+        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs) });
     }
 
     // Fallback to exploration desires
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
     const now = Date.now();
-    // Score each explore desire independently based on sensing age and distance
     for (const desire of explores) {
         queue.push({ desire, score: scoreExplore(
             desire,
@@ -81,7 +60,7 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
         ) });
     }
 
-    // Sort the queue by priority tier first, then by score within the same tier
+    // Sort by priority tier first, then by score within the same tier
     return queue.sort((a, b) => getPriorityForDesire(b.desire) - getPriorityForDesire(a.desire) || b.score - a.score);
 }
 

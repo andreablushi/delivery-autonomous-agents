@@ -24,7 +24,7 @@ export class BDIAgent {
         this.debug = debug;
         this.beliefs = new Beliefs();
         this.intentions = new Intentions();
-        this.planner = new Planner(this.intentions, this.beliefs);
+        this.planner = new Planner(this.intentions, this.beliefs, debug);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, debug);
 
         this.socket.on('config', (config: IOConfig) => {
@@ -79,7 +79,6 @@ export class BDIAgent {
 
     /**
      * One deliberation cycle: rebuild desires → update intention queue → plan → execute one step.
-     * CLEAR_CRATE enters the deliberation cycle automatically via intentions.crateDesires.
      */
     deliberate(): void {
         this.intentions.update(this.beliefs);

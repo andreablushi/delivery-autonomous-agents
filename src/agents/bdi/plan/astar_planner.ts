@@ -5,8 +5,8 @@ import type { Position } from "../../../models/position.js";
 import type { NavigationDesire } from "../../../models/desires.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
 
-// Terminal steps appended to the path for desires that require an action on arrival
-const TERMINAL_STEP: Partial<Record<NavigationDesire["type"], PlanStep>> = {
+/** Terminal steps appended to the path for desires that require a game action on arrival. */
+export const TERMINAL_STEP: Partial<Record<NavigationDesire["type"], PlanStep>> = {
     REACH_PARCEL: { kind: "pickup" },
     DELIVER_PARCEL: { kind: "putdown" },
 };

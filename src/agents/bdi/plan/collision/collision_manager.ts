@@ -96,7 +96,7 @@ export class CollisionManager {
         // Check if there is a next step and if it's a move step
         const head = plan.target;
         if (!head) return false; // if there's no target, we can't really detour meaningfully
-        if (head.type !== "REACH_PARCEL" && head.type !== "DELIVER_PARCEL" && head.type !== "REACH_POINT") return false; // if the target isn't a location-based desire, we don't have a meaningful way to detour
+        if (head.type !== "REACH_PARCEL" && head.type !== "DELIVER_PARCEL") return false; // detours only make sense for goal-directed desires
         
         // Compute a detour plan from the current position to the original plan's next target, treating the blocked tile as an obstacle
         const detourPlan = this.plan(from, head, blockedTile);
@@ -136,7 +136,7 @@ export class CollisionManager {
         // Replan toward the same target with the tile now blocked in beliefs.
         const head = plan.target;
         if (!head) return false;
-        if (head.type !== "REACH_PARCEL" && head.type !== "DELIVER_PARCEL" && head.type !== "REACH_POINT") return false;
+        if (head.type !== "REACH_PARCEL" && head.type !== "DELIVER_PARCEL") return false;
 
         // Compute a new plan from the current position to the original plan's next target, with the updated beliefs that include the newly blocked tile
         const replan = this.plan(from, head);

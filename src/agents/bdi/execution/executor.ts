@@ -92,8 +92,7 @@ export class Executor {
         if (succeeded) {
             if(this.debug) console.log("[EXECUTE] Step succeeded.");
             this.planner.advance();
-            // Rebuild desires immediately — CLEAR_CRATE flows in via intentions.crateDesires
-            // so no manual injection is needed here.
+            // Rebuild desires immediately so the next plan() call sees fresh belief state.
             this.intentions.update(this.beliefs);
             this.planner.plan();
         } else {

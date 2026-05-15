@@ -1,11 +1,10 @@
 import type { Beliefs } from "../../belief/beliefs.js";
-import type { ClearCrateDesire } from "../../../../models/desires.js";
 import type { Position } from "../../../../models/position.js";
 
 // Converts a position to a PDDL tile identifier
-function parseTileId(x: number, y: number): string {return `t_${x}_${y}`;}
+function parseTileId(x: number, y: number): string { return `t_${x}_${y}`; }
 
-// Defines the adjacency predicates for all pairs of adjacents
+// Defines the adjacency predicates for all pairs of adjacent tiles
 export const ADJACENCY_DIRS = [
     { dx: 0, dy: 1, pred: "adj-up" },
     { dx: 0, dy: -1, pred: "adj-down" },
@@ -13,7 +12,14 @@ export const ADJACENCY_DIRS = [
     { dx: 1, dy: 0, pred: "adj-right" },
 ] as const;
 
-export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): string {
+/**
+ * Build a PDDL problem string that asks the solver to navigate the agent from its current
+ * position to `target`, pushing any blocking crates out of the way.
+ * @param target The tile the agent must reach (the navigation desire's target position).
+ * @param beliefs Current agent beliefs, used for map layout, crate positions, and agent position.
+ * @returns A PDDL problem string, or an empty string if required beliefs are unavailable.
+ */
+export function buildProblem(target: Position, beliefs: Beliefs): string {
     // If the map size or agent position is not yet available, we cannot build a valid problem
     const size = beliefs.map.getMapSize();
     if (!size) return "";
@@ -45,7 +51,7 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
     for (const { x, y } of allTiles) {
         for (const { dx, dy, pred } of ADJACENCY_DIRS) {
             const neighborPos = { x: x + dx, y: y + dy };
-            // Only add adjacency predicates for pairs of tiles where the neighbor is walkable or has a crate (i.e. can be moved into or have a crate pushed into it)
+            // Only add adjacency for tiles where the neighbor is walkable or has a crate
             if (beliefs.map.isWalkable({ x, y }, neighborPos) || beliefs.map.isCrateAt(neighborPos)) {
                 init.push(`(${pred} ${parseTileId(x, y)} ${parseTileId(x + dx, y + dy)})`);
             }
@@ -65,17 +71,16 @@ export function buildProblem(intention: ClearCrateDesire, beliefs: Beliefs): str
     // Add predicates for crate spaces (tiles that can potentially hold crates)
     crateSpaces.forEach(id => init.push(`(crate-space ${id})`));
 
-    // Declare all tiles and crates as string objects for PDDL
+    // Declare all tiles and crates as PDDL objects
     const tileList = allTiles.map(t => parseTileId(t.x, t.y)).join(" ");
     const crateList = crates.map(c => `crate_${c.id}`).join(" ");
     const objects = [tileList && `${tileList} - tile`, crateList && `${crateList} - crate`]
         .filter(Boolean).join(" ");
 
-    // Construct the PDDL problem definition with the domain, objects, initial state, and goal 
     return `(define (problem crate-clear)
     (:domain deliveroo-crates)
     (:objects ${objects})
     (:init ${init.join(" ")})
-    (:goal (and (at ${parseTileId(intention.target.x, intention.target.y)})))
+    (:goal (and (at ${parseTileId(target.x, target.y)})))
 )`;
 }

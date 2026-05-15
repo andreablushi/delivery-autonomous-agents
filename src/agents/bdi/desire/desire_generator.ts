@@ -13,7 +13,7 @@ import { manhattanDistance } from "../../../utils/metrics.js";
     * - For each available parcel with a known position, generate a REACH_PARCEL desire targeting that position.
     * - If the agent is carrying any parcels, generate a DELIVER_PARCEL desire for each delivery tile, targeting the tile's position.
     * - If there are no available parcels, generate an EXPLORE desire for each spawn tile, targeting the tile's position.
-    * Note: CLEAR_CRATE desires are tracked in Intentions and injected into the queue via intentions.update().
+    * Note: crate-clearing is handled transparently by the Planner as a fallback when A* fails.
     * @param beliefs Current beliefs of the agent, used to determine available parcels, carried parcels, and tile positions.
     * @returns A map of desire types to arrays of generated desires, which may be empty if no desires of that type are applicable.
  */

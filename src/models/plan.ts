@@ -2,11 +2,11 @@
  * Plan types for the BDI agent's planner.
  * A Plan is a concrete sequence of executable steps (move/pickup/putdown) that
  * achieves the underlying desire. Plans come from two sources: A* for single-target
- * navigation, and PDDL for multi-pickup tours composed over the top-N intention queue.
+ * navigation, and PDDL for paths blocked by crates.
  */
 
 import type { Position } from "./position.js";
-import type { DesireType } from "./desires.js";
+import type { NavigationDesire } from "./desires.js";
 
 export type MoveDirection = "up" | "down" | "left" | "right";
 
@@ -26,5 +26,5 @@ export type Plan = {
     source: PlanSource;
     steps: PlanStep[];
     cursor: number;        // index of the next step to execute
-    target: DesireType;    // the desire this plan was built for
+    target: NavigationDesire; // the navigation desire this plan was built for
 };
