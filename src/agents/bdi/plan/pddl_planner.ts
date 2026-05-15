@@ -44,7 +44,7 @@ export class PddlPlanner {
         const problem = buildProblem(intention.target, this.beliefs);
         if (!problem) return null;
 
-        const rawOutput = localSolver(this.domain, problem);
+        const rawOutput = localSolver(this.domain, problem, this.debug);
         const steps = parsePddlPlan(parsePlanString(rawOutput));
         if (steps.length === 0) {
             this.debug && console.log("[PDDL] Solver returned no steps");
