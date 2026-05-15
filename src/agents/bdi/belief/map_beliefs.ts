@@ -4,6 +4,7 @@ import type { Position } from "../../../models/position.js";
 import type { IOTile, IOCrate } from "../../../models/djs.js";
 import { TILE_TYPE, type TileType } from "../../../models/tile_type.js";
 import { Tracker } from "./utils/tracker.js";
+import { computeSafeTiles } from "./utils/reachability.js";
 import { manhattanDistance, posKey } from "../../../utils/metrics.js";
 
 /**
@@ -38,17 +39,39 @@ export class MapBeliefs {
         for (const t of normalizedTiles) {
             matrix[t.y][t.x] = t.type;
         }
+
+        // Seal off conveyor sinks: any non-wall tile from which no delivery tile is reachable
+        // can be treated as a wall for pathfinding purposes
+        const deliveryPositions = normalizedTiles
+            .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
+            .map(t => ({ x: t.x, y: t.y }));
+        // Compute the set of safe tiles that can reach a
+        const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions);
+        
+        // Any tile which is not safe can be treated as a wall
+        let sealed = 0;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (matrix[y][x] !== TILE_TYPE.WALL && !safeKeys.has(posKey({ x, y }))) {
+                    matrix[y][x] = TILE_TYPE.WALL;
+                    sealed++;
+                }
+            }
+        }
+        console.log(`[MAP] Sealed ${sealed} sink tiles`);
+
         this.map = { width, height, tiles: matrix };
 
-        // Precompute static tile lists — map never changes after this point
+        // Precompute static tile lists — map never changes after this point.
+        // Filter spawn / crate-space tiles through the safe set so callers never see sealed tiles.
         this.spawnTiles = normalizedTiles
-            .filter(t => t.type === TILE_TYPE.SPAWN_POINT)
+            .filter(t => t.type === TILE_TYPE.SPAWN_POINT && safeKeys.has(posKey(t)))
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
         this.deliveryTiles = normalizedTiles
             .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
         this.crateSpaceTiles = normalizedTiles
-            .filter(t => t.type === TILE_TYPE.CRATE_SPACE || t.type === TILE_TYPE.CRATE_OCCUPIED)
+            .filter(t => (t.type === TILE_TYPE.CRATE_SPACE || t.type === TILE_TYPE.CRATE_OCCUPIED) && safeKeys.has(posKey(t)))
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
     }
 
