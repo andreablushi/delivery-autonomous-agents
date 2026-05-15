@@ -14,24 +14,21 @@ import { IntentionQueue } from "../../../models/intentions.js";
 
 /**
  * Determines the priority tier of a desire type.
- * Priority tiers: PICKUP_PARCEL=3, PUTDOWN_PARCEL=2, REACH_PARCEL|DELIVER_PARCEL=1, EXPLORE=0
+ * Priority tiers: REACH_PARCEL|DELIVER_PARCEL=1, EXPLORE=0.
+ * @param desire The desire to evaluate.
+ * @returns The priority tier of the desire, where higher numbers indicate higher priority.
  */
 function getPriorityForDesire(desire: DesireType): number {
-    if (desire.type === 'PICKUP_PARCEL') return 3;
-    if (desire.type === 'PUTDOWN_PARCEL') return 2;
     if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL') return 1;
-    if (desire.type === 'EXPLORE') return 0;
     return 0;
 }
 
 /**
  * Build the ordered desire queue for all candidates generated this cycle.
- * Called by bdi_agent, handles the full priority ladder including action-tier desires.
  *
  * Priority tiers:
- *   1. Action      - PICKUP_PARCEL, then PUTDOWN_PARCEL (no navigation).
- *   2. Goal        - best REACH_PARCEL vs best DELIVER_PARCEL, scored independently then compared.
- *   3. Fallback    - best EXPLORE (nearest spawn outside the observation range).
+ *   1. Goal     - REACH_PARCEL and DELIVER_PARCEL, scored independently and compared.
+ *   0. Fallback - EXPLORE (nearest spawn outside the observation range).
  *
  * @param desires Grouped desires from the generator.
  * @param beliefs Current beliefs of the agent.
@@ -40,34 +37,20 @@ function getPriorityForDesire(desire: DesireType): number {
 export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): IntentionQueue {
     const queue: IntentionQueue = [];
 
-    // Immediate action desires have top priority
-    const pickup = desires.get("PICKUP_PARCEL") ?? [];
-    for (const desire of pickup) {
-        queue.push({ desire, score: Number.POSITIVE_INFINITY });
-    }
-
-    const putdown = desires.get("PUTDOWN_PARCEL") ?? [];
-    for (const desire of putdown) {
-        queue.push({ desire, score: Number.POSITIVE_INFINITY });
-    }
-
-    // Goal desires require scoring and comparison
+    // Goal desires — scored and compared
     const reaches = (desires.get("REACH_PARCEL") ?? []) as ReachParcelDesire[];
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];
 
-    // Score each desire independently
     for (const desire of reaches) {
-        queue.push({ desire, score: scoreReachDesire(desire, beliefs)});
+        queue.push({ desire, score: scoreReachDesire(desire, beliefs) });
     }
-    // Score deliver desires independently
     for (const desire of delivers) {
-        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs)});
+        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs) });
     }
 
     // Fallback to exploration desires
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
     const now = Date.now();
-    // Score each explore desire independently based on sensing age and distance
     for (const desire of explores) {
         queue.push({ desire, score: scoreExplore(
             desire,
@@ -77,14 +60,16 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
         ) });
     }
 
-    // Sort the queue by priority tier first, then by score within the same tier
+    // Sort by priority tier first, then by score within the same tier
     return queue.sort((a, b) => getPriorityForDesire(b.desire) - getPriorityForDesire(a.desire) || b.score - a.score);
 }
 
 /**
  * Score a REACH_PARCEL desire as `parcelReward / (distance + 1)`.
  * Falls back to 0 when the parcel can't be matched or the agent position is unknown.
- * Basic heuristic — replace this function to improve goal selection in the future.
+ * @param desire The REACH_PARCEL desire to score, containing the target parcel position.
+ * @param beliefs The agent's current beliefs, used to determine the agent's position and match the parcel.
+ * @returns A numeric score representing the desirability of reaching the parcel, where higher is better.
  */
 function scoreReachDesire(desire: ReachParcelDesire, beliefs: Beliefs): number {
     const me = beliefs.agents.getCurrentMe();
@@ -100,13 +85,20 @@ function scoreReachDesire(desire: ReachParcelDesire, beliefs: Beliefs): number {
 
     // Calculate the Manhattan distance from the agent's current position to the parcel's position
     const distance = manhattanDistance(me.lastPosition, desire.target);
-    return parcel.reward / (distance + 1);
+
+    // If we're already on the parcel, assign it an infinite score to prioritize picking it up immediately.
+    if (distance === 0) return Infinity;
+
+    // Otherwise, score based on the parcel's reward and distance
+    return parcel.reward / (distance);
 }
 
 /**
  * Score a DELIVER_PARCEL desire as `sum(carriedRewards) / (distance + 1)`.
  * Falls back to 0 when the agent position is unknown or nothing is being carried.
- * Basic heuristic — replace this function to improve goal selection in the future.
+ * @param desire The DELIVER_PARCEL desire to score, containing the target delivery tile position.
+ * @param beliefs The agent's current beliefs, used to determine the agent's position and carried parcels.
+ * @returns A numeric score representing the desirability to deliver parcels to the target tile, where higher is better.
  */
 function scoreDeliverDesire(desire: DeliverParcelDesire, beliefs: Beliefs): number {
     const me = beliefs.agents.getCurrentMe();

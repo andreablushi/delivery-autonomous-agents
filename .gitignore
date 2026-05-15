@@ -10,3 +10,4 @@ notes.txt
 CLAUDE.md
 dist/
 .claude/
+.venv/

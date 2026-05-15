@@ -39,6 +39,7 @@ export class CollisionTimer {
         return this.waitingUntil > 0 && now >= this.waitingUntil;
     }
 
+    /** Returns a random duration between minMs and maxMs. */
     private randomDuration(minMs: number, maxMs: number): number {
         if (maxMs <= minMs) return minMs;
         return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;

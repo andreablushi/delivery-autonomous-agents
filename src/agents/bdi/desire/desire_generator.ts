@@ -2,28 +2,23 @@ import type {
     GeneratedDesires,
     ExploreDesire,
     ReachParcelDesire,
-    PickupParcelDesire,
-    PutdownParcelDesire,
     DeliverParcelDesire,
 } from "../../../models/desires.js";
 import type { Beliefs } from "../belief/beliefs.js";
+import { manhattanDistance } from "../../../utils/metrics.js";
 
 /**
- * Build the full set of candidate desires from the current beliefs.
- * @param beliefs - The current beliefs of the agent
- * @returns A GeneratedDesires map keyed by desire kind; absent kinds map to an empty array.
+    * Generates desires based on the current beliefs of the agent.
+    * The desires are generated according to the following rules:
+    * - For each available parcel with a known position, generate a REACH_PARCEL desire targeting that position.
+    * - If the agent is carrying any parcels, generate a DELIVER_PARCEL desire for each delivery tile, targeting the tile's position.
+    * - If there are no available parcels, generate an EXPLORE desire for each spawn tile, targeting the tile's position.
+    * Note: crate-clearing is handled transparently by the Planner as a fallback when A* fails.
+    * @param beliefs Current beliefs of the agent, used to determine available parcels, carried parcels, and tile positions.
+    * @returns A map of desire types to arrays of generated desires, which may be empty if no desires of that type are applicable.
  */
 export function generateDesires(beliefs: Beliefs): GeneratedDesires {
-    // Initialize the desires map with empty arrays for each desire type
     const desires: GeneratedDesires = new Map();
-
-    // PICKUP_PARCEL agent is standing on a parcel
-    const pickup = generatePickupDesire(beliefs);
-    if (pickup) desires.set("PICKUP_PARCEL", [pickup]);
-
-    // PUTDOWN_PARCEL agent is at a delivery tile and carrying parcels
-    const putdown = generatePutdownDesire(beliefs);
-    if (putdown) desires.set("PUTDOWN_PARCEL", [putdown]);
 
     // REACH_PARCEL for each available parcel with a known position
     const reachParcel = generateReachParcelDesires(beliefs);
@@ -41,55 +36,11 @@ export function generateDesires(beliefs: Beliefs): GeneratedDesires {
 }
 
 /**
- * Generate a PickupParcelDesire if the agent is standing on an available parcel.
- * @param beliefs - The current beliefs of the agent
- * @returns A PickupParcelDesire, or null if the agent is not standing on an available parcel
- */
-function generatePickupDesire(beliefs: Beliefs): PickupParcelDesire | null {
-    // Get current agent position from beliefs
-    const me = beliefs.agents.getCurrentMe();
-    if (!me?.lastPosition) return null;
-    const ax = me.lastPosition.x;
-    const ay = me.lastPosition.y;
-
-    // Check if any available parcel is at the agent's current position
-    const onParcel = beliefs.parcels.getAvailableParcels().some(
-        parcel => parcel.lastPosition &&
-            Math.round(parcel.lastPosition.x) === ax &&
-            Math.round(parcel.lastPosition.y) === ay
-    );
-    return onParcel ? { type: "PICKUP_PARCEL" } : null;
-}
-
-/**
- * Generate a PutdownParcelDesire if the agent is standing on a delivery tile while carrying parcels.
- * @param beliefs - The current beliefs of the agent
- * @returns A PutdownParcelDesire, or null if the agent is not standing on a delivery tile or is not carrying any parcels
- */
-function generatePutdownDesire(beliefs: Beliefs): PutdownParcelDesire | null {
-    // Get current agent position from beliefs
-    const me = beliefs.agents.getCurrentMe();
-    if (!me?.lastPosition) return null;
-    const ax = me.lastPosition.x;
-    const ay = me.lastPosition.y;
-    
-    // Check if the agent is carrying any parcels
-    const carried = beliefs.parcels.getCarriedByAgent(me.id);
-    if (carried.length === 0) return null;
-
-    // Check if the agent is currently on a delivery tile
-    const atDelivery = beliefs.map.getDeliveryTiles().some(
-        tile => tile.x === ax && tile.y === ay);
-    return atDelivery ? { type: "PUTDOWN_PARCEL" } : null;
-}
-
-/**
- * Generate a ReachParcelDesire for each available parcel with a known position, targeting its last known location.
- * @param beliefs - The current beliefs of the agent
- * @returns A ReachParcelDesire, or null if no parcels with known positions are available
+ * Generate REACH_PARCEL desires for each available parcel with a known position.
+ * @param beliefs Current beliefs of the agent, used to determine available parcels and their positions.
+ * @returns An array of REACH_PARCEL desires, each targeting the last known position of an available parcel.
  */
 function generateReachParcelDesires(beliefs: Beliefs): ReachParcelDesire[] {
-    // For each available parcel with a known position, generate a desire to reach its last known location
     return beliefs.parcels.getAvailableParcels()
         .filter(parcel => parcel.lastPosition !== null)
         .map(parcel => ({
@@ -99,17 +50,15 @@ function generateReachParcelDesires(beliefs: Beliefs): ReachParcelDesire[] {
 }
 
 /**
- * Generate a DeliverParcelDesire for each delivery tile if the agent is currently carrying any parcels
- * @param beliefs - The current beliefs of the agent
- * @returns A DeliverParcelDesire, or null if the agent is not carrying any parcels
+ * Generate DELIVER_PARCEL desires for each delivery tile if the agent is carrying any parcels.
+ * @param beliefs Current beliefs of the agent, used to determine if the agent is carrying parcels and to get delivery tile positions.
+ * @returns An array of DELIVER_PARCEL desires, each targeting a delivery tile position, or an empty array if the agent is not carrying any parcels.
  */
 function generateDeliverDesires(beliefs: Beliefs): DeliverParcelDesire[] {
-    // If the agent is not carrying any parcels, it has no desire to deliver
     const me = beliefs.agents.getCurrentMe();
     if (!me) return [];
     if (beliefs.parcels.getCarriedByAgent(me.id).length === 0) return [];
 
-    // Otherwise, generate a desire to deliver to each delivery tile
     return beliefs.map.getDeliveryTiles().map(tile => ({
         type: "DELIVER_PARCEL" as const,
         target: { x: tile.x, y: tile.y },
@@ -117,14 +66,13 @@ function generateDeliverDesires(beliefs: Beliefs): DeliverParcelDesire[] {
 }
 
 /**
- * Generate one ExploreDesire per spawn tile.
- * @param beliefs - The current beliefs of the agent
- * @returns An array of ExploreDesires targeting each spawn tile, or an empty array if no spawn tiles are known
+ * Generate EXPLORE desires for each spawn tile as a fallback when no parcels are available.
+ * @param beliefs Current beliefs of the agent, used to get spawn tile positions.
+ * @returns An array of EXPLORE desires, each targeting a spawn tile position.
  */
 function generateExploreDesires(beliefs: Beliefs): ExploreDesire[] {
-    // For each spawn tile, generate an explore desire targeting that tile
     return beliefs.map.getSpawnTiles().map(tile => ({
-        type: "EXPLORE" as const,
-        target: { x: tile.x, y: tile.y },
-    }));
+            type: "EXPLORE" as const,
+            target: { x: tile.x, y: tile.y },
+        }));
 }

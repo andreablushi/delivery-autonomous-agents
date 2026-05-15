@@ -1,298 +1,52 @@
-import { aStar } from "../navigation/a_star.js";
 import type { Beliefs } from "../belief/beliefs.js";
-import type { GeneratedDesires } from "../../../models/desires.js";
-import type { Intention, IntentionQueue } from "../../../models/intentions.js";
-import type { Position } from "../../../models/position.js";
-import { generateDesires } from "../desire/desire_generator.js";
-import { sameDesire } from "./utils/helpers.js";
+import type { DesireType, GeneratedDesires } from "../../../models/desires.js";
+import type { IntentionQueue } from "../../../models/intentions.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
-import { posToDirection } from "../../../utils/metrics.js";
-import { CollisionManager } from "./utils/collision_manager.js";
+import { generateDesires } from "../desire/desire_generator.js";
 
 /**
- * Manages the agent's current intention: validates the plan on each sensing cycle,
- * replans via A* when needed, and exposes the next direction to execute.
+ * Manages the agent's intention queue — an ordered list of desires to pursue,
+ * rebuilt each deliberation cycle.
+ * The head of the queue is the active intention, which the executor attempts to plan and act on.
  */
 export class Intentions {
-    // Intention state
-    private currentIntention: Intention | null = null;
-    private intentionsQueue: IntentionQueue = [];
-    private beliefs!: Beliefs; //#TODO: Could create errors maybe
 
-    // Collision management state
-    private collision = new CollisionManager();
+    private intentionsQueue: IntentionQueue = [];
 
     /**
-     * Called each deliberation cycle.
-     * Validates the current plan (replans if blocked or desire changed) and recomputes via A* if needed.
-     * @param beliefs - The current beliefs of the agent.
-     * @param desires - The current desires of the agent
+     * Rebuild the intention queue from current beliefs.
+     * @param beliefs Current beliefs, used by the sorter for distance-based scoring.
      */
-    update(beliefs: Beliefs, desires: GeneratedDesires): void {
-        // If no desires, drop current intentions
+    update(beliefs: Beliefs): void {
+        const desires = generateDesires(beliefs);
+
         if (desires.size === 0) {
             this.intentionsQueue = [];
-            this.currentIntention = null;
             return;
         }
 
-        // Update desires in the intention manager
-        this.beliefs = beliefs;
         this.intentionsQueue = getIntentionQueue(desires, beliefs);
-
-        // Validate current intention
-        if (!this.validateCurrentIntention()) {
-            // Takes the first desire with a valid path as the new intention, or null if there is no valid intention
-            this.filterIntention();
-            return;
-        }
-
-        // Validate current path if there is an active intention
-        if (!this.validatePath()) {
-            // Replan the path
-            if(!this.plan()) {
-                // If replanning fails
-                this.dropCurrentIntention();
-            }
-        }
     }
 
     /**
-     * Returns the current intention's desire and path, or null if no intention is currently active.
-     * @returns The current intention, or null if no intention is currently active.
+     * Drop the head of the queue after a plan completes or is unrecoverable.
      */
-    getCurrentIntention(): Intention | null {
-        return this.currentIntention;
+    dropIntentionHead(): void {
+        this.intentionsQueue.shift();
     }
 
     /**
-     * Remove the current intention from the queue
-     * @returns void, but updates the current intention to null and removes it from the queue so it is not selected again until a new plan is generated.
+     * Returns the head intention, or null if the queue is empty.
      */
-    private dropCurrentIntention(): void {
-        if (!this.currentIntention) return;
-        this.intentionsQueue = this.intentionsQueue.filter(entry => !sameDesire(entry.desire, this.currentIntention!.desire));
-        this.currentIntention = null;
+    getIntentionHead(): IntentionQueue[0] | null {
+        return this.intentionsQueue.length > 0 ? this.intentionsQueue[0] : null;
     }
 
     /**
-     * Validates if the current intention is still valid based on the current desires and beliefs.
-     * @returns true if the current intention is still valid, false otherwise.
+     * Returns true if `desire` is present in the current intention queue (by reference).
+     * @param desire The desire to search for.
      */
-    private validateCurrentIntention(): boolean {
-        // If there is no current intention, it's not valid
-        if (!this.currentIntention) return false;
-
-        // Check if the desire of the current intention is still the top desire
-        const topDesire = this.intentionsQueue[0]?.desire;
-        if (!topDesire) return false;
-        return sameDesire(topDesire, this.currentIntention.desire);
-    }
-
-    /**
-     * Selects the first desire (in priority order) that has a reachable path.
-     * @returns void, but updates the current intention to the selected desire and its path, or null if no valid intention is found.
-     */
-    private filterIntention(): void {
-        // Loop through desires in priority order until we find one with a valid path
-        for (const { desire } of this.intentionsQueue) {
-
-            // Immediate desires don't need pathfinding
-            if (desire.type === 'PICKUP_PARCEL' || desire.type === 'PUTDOWN_PARCEL') {
-                this.currentIntention = { desire, path: [] };
-                return;
-            }
-
-            // For navigation desires, set the intention and try to plan a path
-            this.currentIntention = { desire, path: [] };
-
-            // If the desire has a target, we need to validate that it's reachable via a path
-            if(this.plan() === true) {
-                return;
-            }
-        }
-
-        // If we exhaust all desires without finding a valid path, we set the current intention to null to indicate we have no valid intention at the moment
-        this.currentIntention = null;
-    }
-
-    /**
-     * Validates if the current path is still valid (not blocked) based on the current beliefs.
-     * Checks every consecutive step in the path, not just the first.
-     * @returns true if the current path is still valid, false otherwise.
-     */
-    private validatePath(): boolean {
-        // If there is no current intention or path, it's not valid
-        if (!this.currentIntention) return false;
-        // If the desire doesn't have a target, we consider it valid (e.g. pickup/putdown)
-        if (!('target' in this.currentIntention.desire)) return true;
-        // If the path is empty, we consider it invalid as we have a target but no path to it
-        if (this.currentIntention.path.length === 0) return false;
-
-        // Retrieve the current position from beliefs
-        const me = this.beliefs.agents.getCurrentMe();
-        if (!me?.lastPosition) return false;
-
-        // Check if the path is still walkable according to beliefs
-        let currentPos = me.lastPosition;
-        for (const nextPos of this.currentIntention.path) {
-            if (!this.beliefs.map.isWalkable(currentPos, nextPos)) {
-                return false;
-            }
-            currentPos = nextPos;
-        }
-
-        // The current path is still valid
-        return true;
-    }
-
-    /**
-     * Computes a path for the current intention via A*, treating an optional position as temporarily blocked.
-     * Drops the intention if no path is found.
-     * @returns true if a valid path was found and set for the current intention, false if no path could be found.
-     */
-    private plan(): boolean {
-        // If there is no current intention or the desire doesn't have a target, we cannot plan a path
-        if (!this.currentIntention) return false;
-        if (!('target' in this.currentIntention.desire)) return false;
-
-        // Get current position from beliefs
-        const me = this.beliefs.agents.getCurrentMe();
-        if (!me?.lastPosition) return false;
-
-        // Compute a path from the current position
-        const path = aStar(me.lastPosition, this.currentIntention.desire.target, (from, to) => {
-            return this.beliefs.map.isWalkable(from, to);
-        });
-
-        // If no path is found
-        if (!path || path.length === 0) {
-            return false;
-        }
-
-        // Update the current intention's path
-        this.currentIntention.path = path;
-        return true;
-    }
-
-    /**
-     * Marks a tile as blocked in beliefs, resets collision state, and immediately replans.
-     * Used as the single commit point for all blocking escalation paths to keep them consistent.
-     * @param tile The position of the tile to mark as blocked.
-     * @param ttl How long the tile should be considered blocked, in milliseconds.
-     */
-    private commitBlocked(tile: Position, ttl: number): void {
-        this.beliefs.map.markBlocked(tile, ttl);
-        this.collision.reset();
-        // After marking the tile as blocked, we should drop the current intention and replan
-        this.update(this.beliefs, generateDesires(this.beliefs));
-    }
-
-    /**
-     * Attempts to reroute around a blocked tile. If a detour within the configured
-     * detour-steps threshold is found, commits the block and replans the path.
-     * @param blockedTile The position of the tile that is currently blocked and we want to bypass.
-     * @return true if a detour was applied, false if no acceptable detour exists.
-     */
-    private tryDetour(blockedTile: Position): boolean {
-        // If there is no current intention or the desire doesn't have a target, we cannot compute a detour path
-        if (!this.currentIntention) return false;
-        if (!('target' in this.currentIntention.desire)) return false;
-
-        // Get current position from beliefs
-        const me = this.beliefs.agents.getCurrentMe();
-        if (!me?.lastPosition) return false;
-
-        // Compute a path from the current position to the target, treating the blocked tile as unwalkable
-        const path = aStar(me.lastPosition, this.currentIntention.desire.target, (from, to) => {
-            if (to.x === blockedTile.x && to.y === blockedTile.y) return false;
-            return this.beliefs.map.isWalkable(from, to);
-        });
-
-        // If no path is found, return null
-        if(!path || path.length === 0) {
-            return false;
-        }
-
-        // If a path is found, we compare its length to the original path length to decide whether to detour or wait
-        if (path.length > this.currentIntention.path.length + this.collision.detourThresholdSteps) {
-            return false;
-        }
-
-        // The detour path is within the acceptable threshold, so we choose to detour
-        this.commitBlocked(blockedTile, this.collision.detourCommitTtl);
-        return true;
-    }
-
-    /**
-     * Returns the next direction to move and advances the path.
-     * @param from - The current position of the agent, used to compute the direction to the next step.
-     * @param beliefs - The current beliefs of the agent, used to refresh the intention queue after shifting the path.
-     * @returns The next direction to move ('up', 'down', 'left', 'right'), 'wait' if execution should pause, or null if no intention or path is available.
-     */
-    getNextAction(from: Position, beliefs: Beliefs): string | null {
-        // If there is no current intention, we cannot return a next action
-        if (!this.currentIntention) return null;
-
-        // Handle action desires (pickup/putdown) immediately without pathfinding
-        if (this.currentIntention.desire.type === 'PICKUP_PARCEL') return 'pickup';
-        if (this.currentIntention.desire.type === 'PUTDOWN_PARCEL') return 'putdown';
-
-        // If it's a navigation desire, check there is a path
-        if (this.currentIntention.path.length === 0) return null;
-        const nextStep = this.currentIntention.path[0];
-        // Ensure the path is still valid before trying to get the next action
-        const walkable = (curr: Position, next: Position) => beliefs.map.isWalkable(curr, next);
-        if (beliefs.agents.isNextBlockedByAgents(nextStep, walkable)) {
-            const blockedTile = nextStep;
-            if (this.tryDetour(blockedTile)) {
-                // commitBlocked replanned the path, so path[0] is now the first step of the detour
-                return posToDirection(from, this.currentIntention.path[0]);
-            }
-            const decision = this.collision.onPreDetection(blockedTile);
-            if (decision.kind === 'block') this.commitBlocked(blockedTile, decision.ttl);
-            return 'wait';
-        }
-        // Compute the direction to the next step
-        const direction = posToDirection(from, nextStep);
-
-        return direction;
-    }
-
-    /**
-     * Advances the path by one step, effectively marking the next step as completed.
-     * Afterwards, refreshes the queue from the updated beliefs so execution can continue without waiting for sensing.
-     * @param beliefs The current beliefs of the agent, used to refresh the intention queue after shifting the path.
-     */
-    shiftPath(): void {
-        this.collision.reset();
-        if (this.currentIntention && this.currentIntention.path.length > 0) {
-            this.currentIntention.path.shift();
-        }
-        if (!this.currentIntention || this.currentIntention.path.length === 0) {
-            this.currentIntention = null;
-        }
-        // Refresh the queue from the updated beliefs so we can continue executing the next step
-        this.update(this.beliefs, generateDesires(this.beliefs));
-    }
-
-    /**
-     * Invalidates the current path by marking the next step as temporarily blocked in beliefs and dropping the current intention.
-     * @param beliefs The current beliefs of the agent, used to mark the next step as temporarily blocked.
-     * Failed immediate actions are removed from the in-memory queue to avoid repeating a penalizing action until sensing refreshes beliefs.
-     */
-    invalidatePath(): void {
-        const failedIntention = this.currentIntention;
-
-        // If the failed intention has a path, we consider the first step in the path as the blocked tile that caused the failure
-        if (failedIntention && failedIntention.path.length > 0) {
-            const blockedTile = failedIntention.path[0];
-            const decision = this.collision.onMoveFailure(blockedTile);
-            if (decision.kind === 'block') this.commitBlocked(blockedTile, decision.ttl);
-            return;
-        }
-
-        // Otherwise, if the failed intention doesn't have a path (e.g. it's an immediate action like pickup/putdown), we simply drop it from the queue to avoid repeating it until sensing refreshes beliefs
-        this.currentIntention = null;
+    hasIntention(desire: DesireType): boolean {
+        return this.intentionsQueue.some((intention) => intention.desire === desire);
     }
 }

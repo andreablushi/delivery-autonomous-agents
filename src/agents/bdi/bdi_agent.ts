@@ -3,116 +3,87 @@ import { Beliefs } from "./belief/beliefs.js";
 import { generateDesires } from "./desire/desire_generator.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
+import { Planner } from "./plan/planner.js";
 
 /**
- * BDI Agent Implementation
+ * BDI Agent — orchestrates the perceive → deliberate → execute cycle.
  *
- * This class represents a Belief-Desire-Intention (BDI) agent that connects to a Deliveroo.js server using Socket.IO.
+ * Deliberation is event-driven: each `sensing` event triggers one cycle.
+ * PDDL solver results are picked up on the next cycle after the async request resolves.
  */
 export class BDIAgent {
     private socket: any;
     private debug: boolean;
     private beliefs: Beliefs;
+    private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
 
-    /**
-     * @param socket - The socket connection to the Deliveroo.js server.
-     * @param debug - Set to true to enable debug logging (dev mode).
-     */
     constructor(socket: any, debug = false) {
         this.socket = socket;
         this.debug = debug;
         this.beliefs = new Beliefs();
         this.intentions = new Intentions();
-        this.executor = new Executor(socket, this.beliefs, this.intentions, debug);
+        this.planner = new Planner(this.intentions, this.beliefs, debug);
+        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, debug);
 
-        // Initialize the agent info in the beliefs once the connection is established
-        this.socket.once('you', (info : IOAgent) => {
-            this.beliefs.agents.updateMe(info);
-        });
-
-        // Set game configuration in beliefs once received
-        this.socket.on('config', (config : IOConfig) => {
+        this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);
-
-            // If config change causes observation distance change, we need to recompute cluster weights for the map beliefs
-            const obsDist = this.beliefs.agents.getObservationDistance();                                                                                                                                                         
-            if (obsDist !== null) this.beliefs.map.computeClusterWeights(obsDist);                                                                                                                                                
+            const obsDist = this.beliefs.agents.getObservationDistance();
+            if (obsDist !== null) this.beliefs.map.computeClusterWeights(obsDist);
         });
 
-        // Running it makes it move every time it receives a sensing event, it works like a while loop
         this.perceive();
     }
 
     /**
-     * Perceive method listens for various events from the server to update the agent's beliefs about itself, the map, and its surroundings.
+     * Register socket listeners that update beliefs and drive the deliberation cycle.
+     * Each sensing event is one deliberation tick.
      */
     perceive() {
-        // Listen for updates about the agent's own status (score, penalty, position)
-        this.socket.on('you', (me : IOAgent) => {
+        // Agent's own position and score — fires on every successful move
+        this.socket.on('you', (me: IOAgent) => {
             this.beliefs.agents.updateMe(me);
             if (this.debug) console.log("[PERCEIVE] Me status updated — pos: [", me.x, ", ", me.y, "]| score:", me.score, "]");
         });
 
-        // Set map information in beliefs once received. These are only sent once!
+        // Static map — sent once at connection
         this.socket.once('map', (width: number, height: number, tiles: IOTile[]) => {
-            //NOTE: currently the server for an NxM map sends width=N-1 and height=M-1, so we add 1 to both to get the correct dimensions.
-            // This is a temporary workaround until the server is fixed to send the correct dimensions.
-            this.beliefs.map.updateMap(width +1, height +1, tiles);
-
-            // Compute cluster weights for spawn tiles now that we have the map and observation distance (if already received in config)
+            // Server reports N-1 / M-1 for an NxM map — add 1 to both dimensions.
+            this.beliefs.map.updateMap(width + 1, height + 1, tiles);
             const obsDist = this.beliefs.agents.getObservationDistance();
             if (obsDist !== null) this.beliefs.map.computeClusterWeights(obsDist);
-            
             if (this.debug) console.log("[PERCEIVE] Map info received — width:", width, "| height:", height, "| tiles:", tiles.length);
         });
 
-        // Listen for sensing events
-        this.socket.on('sensing', (sensing : IOSensing) => {
-            // Update beliefs about other agents based on the sensing event data
+        // Periodic sensing — agents, parcels, crates; this is the main deliberation trigger
+        this.socket.on('sensing', (sensing: IOSensing) => {
             this.beliefs.agents.updateOtherAgents(sensing.agents, sensing.positions);
-
-            // Update beliefs about parcels based on the sensing event data
             this.beliefs.parcels.updateParcels(sensing.parcels, sensing.positions);
-
-            // Update beliefs about crates based on the sensing event data
             this.beliefs.map.updateCrates(sensing.crates, sensing.positions);
-
-            // Record sensing times for all spawn tiles currently in sensor range
             this.beliefs.map.updateSpawnTilesSensingTimes(sensing.positions, Date.now());
-            
-            if (this.debug) console.log(
-                "[PERCEIVE] Sensing update — agents:", sensing.agents.length,
-                "| parcels:", sensing.parcels.length,
-                "| crates:", sensing.crates.length
-            );
 
             if (this.debug) {
+                console.log("[PERCEIVE] Sensing update — agents:", sensing.agents.length,
+                    "| parcels:", sensing.parcels.length, "| crates:", sensing.crates.length);
                 console.log("[PERCEIVE] Current beliefs state:");
                 console.log("  - Friends:", this.beliefs.agents.getCurrentFriends().length, "agents");
                 console.log("  - Enemies:", this.beliefs.agents.getCurrentEnemies().length, "agents");
                 console.log("  - Parcels:", this.beliefs.parcels.getCurrentParcels().length, "parcels");
                 console.log("  - Crates:", this.beliefs.map.getCurrentCrates().length, "crates");
             }
+
             this.deliberate();
         });
     }
 
     /**
-     * Deliberate method processes the current beliefs to form desires and intentions.
-     * On each sensing cycle: validate the current plan, replan if needed, then execute one step.
+     * One deliberation cycle: rebuild desires → update intention queue → plan → execute one step.
      */
-    deliberate() {
-        // Generate desires based on the current beliefs
-        const desires = generateDesires(this.beliefs);
-        if (this.debug) console.log("[DELIBERATE] Desires:", desires);
+    deliberate(): void {
+        this.intentions.update(this.beliefs);
+        if (this.debug) console.log("[DELIBERATE] Intention selected:", this.intentions.getIntentionHead());
 
-        // Update intentions based on the new desires and current beliefs
-        this.intentions.update(this.beliefs, desires);
-        if (this.debug) console.log("[DELIBERATE] Current intention:", this.intentions.getCurrentIntention());  
-        
-        // Start executing the current intention if not already doing so
         this.executor.start();
     }
 }

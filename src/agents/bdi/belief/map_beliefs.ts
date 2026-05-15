@@ -4,6 +4,7 @@ import type { Position } from "../../../models/position.js";
 import type { IOTile, IOCrate } from "../../../models/djs.js";
 import { TILE_TYPE, type TileType } from "../../../models/tile_type.js";
 import { Tracker } from "./utils/tracker.js";
+import { computeSafeTiles } from "./utils/reachability.js";
 import { manhattanDistance, posKey } from "../../../utils/metrics.js";
 
 /**
@@ -13,11 +14,12 @@ export class MapBeliefs {
     private map: GameMap | null = null;              // Static map layout, set once at the start of the game
     private spawnTiles: Tile[] = [];                 // Precomputed on updateMap; map is static so this never changes
     private deliveryTiles: Tile[] = [];              // Precomputed on updateMap; map is static so this never changes
+    private crateSpaceTiles: Tile[] = [];            // Precomputed list of all tiles that can hold crates, used for PDDL problem generation
     
     private crates = new Tracker<Crate>();                           // Latest-only store; eviction is handled by MapBeliefs.evict()
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
-    private temporaryBlocked = new Map<string, number>();             // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
+    private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
   
     /**
      * Initialize map beliefs from the given map info.
@@ -37,17 +39,88 @@ export class MapBeliefs {
         for (const t of normalizedTiles) {
             matrix[t.y][t.x] = t.type;
         }
-        this.map = { width, height, tiles: matrix };
 
-        // Precompute static tile lists — map never changes after this point
-        this.spawnTiles = normalizedTiles
+        // Seal off conveyor sinks and dead zones: only tiles in SCCs that contain BOTH a
+        // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
+        // is treated as a wall for pathfinding purposes.
+        const deliveryPositions = normalizedTiles
+            .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
+            .map(t => ({ x: t.x, y: t.y }));
+        const spawnPositions = normalizedTiles
             .filter(t => t.type === TILE_TYPE.SPAWN_POINT)
+            .map(t => ({ x: t.x, y: t.y }));
+        const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions);
+        
+        // Any tile which is not safe can be treated as a wall
+        let sealed = 0;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (matrix[y][x] !== TILE_TYPE.WALL && !safeKeys.has(posKey({ x, y }))) {
+                    matrix[y][x] = TILE_TYPE.WALL;
+                    sealed++;
+                }
+            }
+        }
+        console.log(`[MAP] Sealed ${sealed} sink tiles`);
+        this.map = { width, height, tiles: matrix };
+        this.logMap();
+
+        // Precompute static tile lists — map never changes after this point.
+        // Filter spawn / crate-space tiles through the safe set so callers never see sealed tiles.
+        this.spawnTiles = normalizedTiles
+            .filter(t => t.type === TILE_TYPE.SPAWN_POINT && safeKeys.has(posKey(t)))
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
         this.deliveryTiles = normalizedTiles
             .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
+        this.crateSpaceTiles = normalizedTiles
+            .filter(t => (t.type === TILE_TYPE.CRATE_SPACE || t.type === TILE_TYPE.CRATE_OCCUPIED) && safeKeys.has(posKey(t)))
+            .map(t => ({ x: t.x, y: t.y, type: t.type }));
     }
 
+
+    /**
+     * Log the current map layout to the console with y=0 at the bottom, matching the
+     * coordinate system used in the game.
+     * Symbols: W=wall, .=floor, S=spawn, D=delivery, C=crate space, <>^v=conveyors, ?=unknown.
+     */
+    logMap(): void {
+        if (!this.map) {
+            console.log('[MAP] map not initialized');
+            return;
+        }
+        const { tiles, width, height } = this.map;
+        const symbol = (t: TileType): string => {
+            switch (t) {
+                case TILE_TYPE.WALL: return ' ';
+                case TILE_TYPE.FLOOR: return '.';
+                case TILE_TYPE.SPAWN_POINT: return 'S';
+                case TILE_TYPE.DELIVERY_POINT: return 'D';
+                case TILE_TYPE.CRATE_SPACE:
+                case TILE_TYPE.CRATE_OCCUPIED: return 'C';
+                case TILE_TYPE.CONVEYOR_LEFT: return '<';
+                case TILE_TYPE.CONVEYOR_RIGHT: return '>';
+                case TILE_TYPE.CONVEYOR_UP: return '^';
+                case TILE_TYPE.CONVEYOR_DOWN: return 'v';
+                default: return '?';
+            }
+        };
+        const rows = tiles.map(row => row.map(symbol).join(' ')).reverse();
+        console.log(
+            `[MAP] ${width}x${height} layout (W=wall, .=floor, S=spawn, D=delivery, C=crate, <>^v=conveyors), y=0 at bottom:\n` +
+            rows.join('\n')
+        );
+    }
+
+    /**
+     * Width and height of the loaded map, or null if the map has not been received yet.
+     * @return An object with width and height properties, or null if map not loaded
+     */
+    getMapSize(): { width: number; height: number } | null {
+        if (!this.map) return null;
+        return { width: this.map.width, height: this.map.height };
+    }
+    
     /**
      * Retrieve the tile at a given position, or null if the position is out of bounds or the map is not yet initialized.
      * @param position The position to query for the tile.
@@ -76,7 +149,10 @@ export class MapBeliefs {
         // If there's no tile (out of bounds) or it's a wall, it's not walkable
         if (tile === null || tile.type === TILE_TYPE.WALL) return false;
 
-        // If it's temporary blocked (e.g. occupied by another agent or crate), it's not walkable
+        // If a crate is currently at this position, it's not walkable
+        if (this.isCrateAt(to)) return false;
+
+        // If it's temporary blocked (e.g. occupied by another agent), it's not walkable
         if (this.isBlocked(to)) return false;
 
         // Conveyors block entry only from the direction that opposes their push.
@@ -88,8 +164,6 @@ export class MapBeliefs {
             case TILE_TYPE.CONVEYOR_UP:    return dy !== -1;  // blocked if moving down  (dy-1 against up)
             case TILE_TYPE.CONVEYOR_DOWN:  return dy !== 1;   // blocked if moving up    (dy+1 against down)
         }
-
-
 
         // Otherwise, it's walkable
         return true;
@@ -164,6 +238,15 @@ export class MapBeliefs {
     }
 
     /**
+     * All tiles that can hold crates, regardless of occupancy.
+     * Used for PDDL problem generation.
+     * @return An array of crate space tiles
+     */
+    getCrateSpaceTiles(): Tile[] {
+        return this.crateSpaceTiles;
+    }
+
+    /**
      * Update crate beliefs with the latest observed crates.
      * @param crates Array of crates from the server, converted to internal Crates type and stored in memory.
      * @param sensedPositions Array of positions that are currently sensed.
@@ -209,26 +292,13 @@ export class MapBeliefs {
     }
 
     /**
-     * Possible tile positions a crate can move into, based on adjacent free crate spaces.
-     * @param crate The crate to query.
-     * @returns Array of positions the crate can legally move to.
+     * Check if any known crate is currently believed to be at the given position.
+     * @param pos The position to check for crate presence.
+     * @returns True if a crate is believed to be at the position, false otherwise.
      */
-    getCratePossibleMoves(crate: Crate): Position[] {
-        if (!this.map || !crate.lastPosition) return [];
-        // Define the four adjacent positions around the crate
-        const { x, y } = crate.lastPosition;
-        const neighbours: Position[] = [
-            { x: x - 1, y },
-            { x: x + 1, y },
-            { x, y: y - 1 },
-            { x, y: y + 1 },
-        ];
-        // Filter the adjacent positions to only include those that are valid crate spaces (i.e. not walls or occupied by other crates)
-        return neighbours.filter(pos => {
-            const { x: nx, y: ny } = pos;
-            if (ny < 0 || ny >= this.map!.height || nx < 0 || nx >= this.map!.width) return false;
-            return this.map!.tiles[ny][nx] === TILE_TYPE.CRATE_SPACE;
-        });
+    isCrateAt(pos: Position): boolean {
+        return this.crates.getCurrentAll().some(
+            c => c.lastPosition?.x === pos.x && c.lastPosition?.y === pos.y
+        );
     }
-
 }

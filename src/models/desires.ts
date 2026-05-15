@@ -1,7 +1,7 @@
 /**
- * Desire types for BDI agent. 
- * Defines the structure of different desires that the agent can have based on its beliefs about the environment.
- * Each desire type corresponds to a specific goal or action the agent may want to pursue.
+ * Desire types for the BDI agent.
+ * Pickup/putdown actions are no longer separate desires: they are appended as
+ * terminal PlanSteps on REACH_PARCEL / DELIVER_PARCEL plans by the Planner.
  */
 
 import type { Position } from "./position.js";
@@ -16,24 +16,15 @@ export type ReachParcelDesire = {
     target: Position;       // Last known position of the target parcel
 };
 
-export type PickupParcelDesire = {
-    type: "PICKUP_PARCEL";  // The agent wants to pick up a parcel it is currently standing on
-};
-
 export type DeliverParcelDesire = {
     type: "DELIVER_PARCEL"; // The agent wants to navigate to the nearest delivery tile
     target: Position;       // Nearest delivery tile position
 };
 
-export type PutdownParcelDesire = {
-    type: "PUTDOWN_PARCEL"; // The agent wants to put down parcels it is currently standing on a delivery tile
-};
-
-// Desires that require navigation and always have a `target` position
+// All desires require navigation and always have a `target` position
 export type NavigationDesire = ExploreDesire | ReachParcelDesire | DeliverParcelDesire;
 
-// Union type for all possible desires that the agent can have based on its beliefs
-export type DesireType = NavigationDesire | PickupParcelDesire | PutdownParcelDesire;
+export type DesireType = NavigationDesire;
 
 // Grouped map for easier access to desires by type
 export type GeneratedDesires = Map<DesireType["type"], DesireType[]>;
