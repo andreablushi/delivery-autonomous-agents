@@ -53,10 +53,16 @@ Then, install the project dependencies:
 npm install
 ```
 
-## Local PDDL Solver Setup
+## PDDL Solver Setup
 
-The BDI agent uses a local PDDL solver (dual-bfws via planutils) for crate-clearing plans.
-This requires Singularity CE and planutils installed in a Python virtual environment.
+The BDI agent uses a PDDL solver for crate-clearing plans. Two modes are available, selected at startup by the `PAAS_HOST` environment variable:
+
+- **`PAAS_HOST` unset** → local solver (default). Requires planutils installed locally.
+- **`PAAS_HOST` set** → online solver via `@unitn-asa/pddl-client`. No local install needed.
+
+### Option A — Local Solver
+
+Requires Singularity CE and planutils installed in a Python virtual environment.
 
 **1. Install Singularity CE** (system-level, required by planutils to run planner containers):
 
@@ -81,7 +87,17 @@ planutils install dual-bfws-ffparser
 
 `planutils setup` writes wrapper scripts to `~/.planutils/bin/` and the Singularity image is stored in `~/.planutils/` — both outside the venv, so they persist without it being active.
 
-**3. Run the agent** — it's mandatory to do `planutils activate` before running the agent. The solver resolves `~/.planutils/bin/dual-bfws-ffparser` directly.
+**3. Run the agent** — run `planutils activate` before starting. The solver resolves `~/.planutils/bin/dual-bfws-ffparser` directly.
+
+### Option B — Online Solver
+
+Set `PAAS_HOST` in your `.env` to the solver endpoint. No planutils or Singularity CE install needed:
+
+```env
+PAAS_HOST=https://solver.planning.domains:5001
+```
+
+The agent will use the unitn online solver (`@unitn-asa/pddl-client`) on startup. You can also point `PAAS_HOST` at a self-hosted instance of the planning service.
 
 ## Debug Logging
 

@@ -55,7 +55,7 @@ export class MapBeliefs {
         const spawnPositions = normalizedTiles
             .filter(t => t.type === TILE_TYPE.SPAWN_POINT)
             .map(t => ({ x: t.x, y: t.y }));
-        const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions);
+        const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions, MapBeliefs.isStaticWalkable);
         
         // Any tile which is not safe can be treated as a wall
         let sealed = 0;
@@ -126,6 +126,13 @@ export class MapBeliefs {
         if (!this.map) return null;
         return { width: this.map.width, height: this.map.height };
     }
+
+    /*
+    * The full map object, or null if the map has not been received yet.
+    */
+    getMap(): GameMap | null {
+        return this.map;
+    }
     
     /**
      * Retrieve the tile at a given position, or null if the position is out of bounds or the map is not yet initialized.
@@ -174,7 +181,37 @@ export class MapBeliefs {
         // Otherwise, it's walkable
         return true;
     }
+
+    /**
+     * Walkability rule applied directly to a tile matrix, mirroring `MapBeliefs.isWalkable`
+     * but using only static tile types and ignoring dynamic beliefs about crates and temporary blockers.
+     * @param matrix Tile type matrix indexed as `matrix[y][x]`.
+     * @param width Map width for bounds checking.
+     * @param height Map height for bounds checking.
+     * @param from The position from which the agent is trying to move.
+     * @param to The position the agent is trying to move to.
+     * @returns True if the position is walkable based on static tile types, false otherwise.
+     */
+    static isStaticWalkable(matrix: TileType[][], width: number, height: number, from: Position, to: Position): boolean {
+        if (to.x < 0 || to.x >= width || to.y < 0 || to.y >= height) return false;
     
+        const toType = matrix[to.y][to.x];
+        if (toType === TILE_TYPE.WALL) return false;
+    
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+    
+        // If the target tile is directional one, we cannot walk onto it from
+        // the direction opposite to its defined movement direction
+        if (toType === TILE_TYPE.CONVEYOR_UP && dy === -1) return false;
+        if (toType === TILE_TYPE.CONVEYOR_DOWN && dy === 1) return false;
+        if (toType === TILE_TYPE.CONVEYOR_LEFT && dx === 1) return false;
+        if (toType === TILE_TYPE.CONVEYOR_RIGHT && dx === -1) return false;
+    
+        return true;
+    }
+
+
     /**
      * All parcel spawn tiles.
      * @return An array of spawn tiles

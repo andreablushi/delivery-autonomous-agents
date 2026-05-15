@@ -1,4 +1,5 @@
 import type { Position } from "../../../models/position.js";
+import type { Parcel } from "../../../models/parcel.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Planner } from "../plan/planner.js";
 import type { Intentions } from "../intention/intentions.js";
@@ -27,13 +28,23 @@ export class Executor {
 
     /**
      * Pick up the parcel at the given position and update beliefs on success.
+     * Uses ack IDs (not position) so belief updates survive the race where a sensing
+     * event nulls the parcel's lastPosition while awaiting the ack.
      * @returns true if the pickup succeeded.
      */
-    private async handlePickup(pos: Position): Promise<boolean> {
-        const ack = await this.socket.emitPickup() as Array<{ id?: string; parcelId?: string }> | null;
+    private async handlePickup(pos: Position, agentId: string): Promise<boolean> {
+        const ack = await this.socket.emitPickup() as Array<{ id?: string }> | null;
         if (ack === null) return false;
-        const parcel = this.beliefs.parcels.getParcelAt(pos);
-        if (parcel) this.beliefs.parcels.markPickup(parcel);
+        for (const { id } of ack) {
+            if (!id) continue;
+            // Update beliefs with the new parcel info
+            const existing = this.beliefs.parcels.getCurrentParcels().find(p => p.id === id);
+            // If the parcel is already in beliefs, update its position and carrier
+            const parcel: Parcel = existing
+                ? { ...existing, lastPosition: pos, carriedBy: agentId }
+                : { id, lastPosition: pos, carriedBy: agentId, reward: 1 };
+            this.beliefs.parcels.markPickup(parcel);
+        }
         return true;
     }
 
@@ -67,7 +78,7 @@ export class Executor {
         const me = this.beliefs.agents.getCurrentMe();
         if (!me?.lastPosition) return false;
         const currentPosition = me.lastPosition;
-        const plan = this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
+        const plan = await this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
         if (!plan) {
             // Refresh so the next executor tick gets a rebuilt queue without waiting for a sensing event.
             this.intentions.update(this.beliefs);
@@ -89,7 +100,7 @@ export class Executor {
         this.log.debug("Step:", step);
 
         let succeeded: boolean;
-        if (step.kind === "pickup") succeeded = await this.handlePickup(currentPosition);
+        if (step.kind === "pickup") succeeded = await this.handlePickup(currentPosition, me.id);
         else if (step.kind === "putdown") succeeded = await this.handlePutdown(me.id);
         else succeeded = await this.handleMove(step.direction);
 
@@ -98,7 +109,7 @@ export class Executor {
             this.planner.advance();
             // Rebuild desires immediately so the next plan() call sees fresh belief state.
             this.intentions.update(this.beliefs);
-            this.planner.plan();
+            await this.planner.plan();
         } else {
             this.log.debug("Step failed, invalidating plan.");
             this.planner.invalidate();

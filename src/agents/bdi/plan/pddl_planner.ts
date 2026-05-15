@@ -6,8 +6,9 @@ import type { NavigationDesire } from "../../../models/desires.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
-import { parsePddlPlan, parsePlanString } from "./pddl/response_parser.js";
-import { localSolver } from "./pddl/solver.js";
+import { parsePddlPlan } from "./pddl/response_parser.js";
+import { selectSolver } from "./pddl/solver.js";
+import type { PddlPlanStep } from "./pddl/response_parser.js";
 import { TERMINAL_STEP } from "./astar_planner.js";
 import { CollisionTimer } from "./collision/collision_timer.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
@@ -21,6 +22,7 @@ const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", 
  */
 export class PddlPlanner {
     private readonly domain: string;
+    private readonly solve: (domain: string, problem: string) => Promise<PddlPlanStep[]>;
     private readonly timer = new CollisionTimer();
     private readonly log: Logger;
     private invalidationCount = 0;
@@ -36,25 +38,26 @@ export class PddlPlanner {
     ) {
         this.log = createLogger("pddl", agentId);
         this.domain = readFileSync(CRATE_DOMAIN_PATH, "utf8");
+        this.solve = selectSolver(debug);
     }
 
     /**
      * Generate a plan from `from` to `intention.target` via PDDL, pushing any blocking crates.
-     * Builds the PDDL problem, runs the local solver synchronously, parses the full path, and
-     * appends a terminal step (pickup/putdown) for desires that require one on arrival.
+     * Builds the PDDL problem, runs the solver (local or online based on PAAS_HOST), parses the
+     * full path, and appends a terminal step (pickup/putdown) for desires that require one on arrival.
      * @param from The agent's current position.
      * @param intention The navigation desire to plan for.
      * @param crateIds IDs of crates detected as blocking the direct path (used for logging only).
      * @returns A complete Plan, or null if the solver returns no valid solution.
      */
-    plan(from: Position, intention: NavigationDesire, crateIds: string[]): Plan | null {
+    async plan(from: Position, intention: NavigationDesire, crateIds: string[]): Promise<Plan | null> {
         this.log.debug(`Planning for ${intention.type} via ${crateIds.length} crate(s): [${crateIds.join(", ")}]`);
+
 
         const problem = buildProblem(intention.target, this.beliefs);
         if (!problem) return null;
 
-        const rawOutput = localSolver(this.domain, problem, this.log);
-        const steps = parsePddlPlan(parsePlanString(rawOutput), this.log);
+        const steps = parsePddlPlan(await this.solve(this.domain, problem));
         if (steps.length === 0) {
             this.log.debug("Solver returned no steps");
             return null;

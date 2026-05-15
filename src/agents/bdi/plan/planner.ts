@@ -38,13 +38,13 @@ export class Planner {
      * Return the active plan, reusing it if still valid, or searching for a new one.
      * Returns null when the intention queue is empty or no intention can be planned this cycle.
      */
-    plan(): Plan | null {
+    async plan(): Promise<Plan | null> {
         const from = this.beliefs.agents.getCurrentMe()?.lastPosition;
         if (!from) return null;
 
         if (this.canReuse(from)) return this.currentPlan;
 
-        this.currentPlan = this.findPlannableIntention(from);
+        this.currentPlan = await this.findPlannableIntention(from);
         return this.currentPlan;
     }
 
@@ -95,7 +95,7 @@ export class Planner {
      * Desires that cannot be planned are dropped; they will reappear on the next
      * `intentions.update()` call since navigation desires are regenerated from beliefs each cycle.
      */
-    private findPlannableIntention(from: Position): Plan | null {
+    private async findPlannableIntention(from: Position): Promise<Plan | null> {
         for (let head = this.intentionManager.getIntentionHead(); head; head = this.intentionManager.getIntentionHead()) {
             const desire = head.desire;
 
@@ -110,7 +110,7 @@ export class Planner {
             const crateIds = detectCrateBlock(this.beliefs, from, desire);
             if (crateIds) {
                 this.log.debug(`Crate block on ${desire.type} — falling back to PDDL`);
-                const pddlPlan = this.pddlPlanner.plan(from, desire, crateIds);
+                const pddlPlan = await this.pddlPlanner.plan(from, desire, crateIds);
                 if (pddlPlan) return pddlPlan;
                 this.log.debug(`PDDL failed for ${desire.type} — dropping desire`);
             } else {

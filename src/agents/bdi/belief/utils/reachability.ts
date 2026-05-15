@@ -1,36 +1,8 @@
 import type { Position } from "../../../../models/position.js";
 import { TILE_TYPE, type TileType } from "../../../../models/tile_type.js";
-import { posKey } from "../../../../utils/metrics.js";
+import { posKey, NEIGHBOURS } from "../../../../utils/metrics.js";
 
-/**
- * Walkability rule applied directly to a tile matrix, mirroring `MapBeliefs.isWalkable`
- * but using only static tile types — no crates, no temporary blocks.
- */
-function staticWalkable(matrix: TileType[][], width: number, height: number, from: Position, to: Position): boolean {
-    if (to.x < 0 || to.x >= width || to.y < 0 || to.y >= height) return false;
-
-    const toType = matrix[to.y][to.x];
-    if (toType === TILE_TYPE.WALL) return false;
-
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-
-    // If the target tile is directional one, we cannot walk onto it from
-    // the direction opposite to its defined movement direction
-    if (toType === TILE_TYPE.CONVEYOR_UP && dy === -1) return false;
-    if (toType === TILE_TYPE.CONVEYOR_DOWN && dy === 1) return false;
-    if (toType === TILE_TYPE.CONVEYOR_LEFT && dx === 1) return false;
-    if (toType === TILE_TYPE.CONVEYOR_RIGHT && dx === -1) return false;
-
-    return true;
-}
-
-const NEIGHBOUR_DELTAS: ReadonlyArray<Position> = [
-    { x:  1, y: 0 },
-    { x: -1, y: 0 },
-    { x: 0, y:  1 },
-    { x: 0, y: -1 },
-];
+type TileWalkable = (matrix: TileType[][], width: number, height: number, from: Position, to: Position) => boolean;
 
 /**
  * Identify every tile that belongs to a Strongly Connected Component (SCC) containing 
@@ -60,6 +32,7 @@ export function computeSafeTiles(
     matrix: TileType[][],
     deliveryTiles: Position[],
     spawnTiles: Position[],
+    isWalkable: TileWalkable,
 ): Set<string> {
     const safe = new Set<string>();
     if (deliveryTiles.length === 0 || spawnTiles.length === 0) return safe;
@@ -103,7 +76,7 @@ export function computeSafeTiles(
         onStack[v] = 1;
 
         // For each successor w of v:
-        for (const delta of NEIGHBOUR_DELTAS) {
+        for (const delta of NEIGHBOURS) {
             // Check that the coordinates are within bounds
             const nx = x + delta.x;
             const ny = y + delta.y;
@@ -111,7 +84,7 @@ export function computeSafeTiles(
             
             // Check that the edge from v to w is walkable according to static tile types
             if (!isNode(nx, ny)) continue;
-            if (!staticWalkable(matrix, width, height, { x, y }, { x: nx, y: ny })) continue;
+            if (!isWalkable(matrix, width, height, { x, y }, { x: nx, y: ny })) continue;
 
             const w = idx(nx, ny);
             // If w has not yet been visited, recurse on it and propagate its lowlink up to v.
