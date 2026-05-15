@@ -65,7 +65,9 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
 }
 
 /**
- * Score a REACH_PARCEL desire as `parcelReward / (distance + 1)`.
+ * Score a REACH_PARCEL desire as `(parcelReward / distance) * raceFactor`.
+ * raceFactor = clamp(closestEnemyDistance / ourDistance, 0, 1): penalises parcels
+ * where an enemy is closer than us, proportionally to how much closer they are.
  * Falls back to 0 when the parcel can't be matched or the agent position is unknown.
  * @param desire The REACH_PARCEL desire to score, containing the target parcel position.
  * @param beliefs The agent's current beliefs, used to determine the agent's position and match the parcel.
@@ -83,14 +85,20 @@ function scoreReachDesire(desire: ReachParcelDesire, beliefs: Beliefs): number {
     );
     if (!parcel) return 0;
 
-    // Calculate the Manhattan distance from the agent's current position to the parcel's position
     const distance = manhattanDistance(me.lastPosition, desire.target);
 
-    // If we're already on the parcel, assign it an infinite score to prioritize picking it up immediately.
     if (distance === 0) return Infinity;
 
-    // Otherwise, score based on the parcel's reward and distance
-    return parcel.reward / (distance);
+    // Race factor: discount when an enemy is closer to this parcel than we are.
+    // Uses only enemies with a known position; no position = no threat modelled.
+    const enemies = beliefs.agents.getCurrentEnemies().filter(e => e.lastPosition !== null);
+    let raceFactor = 1;
+    if (enemies.length > 0) {
+        const closestEnemyDist = Math.min(...enemies.map(e => manhattanDistance(e.lastPosition!, desire.target)));
+        raceFactor = Math.min(1, closestEnemyDist / distance);
+    }
+
+    return (parcel.reward / distance) * raceFactor;
 }
 
 /**
