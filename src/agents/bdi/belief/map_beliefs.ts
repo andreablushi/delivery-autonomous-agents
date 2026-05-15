@@ -19,7 +19,7 @@ export class MapBeliefs {
     private crates = new Tracker<Crate>();                           // Latest-only store; eviction is handled by MapBeliefs.evict()
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
-    private temporaryBlocked = new Map<string, number>();             // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
+    private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
   
     /**
      * Initialize map beliefs from the given map info.
@@ -40,13 +40,16 @@ export class MapBeliefs {
             matrix[t.y][t.x] = t.type;
         }
 
-        // Seal off conveyor sinks: any non-wall tile from which no delivery tile is reachable
-        // can be treated as a wall for pathfinding purposes
+        // Seal off conveyor sinks and dead zones: only tiles in SCCs that contain BOTH a
+        // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
+        // is treated as a wall for pathfinding purposes.
         const deliveryPositions = normalizedTiles
             .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
             .map(t => ({ x: t.x, y: t.y }));
-        // Compute the set of safe tiles that can reach a
-        const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions);
+        const spawnPositions = normalizedTiles
+            .filter(t => t.type === TILE_TYPE.SPAWN_POINT)
+            .map(t => ({ x: t.x, y: t.y }));
+        const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions);
         
         // Any tile which is not safe can be treated as a wall
         let sealed = 0;
@@ -59,8 +62,8 @@ export class MapBeliefs {
             }
         }
         console.log(`[MAP] Sealed ${sealed} sink tiles`);
-
         this.map = { width, height, tiles: matrix };
+        this.logMap();
 
         // Precompute static tile lists — map never changes after this point.
         // Filter spawn / crate-space tiles through the safe set so callers never see sealed tiles.
@@ -75,6 +78,39 @@ export class MapBeliefs {
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
     }
 
+
+    /**
+     * Log the current map layout to the console with y=0 at the bottom, matching the
+     * coordinate system used in the game.
+     * Symbols: W=wall, .=floor, S=spawn, D=delivery, C=crate space, <>^v=conveyors, ?=unknown.
+     */
+    logMap(): void {
+        if (!this.map) {
+            console.log('[MAP] map not initialized');
+            return;
+        }
+        const { tiles, width, height } = this.map;
+        const symbol = (t: TileType): string => {
+            switch (t) {
+                case TILE_TYPE.WALL: return ' ';
+                case TILE_TYPE.FLOOR: return '.';
+                case TILE_TYPE.SPAWN_POINT: return 'S';
+                case TILE_TYPE.DELIVERY_POINT: return 'D';
+                case TILE_TYPE.CRATE_SPACE:
+                case TILE_TYPE.CRATE_OCCUPIED: return 'C';
+                case TILE_TYPE.CONVEYOR_LEFT: return '<';
+                case TILE_TYPE.CONVEYOR_RIGHT: return '>';
+                case TILE_TYPE.CONVEYOR_UP: return '^';
+                case TILE_TYPE.CONVEYOR_DOWN: return 'v';
+                default: return '?';
+            }
+        };
+        const rows = tiles.map(row => row.map(symbol).join(' ')).reverse();
+        console.log(
+            `[MAP] ${width}x${height} layout (W=wall, .=floor, S=spawn, D=delivery, C=crate, <>^v=conveyors), y=0 at bottom:\n` +
+            rows.join('\n')
+        );
+    }
 
     /**
      * Width and height of the loaded map, or null if the map has not been received yet.
