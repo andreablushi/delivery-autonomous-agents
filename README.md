@@ -99,6 +99,18 @@ PAAS_HOST=https://solver.planning.domains:5001
 
 The agent will use the unitn online solver (`@unitn-asa/pddl-client`) on startup. You can also point `PAAS_HOST` at a self-hosted instance of the planning service.
 
+## Debug Logging
+
+Set `_DEBUG` in `.env` to enable namespaced, color-coded log output. Each namespace (`plan`, `intention`, `execute`, …) is assigned a distinct color.
+
+```bash
+_DEBUG=*                  # all namespaces
+_DEBUG=plan,execute       # only planning and execution
+```
+
+`npm start` / `npm run start:competitive` always suppress debug output regardless of `.env`.  
+`npm run dev` / `npm run dev:competitive` respect the `_DEBUG` value in `.env`.
+
 ## Running the Agent
 
 | Command | Description |

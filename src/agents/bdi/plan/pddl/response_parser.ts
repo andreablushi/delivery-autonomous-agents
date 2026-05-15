@@ -1,6 +1,9 @@
 import type { PlanStep } from "../../../../models/plan.js";
 import type { Position } from "../../../../models/position.js";
 import { directionBetween } from "../utils/action_mapper.js";
+import { createLogger, type Logger } from "../../../../utils/logger.js";
+
+const defaultLog = createLogger("pddl");
 
 export type PddlPlanStep = { parallel: boolean; action: string; args: string[] };
 
@@ -46,7 +49,7 @@ export function parsePlanString(planStr: string): PddlPlanStep[] {
  * @param rawPlan The parsed plan steps from `parsePlanString`.
  * @returns An ordered array of `PlanStep` values, or an empty array if the plan is empty.
  */
-export function parsePddlPlan(rawPlan: PddlPlanStep[]): PlanStep[] {
+export function parsePddlPlan(rawPlan: PddlPlanStep[], log: Logger = defaultLog): PlanStep[] {
     const steps: PlanStep[] = [];
 
     for (const { action, args } of rawPlan) {
@@ -57,7 +60,7 @@ export function parsePddlPlan(rawPlan: PddlPlanStep[]): PlanStep[] {
         } else if (ACTION_STEP[kind]) {
             steps.push(ACTION_STEP[kind]);
         } else {
-            console.warn(`[PDDL] Unknown action: ${action}`);
+            log.warn(`Unknown action: ${action}`);
         }
     }
 

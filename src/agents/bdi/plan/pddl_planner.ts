@@ -11,6 +11,7 @@ import { selectSolver } from "./pddl/solver.js";
 import type { PddlPlanStep } from "./pddl/response_parser.js";
 import { TERMINAL_STEP } from "./astar_planner.js";
 import { CollisionTimer } from "./collision/collision_timer.js";
+import { createLogger, type Logger } from "../../../utils/logger.js";
 
 const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", "domain-crates.pddl");
 
@@ -23,6 +24,7 @@ export class PddlPlanner {
     private readonly domain: string;
     private readonly solve: (domain: string, problem: string) => Promise<PddlPlanStep[]>;
     private readonly timer = new CollisionTimer();
+    private readonly log: Logger;
     private invalidationCount = 0;
 
     private static readonly WAIT_MIN_MS = 1_000;
@@ -32,8 +34,9 @@ export class PddlPlanner {
 
     constructor(
         private readonly beliefs: Beliefs,
-        private readonly debug: boolean = false,
+        agentId?: string,
     ) {
+        this.log = createLogger("pddl", agentId);
         this.domain = readFileSync(CRATE_DOMAIN_PATH, "utf8");
         this.solve = selectSolver(debug);
     }
@@ -48,16 +51,15 @@ export class PddlPlanner {
      * @returns A complete Plan, or null if the solver returns no valid solution.
      */
     async plan(from: Position, intention: NavigationDesire, crateIds: string[]): Promise<Plan | null> {
-        if (this.debug) {
-            console.log(`[PDDL] Planning for ${intention.type} via ${crateIds.length} crate(s): [${crateIds.join(", ")}]`);
-        }
+        this.log.debug(`Planning for ${intention.type} via ${crateIds.length} crate(s): [${crateIds.join(", ")}]`);
+
 
         const problem = buildProblem(intention.target, this.beliefs);
         if (!problem) return null;
 
         const steps = parsePddlPlan(await this.solve(this.domain, problem));
         if (steps.length === 0) {
-            this.debug && console.log("[PDDL] Solver returned no steps");
+            this.log.debug("Solver returned no steps");
             return null;
         }
 
@@ -65,7 +67,7 @@ export class PddlPlanner {
         const terminal = TERMINAL_STEP[intention.type];
         if (terminal) steps.push(terminal);
 
-        if (this.debug) console.log(`[PDDL] Plan ready: ${steps.length} step(s)`);
+        this.log.debug(`Plan ready: ${steps.length} step(s)`);
         return { source: "pddl", steps, cursor: 0, target: intention };
     }
 

@@ -3,6 +3,7 @@ import type { DesireType, GeneratedDesires } from "../../../models/desires.js";
 import type { IntentionQueue } from "../../../models/intentions.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
 import { generateDesires } from "../desire/desire_generator.js";
+import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
  * Manages the agent's intention queue — an ordered list of desires to pursue,
@@ -12,6 +13,13 @@ import { generateDesires } from "../desire/desire_generator.js";
 export class Intentions {
 
     private intentionsQueue: IntentionQueue = [];
+    private readonly desireLog: Logger;
+    private readonly log: Logger;
+
+    constructor(agentId?: string) {
+        this.desireLog = createLogger("desire", agentId);
+        this.log = createLogger("intention", agentId);
+    }
 
     /**
      * Rebuild the intention queue from current beliefs.
@@ -20,19 +28,30 @@ export class Intentions {
     update(beliefs: Beliefs): void {
         const desires = generateDesires(beliefs);
 
+        this.desireLog.debug(
+            `Desires generated — ${[...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none"}`
+        );
+
         if (desires.size === 0) {
             this.intentionsQueue = [];
+            this.log.debug("Queue cleared (no desires)");
             return;
         }
 
         this.intentionsQueue = getIntentionQueue(desires, beliefs);
+        const head = this.intentionsQueue[0];
+        this.log.debug(
+            `Queue rebuilt (${this.intentionsQueue.length} items)` +
+            (head ? ` — head: ${head.desire.type} @(${head.desire.target.x},${head.desire.target.y}) score=${head.score.toFixed(2)}` : "")
+        );
     }
 
     /**
      * Drop the head of the queue after a plan completes or is unrecoverable.
      */
     dropIntentionHead(): void {
-        this.intentionsQueue.shift();
+        const dropped = this.intentionsQueue.shift();
+        if (dropped) this.log.debug(`Dropped head: ${dropped.desire.type} @(${dropped.desire.target.x},${dropped.desire.target.y})`);
     }
 
     /**

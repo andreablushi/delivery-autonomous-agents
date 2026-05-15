@@ -6,33 +6,31 @@ import { exit } from "node:process";
  * Entry point of the application.
  */
 async function main() {
-    const debug = process.env.NODE_ENV === "development";
     const isCompetitive = process.env.COMPETITIVE === "true";
 
     // Always start a single agent
-    await startSingleAgent(debug);
+    await startSingleAgent();
 
     // If we selected competitive mode, also start the competitive agents.
     if (isCompetitive) {
-        await startCompetitiveAgents(debug);
+        await startCompetitiveAgents();
         return;
     }
 }
 
 /**
  * Starts a single agent using TOKEN.
- * @param debug Whether to enable debug logging for the agent.
  */
-async function startSingleAgent(debug: boolean): Promise<void> {
+async function startSingleAgent(): Promise<void> {
     const socket = await connect(process.env.TOKEN);
-    new BDIAgent(socket, debug);
+    new BDIAgent(socket);
 }
 
 /**
  * Starts multiple agents using TOKEN_1, TOKEN_2, ...
- * @param debug Whether to enable debug logging for the agents.
+ * Each agent receives an `agent-N` id so interleaved logs are demuxable.
  */
-async function startCompetitiveAgents(debug: boolean): Promise<void> {
+async function startCompetitiveAgents(): Promise<void> {
     // Collect all TOKEN_N from the environment variables
     const tokens: string[] = [];
     for (let i = 1; ; i++) {
@@ -52,7 +50,7 @@ async function startCompetitiveAgents(debug: boolean): Promise<void> {
     // Launch an agent for each token and wait for all connections to be established before starting the agents
     console.log(`Launching ${tokens.length} competitive agent(s)...`);
     const sockets = await Promise.all(tokens.map((token) => connect(token)));
-    sockets.forEach((socket) => new BDIAgent(socket, debug));
+    sockets.forEach((socket, i) => new BDIAgent(socket, `agent-${i + 1}`));
 }
 
 

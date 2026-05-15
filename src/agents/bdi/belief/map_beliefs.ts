@@ -6,6 +6,7 @@ import { TILE_TYPE, type TileType } from "../../../models/tile_type.js";
 import { Tracker } from "./utils/tracker.js";
 import { computeSafeTiles } from "./utils/reachability.js";
 import { manhattanDistance, posKey } from "../../../utils/metrics.js";
+import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
  * Beliefs about the static map layout and dynamic crate positions.
@@ -20,7 +21,12 @@ export class MapBeliefs {
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
-  
+    private readonly log: Logger;
+
+    constructor(agentId?: string) {
+        this.log = createLogger("map", agentId);
+    }
+
     /**
      * Initialize map beliefs from the given map info.
      * @param width Width of the map in tiles.
@@ -61,7 +67,7 @@ export class MapBeliefs {
                 }
             }
         }
-        console.log(`[MAP] Sealed ${sealed} sink tiles`);
+        this.log.debug(`Sealed ${sealed} sink tiles`);
         this.map = { width, height, tiles: matrix };
         this.logMap();
 
@@ -86,7 +92,7 @@ export class MapBeliefs {
      */
     logMap(): void {
         if (!this.map) {
-            console.log('[MAP] map not initialized');
+            this.log.debug('map not initialized');
             return;
         }
         const { tiles, width, height } = this.map;
@@ -106,8 +112,8 @@ export class MapBeliefs {
             }
         };
         const rows = tiles.map(row => row.map(symbol).join(' ')).reverse();
-        console.log(
-            `[MAP] ${width}x${height} layout (W=wall, .=floor, S=spawn, D=delivery, C=crate, <>^v=conveyors), y=0 at bottom:\n` +
+        this.log.debug(
+            `${width}x${height} layout (W=wall, .=floor, S=spawn, D=delivery, C=crate, <>^v=conveyors), y=0 at bottom:\n` +
             rows.join('\n')
         );
     }
