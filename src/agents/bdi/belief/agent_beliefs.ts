@@ -18,7 +18,9 @@ export class AgentBeliefs {
     private enemiesMemory = new Memory<Agent>(1_000, 20);   // Memory of enemy agents, keyed by ID, with TTL-based eviction
     private playerSettings: PlayerSettings | null = null;   // Player settings from config
 
-    private readonly POSITION_STALE_THRESHOLD_MS = 2_000; // Discard agent positions not refreshed within this window to avoid blocking on ghost agents
+    private readonly POSITION_STALE_THRESHOLD_MS = 2_000;   // Discard agent positions not refreshed within this window to avoid blocking on ghost agents
+    private static readonly HEAT_SIGMA = 3;                 // Spatial spread (tiles): controls how far an enemy's presence radiates
+    private static readonly HEAT_TAU   = 5_000;             // Time decay constant (ms): matches enemiesMemory TTL
 
     // Memory management - EvictInterval prevents the agent from evicting stale beliefs too frequently,
     private lastEvict = 0;                          // Timestamp of the last eviction of stale beliefs
@@ -194,6 +196,42 @@ export class AgentBeliefs {
      */
     getCarryCapacity(): number | null {
         return this.playerSettings?.carry_capacity ?? null;
+    }
+
+    /**
+     * Heat contribution at `pos` from a single enemy, computed from its observation history.
+     * Each observation contributes exp(-d²/2σ²) * exp(-age/τ), combining spatial and temporal decay.
+     * @param enemyId The ID of the enemy agent to compute heat for.
+     * @param pos The position at which to evaluate the heat.
+     * @param now Current timestamp in ms; defaults to Date.now().
+     * @returns Total heat contribution from this enemy at pos (0 when no history exists).
+     */
+    heatFromEnemy(enemyId: string, pos: Position, now = Date.now()): number {
+        const history = this.enemiesMemory.getHistory(enemyId);
+        let heat = 0;
+        for (const obs of history) {
+            const ePos = obs.value.lastPosition;
+            if (!ePos) continue;
+            const d = Math.abs(pos.x - ePos.x) + Math.abs(pos.y - ePos.y);
+            const spatialDecay = Math.exp(-(d * d) / (2 * AgentBeliefs.HEAT_SIGMA * AgentBeliefs.HEAT_SIGMA));
+            const timeDecay = Math.exp(-(now - obs.seenAt) / AgentBeliefs.HEAT_TAU);
+            heat += spatialDecay * timeDecay;
+        }
+        return heat;
+    }
+
+    /**
+     * Aggregate enemy heat at `pos` across all currently-tracked enemies.
+     * Used by the EXPLORE scorer to penalise spawn tiles near recent enemy positions.
+     * @param pos The position at which to evaluate total enemy heat.
+     * @returns Sum of per-enemy heat contributions at pos.
+     */
+    getEnemyHeatAt(pos: Position): number {
+        const now = Date.now();
+        return this.enemies.getCurrentAll().reduce(
+            (sum, enemy) => sum + this.heatFromEnemy(enemy.id, pos, now),
+            0
+        );
     }
 
     /**

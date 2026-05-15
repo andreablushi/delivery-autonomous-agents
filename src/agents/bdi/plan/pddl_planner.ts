@@ -38,7 +38,7 @@ export class PddlPlanner {
     ) {
         this.log = createLogger("pddl", agentId);
         this.domain = readFileSync(CRATE_DOMAIN_PATH, "utf8");
-        this.solve = selectSolver(debug);
+        this.solve = selectSolver(this.log);
     }
 
     /**
