@@ -11,6 +11,7 @@ export class ParcelBeliefs {
 
     private parcels = new Tracker<Parcel>();                // Latest-only store; eviction is handled by the decay logic via delete()
     private parcelSettings: ParcelSettings | null = null;   // Parcel settings from config
+    private readonly carriedByMe = new Set<string>();       // IDs of parcels explicitly picked up by this agent
 
     private lastScoreUpdate = 0;                            // Timestamp of the last score update, used to trigger reward decay
     private lastDecayApplied = new Map<string, number>();   // Per-parcel decay clock: parcelId → timestamp decay last advanced to
@@ -31,15 +32,23 @@ export class ParcelBeliefs {
      * @returns void
      */
     private updateSensedParcels(sensedParcels: IOParcel[]): void {
-        // Update memory based on sensed data
         sensedParcels.forEach(parcel => {
+            // Update the carriedBy field based on whether the parcel is currently believed to be carried by 
+            const carriedBy = parcel.carriedBy !== undefined
+                ? (parcel.carriedBy || null)
+                : (this.carriedByMe.has(parcel.id)
+                    ? (this.parcels.getCurrentAll().find(p => p.id === parcel.id)?.carriedBy ?? null)
+                    : null);
+            
+            // Update the parcel belief with the new information
             this.parcels.update(parcel.id, {
                 id: parcel.id,
                 lastPosition: { x: parcel.x, y: parcel.y },
-                carriedBy: parcel.carriedBy || null,
+                carriedBy,
                 reward: parcel.reward,
             });
-            // Reset the independent decay clock so decay restarts from this fresh observation
+
+            // Reset the decay clock for this parcel since we have a new observation
             this.lastDecayApplied.delete(parcel.id);
         });
     }
@@ -154,7 +163,8 @@ export class ParcelBeliefs {
         if (!parcel.id) return;
         if (!parcel.lastPosition) return;
 
-        this.parcels.updateValuePreservingTimestamp(parcel.id, {
+        if (parcel.carriedBy) this.carriedByMe.add(parcel.id);
+        this.parcels.update(parcel.id, {
             ...parcel,
             carriedBy: parcel.carriedBy,
             lastPosition: { x: parcel.lastPosition.x, y: parcel.lastPosition.y },
@@ -170,6 +180,7 @@ export class ParcelBeliefs {
         for (const parcel of deliveredParcels) {
             this.parcels.delete(parcel.id);
             this.lastDecayApplied.delete(parcel.id);
+            this.carriedByMe.delete(parcel.id);
         }
     }
 }   

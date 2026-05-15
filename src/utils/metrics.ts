@@ -22,3 +22,39 @@ export function posKey(pos: Position): string {
 export function isHalfPosition(pos: Position): boolean {
     return !Number.isInteger(pos.x) || !Number.isInteger(pos.y);
 }
+
+export const NEIGHBOURS: Position[] = [
+    { x: 0, y: 1 },
+    { x: 0, y: -1 },
+    { x: -1, y: 0 },
+    { x: 1, y: 0 },
+];
+
+/**
+ * BFS from `source` using the given walkability predicate (walls-only or full).
+ * Returns a map from posKey to step count. Source is included with distance 0.
+ * Tiles unreachable under the predicate are absent from the result.
+ */
+export function bfsDistancesFrom(
+    source: Position,
+    isWalkable: (from: Position, to: Position) => boolean,
+): Map<string, number> {
+    const dist = new Map<string, number>();
+    const queue: Position[] = [source];
+    dist.set(posKey(source), 0);
+
+    while (queue.length > 0) {
+        const current = queue.shift()!;
+        const d = dist.get(posKey(current))!;
+        for (const delta of NEIGHBOURS) {
+            const next: Position = { x: current.x + delta.x, y: current.y + delta.y };
+            const key = posKey(next);
+            if (dist.has(key)) continue;
+            if (!isWalkable(current, next)) continue;
+            dist.set(key, d + 1);
+            queue.push(next);
+        }
+    }
+
+    return dist;
+}
