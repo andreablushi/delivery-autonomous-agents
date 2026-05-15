@@ -1,5 +1,8 @@
 import { DjsConnect } from "@unitn-asa/deliveroo-js-sdk";
 import { exit } from "node:process";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("api");
 
 /**
  * Connects to the Deliveroo server using the DjsConnect function from the SDK.
@@ -14,7 +17,7 @@ export async function connect(token?: string): Promise<any> {
     });
     // Log any connection errors and exit the process with an error code
     socket.on("connect_error", (error) => {
-        console.error("Connection error:", error);
+        log.error("Connection error:", error);
         exit(1);
     });
     return socket;

@@ -4,6 +4,7 @@ import { generateDesires } from "./desire/desire_generator.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
+import { createLogger } from "../../utils/logger.js";
 
 /**
  * BDI Agent — orchestrates the perceive → deliberate → execute cycle.
@@ -13,19 +14,21 @@ import { Planner } from "./plan/planner.js";
  */
 export class BDIAgent {
     private socket: any;
-    private debug: boolean;
     private beliefs: Beliefs;
     private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
+    private perceiveLog;
+    private deliberateLog;
 
-    constructor(socket: any, debug = false) {
+    constructor(socket: any, agentId?: string) {
         this.socket = socket;
-        this.debug = debug;
-        this.beliefs = new Beliefs();
-        this.intentions = new Intentions();
-        this.planner = new Planner(this.intentions, this.beliefs, debug);
-        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, debug);
+        this.perceiveLog = createLogger("perceive", agentId);
+        this.deliberateLog = createLogger("deliberate", agentId);
+        this.beliefs = new Beliefs(agentId);
+        this.intentions = new Intentions(agentId);
+        this.planner = new Planner(this.intentions, this.beliefs, agentId);
+        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, agentId);
 
         this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);
@@ -44,7 +47,7 @@ export class BDIAgent {
         // Agent's own position and score — fires on every successful move
         this.socket.on('you', (me: IOAgent) => {
             this.beliefs.agents.updateMe(me);
-            if (this.debug) console.log("[PERCEIVE] Me status updated — pos: [", me.x, ", ", me.y, "]| score:", me.score, "]");
+            this.perceiveLog.debug("Me status updated — pos: [", me.x, ", ", me.y, "]| score:", me.score, "]");
         });
 
         // Static map — sent once at connection
@@ -53,7 +56,7 @@ export class BDIAgent {
             this.beliefs.map.updateMap(width + 1, height + 1, tiles);
             const obsDist = this.beliefs.agents.getObservationDistance();
             if (obsDist !== null) this.beliefs.map.computeClusterWeights(obsDist);
-            if (this.debug) console.log("[PERCEIVE] Map info received — width:", width, "| height:", height, "| tiles:", tiles.length);
+            this.perceiveLog.debug("Map info received — width:", width, "| height:", height, "| tiles:", tiles.length);
         });
 
         // Periodic sensing — agents, parcels, crates; this is the main deliberation trigger
@@ -63,15 +66,13 @@ export class BDIAgent {
             this.beliefs.map.updateCrates(sensing.crates, sensing.positions);
             this.beliefs.map.updateSpawnTilesSensingTimes(sensing.positions, Date.now());
 
-            if (this.debug) {
-                console.log("[PERCEIVE] Sensing update — agents:", sensing.agents.length,
-                    "| parcels:", sensing.parcels.length, "| crates:", sensing.crates.length);
-                console.log("[PERCEIVE] Current beliefs state:");
-                console.log("  - Friends:", this.beliefs.agents.getCurrentFriends().length, "agents");
-                console.log("  - Enemies:", this.beliefs.agents.getCurrentEnemies().length, "agents");
-                console.log("  - Parcels:", this.beliefs.parcels.getCurrentParcels().length, "parcels");
-                console.log("  - Crates:", this.beliefs.map.getCurrentCrates().length, "crates");
-            }
+            this.perceiveLog.debug("Sensing update — agents:", sensing.agents.length,
+                "| parcels:", sensing.parcels.length, "| crates:", sensing.crates.length);
+            this.perceiveLog.debug("Current beliefs state:");
+            this.perceiveLog.debug("  - Friends:", this.beliefs.agents.getCurrentFriends().length, "agents");
+            this.perceiveLog.debug("  - Enemies:", this.beliefs.agents.getCurrentEnemies().length, "agents");
+            this.perceiveLog.debug("  - Parcels:", this.beliefs.parcels.getCurrentParcels().length, "parcels");
+            this.perceiveLog.debug("  - Crates:", this.beliefs.map.getCurrentCrates().length, "crates");
 
             this.deliberate();
         });
@@ -82,7 +83,7 @@ export class BDIAgent {
      */
     deliberate(): void {
         this.intentions.update(this.beliefs);
-        if (this.debug) console.log("[DELIBERATE] Intention selected:", this.intentions.getIntentionHead());
+        this.deliberateLog.debug("Intention selected:", this.intentions.getIntentionHead());
 
         this.executor.start();
     }

@@ -6,6 +6,7 @@ import type { Beliefs } from "../belief/beliefs.js";
 import type { Position } from "../../../models/position.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
 import { posKey } from "../../../utils/metrics.js";
+import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
  * Orchestrates plan generation and execution across the A* and PDDL sub-planners.
@@ -19,16 +20,18 @@ import { posKey } from "../../../utils/metrics.js";
 export class Planner {
     private readonly astarPlanner: AStarPlanner;
     private readonly pddlPlanner: PddlPlanner;
+    private readonly log: Logger;
 
     private currentPlan: Plan | null = null;
 
     constructor(
         private readonly intentionManager: Intentions,
         private readonly beliefs: Beliefs,
-        private readonly debug: boolean = false,
+        agentId?: string,
     ) {
+        this.log = createLogger("plan", agentId);
         this.astarPlanner = new AStarPlanner(beliefs);
-        this.pddlPlanner = new PddlPlanner(beliefs, debug);
+        this.pddlPlanner = new PddlPlanner(beliefs, agentId);
     }
 
     /**
@@ -77,7 +80,7 @@ export class Planner {
     invalidate(): boolean {
         if (!this.currentPlan) return true;
         if (this.activePlanner(this.currentPlan).invalidate(this.currentPlan)) {
-            this.debug && console.log(`[PLANNER] Plan invalidated (${this.currentPlan.source})`);
+            this.log.debug(`Plan invalidated (${this.currentPlan.source})`);
             this.currentPlan = null;
         }
         return true;
@@ -99,19 +102,19 @@ export class Planner {
             // Try A* first — fast and sufficient for the common case
             const astarPlan = this.astarPlanner.plan(from, desire);
             if (astarPlan) {
-                this.debug && console.log(`[PLANNER] A* plan for ${desire.type} (${astarPlan.steps.length} steps)`);
+                this.log.debug(`A* plan for ${desire.type} (${astarPlan.steps.length} steps)`);
                 return astarPlan;
             }
 
             // A* failed — check if crates are blocking the route
             const crateIds = detectCrateBlock(this.beliefs, from, desire);
             if (crateIds) {
-                this.debug && console.log(`[PLANNER] Crate block on ${desire.type} — falling back to PDDL`);
+                this.log.debug(`Crate block on ${desire.type} — falling back to PDDL`);
                 const pddlPlan = this.pddlPlanner.plan(from, desire, crateIds);
                 if (pddlPlan) return pddlPlan;
-                this.debug && console.log(`[PLANNER] PDDL failed for ${desire.type} — dropping desire`);
+                this.log.debug(`PDDL failed for ${desire.type} — dropping desire`);
             } else {
-                this.debug && console.log(`[PLANNER] A* failed (no crate block) for ${desire.type} — dropping desire`);
+                this.log.debug(`A* failed (no crate block) for ${desire.type} — dropping desire`);
             }
 
             this.intentionManager.dropIntentionHead();
@@ -135,10 +138,10 @@ export class Planner {
         if (this.currentPlan.source === "pddl") {
             const astarPlan = this.astarPlanner.plan(from, head);
             if (astarPlan) {
-                this.debug && console.log(`[PLANNER] PDDL → A* swap for ${head.type}`);
+                this.log.debug(`PDDL → A* swap for ${head.type}`);
                 this.currentPlan = astarPlan;
             } else {
-                this.debug && console.log(`[PLANNER] Holding PDDL plan for ${this.currentPlan.target.type}`);
+                this.log.debug(`Holding PDDL plan for ${this.currentPlan.target.type}`);
             }
             return true;
         }
@@ -149,7 +152,7 @@ export class Planner {
         if (posKey(target.target) !== posKey(head.target)) return false;
         if (!this.activePlanner(this.currentPlan).validate(this.currentPlan, from)) return false;
 
-        this.debug && console.log(`[PLANNER] Reusing A* plan for ${target.type}`);
+        this.log.debug(`Reusing A* plan for ${target.type}`);
         return true;
     }
 
@@ -167,7 +170,7 @@ export class Planner {
      * regenerated from beliefs on every intentions.update() call anyway.
      */
     private completePlan(): void {
-        this.debug && console.log(`[PLANNER] Plan complete (${this.currentPlan?.source ?? "?"}, ${this.currentPlan?.target.type ?? "?"})`);
+        this.log.debug(`Plan complete (${this.currentPlan?.source ?? "?"}, ${this.currentPlan?.target.type ?? "?"})`);
         if (this.currentPlan?.source !== "pddl") this.intentionManager.dropIntentionHead();
         this.currentPlan = null;
     }

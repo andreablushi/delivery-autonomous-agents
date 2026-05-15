@@ -2,6 +2,7 @@ import type { Position } from "../../../models/position.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Planner } from "../plan/planner.js";
 import type { Intentions } from "../intention/intentions.js";
+import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
  * Drives the action loop: retrieves the next step from the Planner, emits the corresponding
@@ -12,14 +13,17 @@ import type { Intentions } from "../intention/intentions.js";
  */
 export class Executor {
     private executing = false;
+    private readonly log: Logger;
 
     constructor(
         private readonly socket: any,
         private readonly beliefs: Beliefs,
         private readonly intentions: Intentions,
         private readonly planner: Planner,
-        private readonly debug: boolean,
-    ) {}
+        agentId?: string,
+    ) {
+        this.log = createLogger("execute", agentId);
+    }
 
     /**
      * Pick up the parcel at the given position and update beliefs on success.
@@ -67,22 +71,22 @@ export class Executor {
         if (!plan) {
             // Refresh so the next executor tick gets a rebuilt queue without waiting for a sensing event.
             this.intentions.update(this.beliefs);
-            if (this.debug) console.log("[EXECUTE] No plan to execute.");
+            this.log.debug("No plan to execute.");
             return false;
         }
 
         // Get the next step; "wait" means an agent is blocking our tile, null means no safe move.
         const step = this.planner.nextStep(currentPosition);
         if (step === "wait") {
-            if (this.debug) console.log("[EXECUTE] Waiting for blocked tile to clear.");
+            this.log.debug("Waiting for blocked tile to clear.");
             return false;
         }
         if (step === null) {
-            if (this.debug) console.log("[EXECUTE] No safe step to execute.");
+            this.log.debug("No safe step to execute.");
             return false;
         }
 
-        if (this.debug) console.log("[EXECUTE] Step:", step);
+        this.log.debug("Step:", step);
 
         let succeeded: boolean;
         if (step.kind === "pickup") succeeded = await this.handlePickup(currentPosition);
@@ -90,13 +94,13 @@ export class Executor {
         else succeeded = await this.handleMove(step.direction);
 
         if (succeeded) {
-            if(this.debug) console.log("[EXECUTE] Step succeeded.");
+            this.log.debug("Step succeeded.");
             this.planner.advance();
             // Rebuild desires immediately so the next plan() call sees fresh belief state.
             this.intentions.update(this.beliefs);
             this.planner.plan();
         } else {
-            if(this.debug) console.log("[EXECUTE] Step failed, invalidating plan.");
+            this.log.debug("Step failed, invalidating plan.");
             this.planner.invalidate();
         }
 
@@ -112,7 +116,7 @@ export class Executor {
                 if (!shouldContinue) await new Promise(r => setTimeout(r, 200));
             }
         } catch (err) {
-            if (this.debug) console.error("[EXECUTE] Execution error:", err);
+            this.log.error("Execution error:", err);
         } finally {
             this.executing = false;
         }

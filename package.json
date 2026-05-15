@@ -20,8 +20,8 @@
   "scripts": {
     "start": "node --import tsx --env-file-if-exists=.env src/index.ts",
     "start:competitive": "cross-env COMPETITIVE=true node --import tsx --env-file-if-exists=.env src/index.ts",
-    "dev": "cross-env NODE_ENV=development node --import tsx --env-file-if-exists=.env src/index.ts",
-    "dev:competitive": "cross-env NODE_ENV=development COMPETITIVE=true node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev": "cross-env DEBUG=* node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev:competitive": "cross-env DEBUG=* COMPETITIVE=true node --import tsx --env-file-if-exists=.env src/index.ts",
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

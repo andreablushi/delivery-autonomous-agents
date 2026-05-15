@@ -28,11 +28,15 @@ function parseTimeInterval(event: IOClockEvent): number {
 export class Beliefs {
     // Belief sub-systems
     readonly agents  = new AgentBeliefs();   // Tracks me, friends, and enemies
-    readonly map     = new MapBeliefs();     // Tracks map layout and crates
+    readonly map: MapBeliefs;                // Tracks map layout and crates
     readonly parcels = new ParcelBeliefs();  // Tracks parcels and their statuses
 
     // Centralized game settings distributed to sub-systems on arrival
     settings: GameSettings | null = null;
+
+    constructor(agentId?: string) {
+        this.map = new MapBeliefs(agentId);
+    }
 
     /**
      * Set game configuration and distribute relevant slices to each sub-system.
