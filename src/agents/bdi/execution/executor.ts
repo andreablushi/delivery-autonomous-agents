@@ -74,7 +74,7 @@ export class Executor {
         const me = this.beliefs.agents.getCurrentMe();
         if (!me?.lastPosition) return false;
         const currentPosition = me.lastPosition;
-        const plan = this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
+        const plan = await this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
         if (!plan) {
             // Refresh so the next executor tick gets a rebuilt queue without waiting for a sensing event.
             this.intentions.update(this.beliefs);
@@ -105,7 +105,7 @@ export class Executor {
             this.planner.advance();
             // Rebuild desires immediately so the next plan() call sees fresh belief state.
             this.intentions.update(this.beliefs);
-            this.planner.plan();
+            await this.planner.plan();
         } else {
             if(this.debug) console.log("[EXECUTE] Step failed, invalidating plan.");
             this.planner.invalidate();
