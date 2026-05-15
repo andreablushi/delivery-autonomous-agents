@@ -83,6 +83,18 @@ planutils install dual-bfws-ffparser
 
 **3. Run the agent** — it's mandatory to do `planutils activate` before running the agent. The solver resolves `~/.planutils/bin/dual-bfws-ffparser` directly.
 
+## Debug Logging
+
+Set `_DEBUG` in `.env` to enable namespaced, color-coded log output. Each namespace (`plan`, `intention`, `execute`, …) is assigned a distinct color.
+
+```bash
+_DEBUG=*                  # all namespaces
+_DEBUG=plan,execute       # only planning and execution
+```
+
+`npm start` / `npm run start:competitive` always suppress debug output regardless of `.env`.  
+`npm run dev` / `npm run dev:competitive` respect the `_DEBUG` value in `.env`.
+
 ## Running the Agent
 
 | Command | Description |
