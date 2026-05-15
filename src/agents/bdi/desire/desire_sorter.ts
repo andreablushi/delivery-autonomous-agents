@@ -8,7 +8,7 @@ import type {
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
 import { posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
-import { MapBeliefs } from "../belief/map_beliefs.js";
+import { MapBeliefs } from "../belief/map_beliefs.js"; // used for static isStaticWalkable
 import { IntentionQueue } from "../../../models/intentions.js";
 
 
@@ -66,7 +66,7 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
     const now = Date.now();
     for (const desire of explores) {
-        queue.push({ desire, score: scoreExplore(desire, meDist, beliefs.map, now) });
+        queue.push({ desire, score: scoreExplore(desire, meDist, beliefs, now) });
     }
 
     // Sort by priority tier first, then by score within the same tier
@@ -130,23 +130,26 @@ function scoreDeliverDesire(
 
 /**
  * Score an ExploreDesire based on how long it's been since the target tile was last sensed,
- * adjusted for distance: score = clusterWeight * age / (distance + 1).
+ * adjusted for distance: score = clusterWeight * age / (distance + 1) / (1 + enemyHeat).
  * Tiles that have never been sensed score Infinity and will always be chosen over sensed tiles.
  * Among sensed tiles, those that haven't been sensed for a long time and are closer will score higher.
+ * The enemy heat factor penalises tiles near recently-observed enemies.
  */
 function scoreExplore(
     desire: ExploreDesire,
     meDist: Map<string, number>,
-    mapBeliefs: MapBeliefs,
+    beliefs: Beliefs,
     now: number,
 ): number {
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
 
-    const lastSensing = mapBeliefs.getSpawnTileSensingTime(desire.target);
+    const lastSensing = beliefs.map.getSpawnTileSensingTime(desire.target);
     const age = lastSensing !== undefined ? now - lastSensing : Infinity;
 
-    const clusterWeight = mapBeliefs.getSpawnTileClusterWeight(desire.target);
+    const clusterWeight = beliefs.map.getSpawnTileClusterWeight(desire.target);
     const weight = clusterWeight > 0 ? clusterWeight : 1;
-    return weight * age / (distance + 1);
+
+    const heat = beliefs.agents.getEnemyHeatAt(desire.target);
+    return weight * age / (distance + 1) / (1 + heat);
 }

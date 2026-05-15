@@ -39,16 +39,16 @@ export function localSolver(pddlDomain: string, pddlProblem: string, log: Logger
     return output;
 }
 
-async function onlineSolver(pddlDomain: string, pddlProblem: string, debug: boolean): Promise<PddlPlanStep[]> {
+async function onlineSolver(pddlDomain: string, pddlProblem: string, logger: Logger): Promise<PddlPlanStep[]> {
     try {
         const startedAt = Date.now();
-        debug && console.log("[PDDL SOLVER] Sending request to online solver");
+        logger.debug("[PDDL SOLVER] Sending request to online solver");
         const result = await onlineSolverLib(pddlDomain, pddlProblem);
-        debug && console.log(`[PDDL SOLVER] Online solver result ready in ${Date.now() - startedAt}ms`);
+        logger.debug(`[PDDL SOLVER] Online solver result ready in ${Date.now() - startedAt}ms`);
         if (!result) return [];
         return result as PddlPlanStep[];
     } catch (err) {
-        console.error("[PDDL SOLVER] Online solver error:", err);
+        logger.error("[PDDL SOLVER] Online solver error:", err);
         return [];
     }
 }
@@ -57,13 +57,14 @@ async function onlineSolver(pddlDomain: string, pddlProblem: string, debug: bool
  * Select the solver to use based on the PAAS_HOST env var.
  * If PAAS_HOST is set, use the online solver; otherwise use the local binary.
  * Decision is made once at startup.
+ * @param log Logger instance to forward to the chosen solver.
  */
-export function selectSolver(debug: boolean): (domain: string, problem: string) => Promise<PddlPlanStep[]> {
+export function selectSolver(log: Logger): (domain: string, problem: string) => Promise<PddlPlanStep[]> {
     const paasHost = process.env.PAAS_HOST;
     if (paasHost) {
         console.log(`[PDDL SOLVER] Online solver enabled (PAAS_HOST=${paasHost})`);
-        return (domain, problem) => onlineSolver(domain, problem, debug);
+        return (domain, problem) => onlineSolver(domain, problem, log);
     }
     console.log("[PDDL SOLVER] Local solver in use");
-    return async (domain, problem) => parsePlanString(localSolver(domain, problem, debug));
+    return async (domain, problem) => parsePlanString(localSolver(domain, problem, log));
 }
