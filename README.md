@@ -53,6 +53,36 @@ Then, install the project dependencies:
 npm install
 ```
 
+## Local PDDL Solver Setup
+
+The BDI agent uses a local PDDL solver (dual-bfws via planutils) for crate-clearing plans.
+This requires Singularity CE and planutils installed in a Python virtual environment.
+
+**1. Install Singularity CE** (system-level, required by planutils to run planner containers):
+
+```bash
+# Linux (Debian/Ubuntu)
+sudo apt install singularity-ce
+
+# macOS
+brew install --cask singularity
+```
+
+**2. Set up planutils in a virtual environment:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install planutils
+planutils setup
+planutils activate
+planutils install dual-bfws-ffparser
+```
+
+`planutils setup` writes wrapper scripts to `~/.planutils/bin/` and the Singularity image is stored in `~/.planutils/` — both outside the venv, so they persist without it being active.
+
+**3. Run the agent** — it's mandatory to do `planutils activate` before running the agent. The solver resolves `~/.planutils/bin/dual-bfws-ffparser` directly.
+
 ## Running the Agent
 
 | Command | Description |
