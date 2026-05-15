@@ -39,10 +39,7 @@ export class Planner {
         const from = this.beliefs.agents.getCurrentMe()?.lastPosition;
         if (!from) return null;
 
-        if (this.canReuse(from)) {
-            this.debug && console.log(`[PLANNER] Reusing ${this.currentPlan!.source} plan for ${this.currentPlan!.target.type}`);
-            return this.currentPlan;
-        }
+        if (this.canReuse(from)) return this.currentPlan;
 
         this.currentPlan = this.findPlannableIntention(from);
         return this.currentPlan;
@@ -124,18 +121,36 @@ export class Planner {
     }
 
     /**
-     * Return true if the current plan can still be reused for the current head intention.
-     * Reuse is allowed when the head desire matches the plan's target and the sub-planner
-     * confirms the remaining steps are still valid.
+     * Decide whether to keep the current plan for this tick.
+     * For PDDL plans: always returns true (sticky), but swaps to A* in place if A* can now
+     * reach the current head intention (crates cleared or desire reshuffled to a reachable one).
+     * For A* plans: standard check — same head desire type+target and remaining steps walkable.
      */
     private canReuse(from: Position): boolean {
         if (!this.currentPlan) return false;
         const head = this.intentionManager.getIntentionHead()?.desire;
         if (!head) return false;
+
+        // Sticky PDDL: keep the plan, but opportunistically swap to A* if it succeeds.
+        if (this.currentPlan.source === "pddl") {
+            const astarPlan = this.astarPlanner.plan(from, head);
+            if (astarPlan) {
+                this.debug && console.log(`[PLANNER] PDDL → A* swap for ${head.type}`);
+                this.currentPlan = astarPlan;
+            } else {
+                this.debug && console.log(`[PLANNER] Holding PDDL plan for ${this.currentPlan.target.type}`);
+            }
+            return true;
+        }
+
+        // A* plan: reuse only when the head desire matches and remaining steps are still walkable.
         const target = this.currentPlan.target;
         if (target.type !== head.type) return false;
         if (posKey(target.target) !== posKey(head.target)) return false;
-        return this.activePlanner(this.currentPlan).validate(this.currentPlan, from);
+        if (!this.activePlanner(this.currentPlan).validate(this.currentPlan, from)) return false;
+
+        this.debug && console.log(`[PLANNER] Reusing A* plan for ${target.type}`);
+        return true;
     }
 
     /**
@@ -146,11 +161,14 @@ export class Planner {
     }
 
     /**
-     * Mark the current plan as complete: drop the intention head and clear the plan slot.
+     * Mark the current plan as complete and clear the plan slot.
+     * A* plans drop the intention head explicitly. PDDL plans do not — the queue
+     * head may have reshuffled away from the plan's target, and desires are
+     * regenerated from beliefs on every intentions.update() call anyway.
      */
     private completePlan(): void {
         this.debug && console.log(`[PLANNER] Plan complete (${this.currentPlan?.source ?? "?"}, ${this.currentPlan?.target.type ?? "?"})`);
-        this.intentionManager.dropIntentionHead();
+        if (this.currentPlan?.source !== "pddl") this.intentionManager.dropIntentionHead();
         this.currentPlan = null;
     }
 }
