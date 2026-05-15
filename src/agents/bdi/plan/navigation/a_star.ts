@@ -1,5 +1,5 @@
 import type { Position } from "../../../../models/position.js";
-import { manhattanDistance, posKey } from "../../../../utils/metrics.js";
+import { manhattanDistance, posKey, NEIGHBOURS } from "../../../../utils/metrics.js";
 import type { Beliefs } from "../../belief/beliefs.js";
 import { toMoveSteps } from "../utils/action_mapper.js";
 import type { PlanStep } from "../../../../models/plan.js";
@@ -11,12 +11,6 @@ type Node = {
     parent: Node | null; // Parent node in the path, used for path reconstruction
 };
 
-const NEIGHBOURS: Position[] = [
-    { x: 0, y: 1 },
-    { x: 0, y: -1 },
-    { x: -1, y: 0 },
-    { x: 1, y: 0 },
-];
 
 /**
  * Find the shortest path from `start` to `goal` using A*.

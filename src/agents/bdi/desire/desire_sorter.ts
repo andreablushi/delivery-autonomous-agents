@@ -7,7 +7,7 @@ import type {
     GeneratedDesires,
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
-import { manhattanDistance } from "../../../utils/metrics.js";
+import { posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
 import { MapBeliefs } from "../belief/map_beliefs.js";
 import { IntentionQueue } from "../../../models/intentions.js";
 
@@ -37,27 +37,36 @@ function getPriorityForDesire(desire: DesireType): number {
 export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): IntentionQueue {
     const queue: IntentionQueue = [];
 
+    const me = beliefs.agents.getCurrentMe();
+    if (!me?.lastPosition) return queue;
+
+    const map = beliefs.map.getMap();
+    if (!map) return queue;
+    const walkable = (from: Position, to: Position) => MapBeliefs.isStaticWalkable(map.tiles, map.width, map.height, from, to);
+
+    // Single BFS from agent position — reused for all desire scoring this tick
+    const meDist = bfsDistancesFrom(me.lastPosition, walkable);
+
+    // One BFS per enemy for race factor scoring (typically few enemies)
+    const enemies = beliefs.agents.getCurrentEnemies().filter(e => e.lastPosition !== null);
+    const enemyDists = enemies.map(e => bfsDistancesFrom(e.lastPosition!, walkable));
+
     // Goal desires — scored and compared
     const reaches = (desires.get("REACH_PARCEL") ?? []) as ReachParcelDesire[];
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];
 
     for (const desire of reaches) {
-        queue.push({ desire, score: scoreReachDesire(desire, beliefs) });
+        queue.push({ desire, score: scoreReachDesire(desire, beliefs, meDist, enemyDists) });
     }
     for (const desire of delivers) {
-        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs) });
+        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs, meDist) });
     }
 
     // Fallback to exploration desires
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
     const now = Date.now();
     for (const desire of explores) {
-        queue.push({ desire, score: scoreExplore(
-            desire,
-            beliefs.agents.getCurrentMe()?.lastPosition ?? null,
-            beliefs.map,
-            now
-        ) });
+        queue.push({ desire, score: scoreExplore(desire, meDist, beliefs.map, now) });
     }
 
     // Sort by priority tier first, then by score within the same tier
@@ -68,16 +77,14 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
  * Score a REACH_PARCEL desire as `(parcelReward / distance) * raceFactor`.
  * raceFactor = clamp(closestEnemyDistance / ourDistance, 0, 1): penalises parcels
  * where an enemy is closer than us, proportionally to how much closer they are.
- * Falls back to 0 when the parcel can't be matched or the agent position is unknown.
- * @param desire The REACH_PARCEL desire to score, containing the target parcel position.
- * @param beliefs The agent's current beliefs, used to determine the agent's position and match the parcel.
- * @returns A numeric score representing the desirability of reaching the parcel, where higher is better.
+ * Falls back to 0 when the parcel can't be matched or the target is unreachable.
  */
-function scoreReachDesire(desire: ReachParcelDesire, beliefs: Beliefs): number {
-    const me = beliefs.agents.getCurrentMe();
-    if (!me?.lastPosition) return 0;
-
-    // Find the parcel matching the desire's target position among available parcels
+function scoreReachDesire(
+    desire: ReachParcelDesire,
+    beliefs: Beliefs,
+    meDist: Map<string, number>,
+    enemyDists: Map<string, number>[],
+): number {
     const parcel = beliefs.parcels.getAvailableParcels().find(
         p => p.lastPosition &&
             p.lastPosition.x === desire.target.x &&
@@ -85,16 +92,16 @@ function scoreReachDesire(desire: ReachParcelDesire, beliefs: Beliefs): number {
     );
     if (!parcel) return 0;
 
-    const distance = manhattanDistance(me.lastPosition, desire.target);
-
+    const targetKey = posKey(desire.target);
+    const distance = meDist.get(targetKey);
+    if (distance === undefined) return 0; // unreachable
     if (distance === 0) return Infinity;
 
-    // Race factor: discount when an enemy is closer to this parcel than we are.
-    // Uses only enemies with a known position; no position = no threat modelled.
-    const enemies = beliefs.agents.getCurrentEnemies().filter(e => e.lastPosition !== null);
+    // Race factor: discount when an enemy can reach this parcel faster than we can.
+    // An enemy that cannot reach the parcel poses no threat (treat distance as Infinity).
     let raceFactor = 1;
-    if (enemies.length > 0) {
-        const closestEnemyDist = Math.min(...enemies.map(e => manhattanDistance(e.lastPosition!, desire.target)));
+    if (enemyDists.length > 0) {
+        const closestEnemyDist = Math.min(...enemyDists.map(d => d.get(targetKey) ?? Infinity));
         raceFactor = Math.min(1, closestEnemyDist / distance);
     }
 
@@ -103,47 +110,42 @@ function scoreReachDesire(desire: ReachParcelDesire, beliefs: Beliefs): number {
 
 /**
  * Score a DELIVER_PARCEL desire as `sum(carriedRewards) / (distance + 1)`.
- * Falls back to 0 when the agent position is unknown or nothing is being carried.
- * @param desire The DELIVER_PARCEL desire to score, containing the target delivery tile position.
- * @param beliefs The agent's current beliefs, used to determine the agent's position and carried parcels.
- * @returns A numeric score representing the desirability to deliver parcels to the target tile, where higher is better.
+ * Falls back to 0 when nothing is carried or the target is unreachable.
  */
-function scoreDeliverDesire(desire: DeliverParcelDesire, beliefs: Beliefs): number {
+function scoreDeliverDesire(
+    desire: DeliverParcelDesire,
+    beliefs: Beliefs,
+    meDist: Map<string, number>,
+): number {
     const me = beliefs.agents.getCurrentMe();
-    if (!me?.lastPosition) return 0;
+    if (!me) return 0;
 
-    // Calculate the total reward of all parcels currently being carried by the agent
     const carriedReward = beliefs.parcels.getCarriedByAgent(me.id).reduce((s, p) => s + p.reward, 0);
     if (carriedReward === 0) return 0;
 
-    // Calculate the Manhattan distance from the agent's current position to the delivery target position
-    const distance = manhattanDistance(me.lastPosition, desire.target);
+    const distance = meDist.get(posKey(desire.target)) ?? undefined;
+    if (distance === undefined) return 0; // unreachable
     return carriedReward / (distance + 1);
 }
 
 /**
- * Score an ExploreDesire based on how long it's been since the target tile was last sensed, 
- * adjusted for distance: score = age / (distance + 1).
+ * Score an ExploreDesire based on how long it's been since the target tile was last sensed,
+ * adjusted for distance: score = clusterWeight * age / (distance + 1).
  * Tiles that have never been sensed score Infinity and will always be chosen over sensed tiles.
  * Among sensed tiles, those that haven't been sensed for a long time and are closer will score higher.
- * @param desire The ExploreDesire to score, containing the target tile position.
- * @param agentPos The current position of the agent, used to calculate distance. If null, the desire will score 0.
- * @param mapBeliefs The agent's beliefs about the map, used to look up the last sensing time for the target tile.
- * @param now The current timestamp, used to calculate the age of the last sensing.
- * @returns A numeric score representing the desirability of exploring the target tile, where higher is better.
  */
-function scoreExplore(desire: ExploreDesire, agentPos: Position | null, mapBeliefs: MapBeliefs, now: number): number {
-    if (!agentPos) return 0; // If we don't know our position, we can't calculate a meaningful score, so return 0.
+function scoreExplore(
+    desire: ExploreDesire,
+    meDist: Map<string, number>,
+    mapBeliefs: MapBeliefs,
+    now: number,
+): number {
+    const distance = meDist.get(posKey(desire.target));
+    if (distance === undefined) return 0; // unreachable
 
-    // Get spawn tile distance and age since last sensing
-    const distance = manhattanDistance(desire.target, agentPos);
     const lastSensing = mapBeliefs.getSpawnTileSensingTime(desire.target);
-    
-    // If the tile has never been sensed, assign it an infinite score to prioritize it above all else. 
-    // Otherwise, calculate the score based on age and distance.
     const age = lastSensing !== undefined ? now - lastSensing : Infinity;
 
-    // Get the cluster weight for the target tile
     const clusterWeight = mapBeliefs.getSpawnTileClusterWeight(desire.target);
     const weight = clusterWeight > 0 ? clusterWeight : 1;
     return weight * age / (distance + 1);
