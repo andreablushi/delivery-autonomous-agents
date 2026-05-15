@@ -9,6 +9,7 @@ import { buildProblem } from "./pddl/problem_builder.js";
 import { parsePddlPlan, parsePlanString } from "./pddl/response_parser.js";
 import { localSolver } from "./pddl/solver.js";
 import { TERMINAL_STEP } from "./astar_planner.js";
+import { CollisionTimer } from "./collision/collision_timer.js";
 
 const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", "domain-crates.pddl");
 
@@ -19,6 +20,13 @@ const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", 
  */
 export class PddlPlanner {
     private readonly domain: string;
+    private readonly timer = new CollisionTimer();
+    private invalidationCount = 0;
+
+    private static readonly WAIT_MIN_MS = 1_000;
+    private static readonly WAIT_MAX_MS = 1_500;
+    private static readonly BLOCKED_TTL_MS = 1_000;
+    private static readonly RETRY_LIMIT = 2;
 
     constructor(
         private readonly beliefs: Beliefs,
@@ -61,46 +69,64 @@ export class PddlPlanner {
 
     /**
      * Get the next step from the plan.
-     * @param plan The active PDDL plan.
-     * @param _currentPosition Unused — PDDL plans have no detour logic.
-     * @returns The next step, or null if the plan is exhausted.
+     * If the next move tile is occupied by another agent, waits until a random backoff
+     * expires before letting the move attempt through (no detour — PDDL step order is causal).
      */
     nextStep(plan: Plan, _currentPosition: Position): PlanStep | "wait" | null {
-        return plan.steps[plan.cursor] ?? null;
+        const step = plan.steps[plan.cursor];
+        if (!step) return null;
+        if (step.kind !== "move") return step;
+
+        const walkable = (a: Position, b: Position) => this.beliefs.map.isWalkable(a, b);
+        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
+
+        if (!this.timer.isWaitingFor(step.to)) {
+            this.timer.start(step.to, PddlPlanner.WAIT_MIN_MS, PddlPlanner.WAIT_MAX_MS);
+        }
+        if (!this.timer.hasExpired()) return "wait";
+
+        return step;
     }
 
     /**
-     * Advance the plan cursor.
+     * Advance the plan cursor and reset collision state.
      * @returns true if the plan is now complete.
      */
     advance(plan: Plan): boolean {
         plan.cursor++;
+        this.resetCollision();
         return plan.cursor >= plan.steps.length;
     }
 
     /**
-     * Invalidate a PDDL plan after a failed action.
-     * Always forces a replan — crate positions may have changed between ticks.
-     * @returns true, signalling the orchestrator to clear the current plan.
+     * Invalidate a PDDL plan after a failed move.
+     * Below the retry limit, keeps the plan so the agent can retry (e.g. agent was passing through).
+     * Above the limit, marks the tile blocked in beliefs and forces a full replan.
+     * Non-move failures (pickup/putdown) always force a replan.
      */
-    invalidate(_plan: Plan): boolean {
+    invalidate(plan: Plan): boolean {
+        const step = plan.steps[plan.cursor];
+        if (!step || step.kind !== "move") return true;
+
+        this.invalidationCount++;
+        if (this.invalidationCount > PddlPlanner.RETRY_LIMIT) {
+            this.beliefs.map.markBlocked(step.to, PddlPlanner.BLOCKED_TTL_MS);
+            this.resetCollision();
+            return true;
+        }
+        return false;
+    }
+
+    validate(_plan: Plan, _currentPosition: Position): boolean {
         return true;
     }
 
-    /**
-     * Validate that the remaining move steps are still walkable.
-     * Crate tiles that appear non-walkable are expected along the path and are not checked.
-     * @param plan The plan to validate.
-     * @param currentPosition The agent's current position.
-     * @returns true if the plan is still executable.
-     */
-    validate(plan: Plan, currentPosition: Position): boolean {
-        // PDDL plans are trusted until they fail — skip walkability checks for crate tiles
-        return true;
+    reset(): void {
+        this.resetCollision();
     }
 
-    /**
-     * No-op. PddlPlanner holds no mutable state between calls.
-     */
-    reset(): void {}
+    private resetCollision(): void {
+        this.timer.reset();
+        this.invalidationCount = 0;
+    }
 }
