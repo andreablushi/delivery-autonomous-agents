@@ -1,5 +1,6 @@
 import { connect } from "./utils/api.js";
 import { BDIAgent } from "./agents/bdi/bdi_agent.js";
+import { LLMAgent } from "./agents/llm/llm_agent.js";
 import { exit } from "node:process";
 
 /**
@@ -23,7 +24,7 @@ async function main() {
  */
 async function startSingleAgent(): Promise<void> {
     const socket = await connect(process.env.TOKEN);
-    new BDIAgent(socket);
+    spawnAgent(socket);
 }
 
 /**
@@ -50,7 +51,12 @@ async function startCompetitiveAgents(): Promise<void> {
     // Launch an agent for each token and wait for all connections to be established before starting the agents
     console.log(`Launching ${tokens.length} competitive agent(s)...`);
     const sockets = await Promise.all(tokens.map((token) => connect(token)));
-    sockets.forEach((socket, i) => new BDIAgent(socket, `agent-${i + 1}`));
+    sockets.forEach((socket, i) => spawnAgent(socket, `agent-${i + 1}`));
+}
+
+function spawnAgent(socket: any, agentId?: string): void {
+    if (process.env.AGENT_KIND === "llm") new LLMAgent(socket, agentId);
+    else new BDIAgent(socket, agentId);
 }
 
 

@@ -21,10 +21,24 @@ export type DeliverParcelDesire = {
     target: Position;       // Nearest delivery tile position
 };
 
-// All desires require navigation and always have a `target` position
-export type NavigationDesire = ExploreDesire | ReachParcelDesire | DeliverParcelDesire;
+export type ReachTileDesire = {
+    type: "REACH_TILE";     // The agent wants to navigate to a specific tile
+    target: Position;       // Target tile position
+    sourceId: string;       // Sender agent id (for logging / dedupe)
+    expiresAt: number;      // Expiry timestamp (ms epoch)
+    reward: number;         // Mock reward used by the sorter
+};
 
-export type DesireType = NavigationDesire;
+export type StopDesire = {
+    type: "STOP";           // The agent wants to stop and do nothing
+    target: Position;       // Ignored
+};
+
+
+// All desires require navigation and always have a `target` position
+export type NavigationDesire = ExploreDesire | ReachParcelDesire | DeliverParcelDesire | ReachTileDesire;
+
+export type DesireType = NavigationDesire | StopDesire;
 
 // Grouped map for easier access to desires by type
 export type GeneratedDesires = Map<DesireType["type"], DesireType[]>;

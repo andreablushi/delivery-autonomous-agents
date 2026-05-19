@@ -4,6 +4,7 @@ import type {
     ExploreDesire,
     ReachParcelDesire,
     DeliverParcelDesire,
+    ReachTileDesire,
     GeneratedDesires,
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
@@ -14,12 +15,14 @@ import { IntentionQueue } from "../../../models/intentions.js";
 
 /**
  * Determines the priority tier of a desire type.
- * Priority tiers: REACH_PARCEL|DELIVER_PARCEL=1, EXPLORE=0.
+ * Priority tiers: 
+ * - REACH_PARCEL = DELIVER_PARCEL = REACH_TILE = 1;
+ * - EXPLORE=0.
  * @param desire The desire to evaluate.
  * @returns The priority tier of the desire, where higher numbers indicate higher priority.
  */
 function getPriorityForDesire(desire: DesireType): number {
-    if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL') return 1;
+    if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL' || desire.type === 'REACH_TILE') return 1;
     return 0;
 }
 
@@ -62,6 +65,11 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
         queue.push({ desire, score: scoreDeliverDesire(desire, beliefs, meDist) });
     }
 
+    const reachTiles = (desires.get("REACH_TILE") ?? []) as ReachTileDesire[];
+    for (const desire of reachTiles) {
+        queue.push({ desire, score: scoreReachTile(desire, meDist) });
+    }
+
     // Fallback to exploration desires
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
     const now = Date.now();
@@ -71,6 +79,17 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
 
     // Sort by priority tier first, then by score within the same tier
     return queue.sort((a, b) => getPriorityForDesire(b.desire) - getPriorityForDesire(a.desire) || b.score - a.score);
+}
+
+/**
+ * Score a REACH_TILE desire as `reward / distance`.
+ * Uses the same reward/distance heuristic as REACH_PARCEL so goals compete fairly with parcels.
+ */
+function scoreReachTile(desire: ReachTileDesire, meDist: Map<string, number>): number {
+    const distance = meDist.get(posKey(desire.target));
+    if (distance === undefined) return 0; // unreachable
+    if (distance === 0) return Infinity;
+    return desire.reward / distance;
 }
 
 /**
