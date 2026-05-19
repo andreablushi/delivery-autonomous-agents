@@ -144,7 +144,7 @@ function scoreDeliverDesire(
 
     const distance = meDist.get(posKey(desire.target)) ?? undefined;
     if (distance === undefined) return 0; // unreachable
-    return carriedReward / (distance + 1);
+    return (carriedReward + (desire.bonus ?? 0)) / (distance + 1);
 }
 
 /**

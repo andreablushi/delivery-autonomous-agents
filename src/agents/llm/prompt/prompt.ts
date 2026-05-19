@@ -1,16 +1,11 @@
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import type { Beliefs } from "../../bdi/belief/beliefs.js";
 
 const PROMPT_DIR = dirname(fileURLToPath(import.meta.url));
 const cache = new Map<string, string>();
 
-/**
- * Renders a prompt template with the given variables. Templates are cached after the first read for efficiency.
- * @param name The name of the template file (without .txt extension) located in the same directory as this module.
- * @param vars The variables to substitute into the template.
- * @returns The rendered prompt.
- */
 function renderTemplate(name: string, vars: Record<string, string>): string {
     if (!cache.has(name)) {
         cache.set(name, readFileSync(join(PROMPT_DIR, `${name}.txt`), "utf-8"));
@@ -21,19 +16,10 @@ function renderTemplate(name: string, vars: Record<string, string>): string {
     });
 }
 
-/**
- * Builds the system prompt that sets the behavior and constraints for the LLM. This is static and does not include dynamic context.
- * @returns The system prompt string.
- */
 export function buildSystemPrompt(): string {
-        return renderTemplate("system", {});
-    }
+    return renderTemplate("system", {});
+}
 
-/**
- * Builds the user message prompt that includes the incoming message and current beliefs as context. This is dynamic and constructed for each message.
- * @param args The arguments to include in the user message, such as sender info, content, and context.
- * @returns The user message prompt string.
- */
 export function buildUserMessage(args: {
     senderName: string;
     senderId: string;
@@ -41,4 +27,19 @@ export function buildUserMessage(args: {
     context: string;
 }): string {
     return renderTemplate("user_message", args);
+}
+
+export function summarizeBeliefs(beliefs: Readonly<Beliefs>): string {
+    const map = beliefs.map.getMap();
+    const me = beliefs.agents.getCurrentMe();
+    const deliveryTiles = beliefs.map.getDeliveryTiles();
+    const carried = me ? beliefs.parcels.getCarriedByAgent(me.id) : [];
+
+    const parts: string[] = [];
+    if (map) parts.push(`Map size: ${map.width}x${map.height}`);
+    if (me?.lastPosition) parts.push(`My position: (${me.lastPosition.x}, ${me.lastPosition.y})`);
+    parts.push(`Carrying: ${carried.length} parcel${carried.length !== 1 ? "s" : ""}${carried.length > 0 ? ` (ids: ${carried.map(p => p.id).join(", ")})` : ""}`);
+    if (deliveryTiles.length > 0)
+        parts.push(`Delivery tiles: ${deliveryTiles.map(t => `(${t.x},${t.y})`).join(" ")}`);
+    return parts.join("\n");
 }

@@ -10,7 +10,7 @@ export class LLMAgent {
     constructor(socket: any, agentId?: string) {
         this.log = createLogger("llm", agentId);
         this.bdi = new BDIAgent(socket, agentId);
-        this.client = new LLMClient(entry => this.bdi.addPersistentDesire(entry), agentId);
+        this.client = new LLMClient(entry => this.bdi.addPersistentDesire(entry), this.bdi.getMessenger(), agentId);
 
         socket.on("msg", (senderId: string, senderName: string, content: unknown) => {
             // Remove all the messages that are not strings or are empty

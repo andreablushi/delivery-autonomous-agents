@@ -19,6 +19,7 @@ export type ReachParcelDesire = {
 export type DeliverParcelDesire = {
     type: "DELIVER_PARCEL"; // The agent wants to navigate to the nearest delivery tile
     target: Position;       // Nearest delivery tile position
+    bonus?: number;         // Optional reward bonus added to carried score (used by LLM-injected desires)
 };
 
 export type ReachTileDesire = {

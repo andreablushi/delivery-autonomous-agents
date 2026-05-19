@@ -4,6 +4,7 @@ import { Beliefs } from "./belief/beliefs.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
+import { Messenger } from "./communication/messenger.js";
 import { createLogger } from "../../utils/logger.js";
 
 /**
@@ -18,6 +19,7 @@ export class BDIAgent {
     private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
+    private messenger: Messenger;
     private perceiveLog;
     private deliberateLog;
 
@@ -29,6 +31,7 @@ export class BDIAgent {
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, agentId);
+        this.messenger = new Messenger(socket, agentId);
 
         this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);
@@ -54,6 +57,10 @@ export class BDIAgent {
      */
     addPersistentDesire(entry: PersistentDesireEntry): void {
         this.intentions.addPersistentDesire(entry);
+    }
+
+    getMessenger(): Messenger {
+        return this.messenger;
     }
 
     /**
