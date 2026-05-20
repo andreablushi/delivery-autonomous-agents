@@ -10,6 +10,7 @@ export class LLMClient {
     private readonly client: OpenAI;
     private readonly model: string;
     private readonly log: Logger;
+    private readonly promptLog: Logger;
     private readonly addPersistentDesire: (entry: PersistentDesireEntry) => void;
     private readonly messenger: Messenger;
 
@@ -23,7 +24,8 @@ export class LLMClient {
             apiKey: process.env.LLM_API_KEY ?? "no-key",
         });
         this.model = process.env.MODEL_NAME ?? "llama-3.3-70b-lmstudio";
-        this.log = createLogger("llm", agentId);
+        this.log = createLogger("llm-client", agentId);
+        this.promptLog = createLogger("llm-prompt", agentId);
         this.addPersistentDesire = addPersistentDesire;
         this.messenger = messenger;
     }
@@ -47,6 +49,7 @@ export class LLMClient {
             { role: "user", content: buildUserMessage({ senderName, senderId, content, context }) },
         ];
         this.log.debug(`Processing message from ${senderId}: "${content}"`);
+        this.promptLog.debug(`User prompt:\n${messages[1].content}`);
 
         const MAX_HOPS = 4;
         for (let hop = 0; hop < MAX_HOPS; hop++) {

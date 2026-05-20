@@ -101,12 +101,31 @@ The agent will use the unitn online solver (`@unitn-asa/pddl-client`) on startup
 
 ## Debug Logging
 
-Set `_DEBUG` in `.env` to enable namespaced, color-coded log output. Each namespace (`plan`, `intention`, `execute`, …) is assigned a distinct color.
+Set `_DEBUG` in `.env` to enable namespaced, color-coded log output. Each namespace is assigned a distinct color.
 
 ```bash
 _DEBUG=*                  # all namespaces
 _DEBUG=plan,execute       # only planning and execution
+_DEBUG=llm-prompt         # user message + belief context sent to the LLM each turn
 ```
+
+Available namespaces:
+
+| Namespace | What it covers |
+|---|---|
+| `perceive` | Belief updates from socket events |
+| `deliberate` | Desire generation and intention selection |
+| `desire` | Desire scoring detail |
+| `intention` | Intention validation and replanning triggers |
+| `plan` | A* planning |
+| `pddl` | PDDL crate-clearing planner |
+| `execute` | Socket action loop (move / pickup / putdown) |
+| `map` | Map belief updates |
+| `api` | Server connection |
+| `llm` | Incoming chat messages handled by the LLM agent |
+| `llm-client` | Tool calls and tool results per hop |
+| `llm-prompt` | User message + belief context sent to the model |
+| `comm` | Outgoing chat messages (messenger) |
 
 `npm start` / `npm run start:competitive` always suppress debug output regardless of `.env`.  
 `npm run dev` / `npm run dev:competitive` respect the `_DEBUG` value in `.env`.

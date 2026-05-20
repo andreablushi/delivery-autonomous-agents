@@ -15,8 +15,11 @@ export class LLMAgent {
         socket.on("msg", (senderId: string, senderName: string, content: unknown) => {
             // Remove all the messages that are not strings or are empty
             if (typeof content !== "string" || content.trim() === "") return;
-            this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
+            
             //TODO: filter out noisy messages from other users
+            if (senderId !== process.env.MISSION_AGENT_NAME) return;
+
+            this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
             this.client
                 .processMessage(senderId, senderName, content, this.bdi.getBeliefs())
                 .catch((err: unknown) => this.log.error("LLM call failed:", err));
