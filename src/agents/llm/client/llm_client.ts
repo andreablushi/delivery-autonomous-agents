@@ -1,50 +1,74 @@
 import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { PersistentDesireEntry } from "../../../models/intentions.js";
+import type { InjectedIntention } from "../../../models/intentions.js";
 import type { Messenger } from "../../bdi/communication/messenger.js";
+import type { RuleStore } from "../../bdi/belief/rule_store.js";
 import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage, summarizeBeliefs } from "../prompt/prompt.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 
+
+function tryParseTextToolCall(text: string): { name: string; args: unknown } | null {
+    try {
+        const obj = JSON.parse(text);
+        if (obj?.type === "function" && typeof obj.name === "string")
+            return { name: obj.name, args: obj.parameters ?? obj.arguments ?? {} };
+    } catch { /* not JSON */ }
+    return null;
+}
 
 export class LLMClient {
     private readonly client: OpenAI;
     private readonly model: string;
     private readonly log: Logger;
     private readonly promptLog: Logger;
-    private readonly addPersistentDesire: (entry: PersistentDesireEntry) => void;
+    private readonly addInjectedIntention: (entry: InjectedIntention) => void;
     private readonly messenger: Messenger;
+    private readonly ruleStore: RuleStore;
 
     constructor(
-        addPersistentDesire: (entry: PersistentDesireEntry) => void,
+        addInjectedIntention: (entry: InjectedIntention) => void,
         messenger: Messenger,
+        ruleStore: RuleStore,
         agentId?: string,
     ) {
         this.client = new OpenAI({
             baseURL: process.env.LLM_BASE_URL,
             apiKey: process.env.LLM_API_KEY ?? "no-key",
+            timeout: 15_000,
         });
         this.model = process.env.MODEL_NAME ?? "llama-3.3-70b-lmstudio";
         this.log = createLogger("llm-client", agentId);
         this.promptLog = createLogger("llm-prompt", agentId);
-        this.addPersistentDesire = addPersistentDesire;
+        this.addInjectedIntention = addInjectedIntention;
         this.messenger = messenger;
+        this.ruleStore = ruleStore;
     }
 
+    /**
+     * Process an incoming message by calling the LLM with the message content and current beliefs, and executing any tool calls in the response.
+     * @param senderId ID of the message sender (e.g. "ADMIN" or "agent-1")
+     * @param senderName Name of the message sender (e.g. "ADMIN" or "agent-1")
+     * @param content The message content to process with the LLM
+     * @param beliefs Current beliefs to include in the LLM context
+     */
     async processMessage(
         senderId: string,
         senderName: string,
         content: string,
         beliefs: Readonly<Beliefs>,
     ): Promise<void> {
+        // Define the context object that will be passed to tool calls, 
+        // containing relevant information and utilities.
         const ctx = {
             beliefs: beliefs as Beliefs,
-            addPersistentDesire: this.addPersistentDesire,
+            addInjectedIntention: this.addInjectedIntention,
             messenger: this.messenger,
             sourceId: senderId,
+            ruleStore: this.ruleStore,
         };
 
-        const context = summarizeBeliefs(beliefs);
+        const context = summarizeBeliefs(beliefs, this.ruleStore);
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: "system", content: buildSystemPrompt() },
             { role: "user", content: buildUserMessage({ senderName, senderId, content, context }) },
@@ -70,6 +94,13 @@ export class LLMClient {
             if (toolCalls.length === 0) {
                 const text = choice.message.content?.trim();
                 if (!text) break;
+                const textCall = tryParseTextToolCall(text);
+                if (textCall) {
+                    this.log.debug(`Text tool call [hop ${hop}]: ${textCall.name}(${JSON.stringify(textCall.args)})`);
+                    const result = await executeToolCall(textCall.name, textCall.args, ctx);
+                    this.log.debug(`Tool result [hop ${hop}]: ${result}`);
+                    break;
+                }
                 this.log.debug(`No tool calls — sending model text as chat reply`);
                 await executeToolCall("reply", { text: text.slice(0, 280) }, ctx);
                 break;

@@ -1,6 +1,7 @@
 import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
-import type { PersistentDesireEntry } from "../../models/intentions.js";
+import type { InjectedIntention } from "../../models/intentions.js";
 import { Beliefs } from "./belief/beliefs.js";
+import { RuleStore } from "./belief/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
@@ -16,6 +17,7 @@ import { createLogger } from "../../utils/logger.js";
 export class BDIAgent {
     private socket: any;
     private beliefs: Beliefs;
+    private ruleStore: RuleStore;
     private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
@@ -28,9 +30,10 @@ export class BDIAgent {
         this.perceiveLog = createLogger("perceive", agentId);
         this.deliberateLog = createLogger("deliberate", agentId);
         this.beliefs = new Beliefs(agentId);
+        this.ruleStore = new RuleStore();
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
-        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, agentId);
+        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
         this.messenger = new Messenger(socket, agentId);
 
         this.socket.on('config', (config: IOConfig) => {
@@ -51,12 +54,20 @@ export class BDIAgent {
     }
 
     /**
-     * Add a persistent desire that will be included in the intention queue each cycle until it expires.
-     * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
-     * @param entry The persistent desire entry, including the desire itself and its expiration time.
+     * Expose the rule store for external mutation (e.g. by LLM tool handlers).
+     * @returns The agent's RuleStore instance.
      */
-    addPersistentDesire(entry: PersistentDesireEntry): void {
-        this.intentions.addPersistentDesire(entry);
+    getRuleStore(): RuleStore {
+        return this.ruleStore;
+    }
+
+    /**
+     * Add an injected intention that will be included in the intention queue each cycle until it expires.
+     * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
+     * @param entry The injected intention entry, including the desire itself and its expiration time.
+     */
+    addInjectedIntention(entry: InjectedIntention): void {
+        this.intentions.addInjectedIntention(entry);
     }
 
     getMessenger(): Messenger {
@@ -106,7 +117,7 @@ export class BDIAgent {
      * One deliberation cycle: rebuild desires → update intention queue → plan → execute one step.
      */
     deliberate(): void {
-        this.intentions.update(this.beliefs);
+        this.intentions.update(this.beliefs, this.ruleStore);
         this.deliberateLog.debug("Intention selected:", this.intentions.getIntentionHead());
 
         this.executor.start();

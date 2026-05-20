@@ -11,14 +11,15 @@ export class LLMAgent {
     this.log = createLogger("llm", agentId);
     this.bdi = new BDIAgent(socket, agentId);
     this.client = new LLMClient(
-        entry => this.bdi.addPersistentDesire(entry),
+        entry => this.bdi.addInjectedIntention(entry),
         this.bdi.getMessenger(),
+        this.bdi.getRuleStore(),
         agentId
     );
 
     socket.on("msg", (senderId: string, senderName: string, content: unknown) => {
         if (!this.isValidMessage(senderId, senderName, content)) return;
-
+        
         this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
         
         this.client

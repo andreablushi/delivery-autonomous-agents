@@ -1,6 +1,7 @@
 import type { Position } from "../../../models/position.js";
 import type { Parcel } from "../../../models/parcel.js";
 import type { Beliefs } from "../belief/beliefs.js";
+import type { RuleStore } from "../belief/rule_store.js";
 import type { Planner } from "../plan/planner.js";
 import type { Intentions } from "../intention/intentions.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
@@ -21,6 +22,7 @@ export class Executor {
         private readonly beliefs: Beliefs,
         private readonly intentions: Intentions,
         private readonly planner: Planner,
+        private readonly ruleStore: RuleStore,
         agentId?: string,
     ) {
         this.log = createLogger("execute", agentId);
@@ -81,7 +83,7 @@ export class Executor {
         const plan = await this.planner.plan(); // Ensure we have a plan before trying to execute; no-op if already planned for current intentions.
         if (!plan) {
             // Refresh so the next executor tick gets a rebuilt queue without waiting for a sensing event.
-            this.intentions.update(this.beliefs);
+            this.intentions.update(this.beliefs, this.ruleStore);
             this.log.debug("No plan to execute.");
             return false;
         }
@@ -108,7 +110,7 @@ export class Executor {
             this.log.debug("Step succeeded.");
             this.planner.advance();
             // Rebuild desires immediately so the next plan() call sees fresh belief state.
-            this.intentions.update(this.beliefs);
+            this.intentions.update(this.beliefs, this.ruleStore);
             await this.planner.plan();
         } else {
             this.log.debug("Step failed, invalidating plan.");

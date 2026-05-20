@@ -1,25 +1,32 @@
 import type {
     GeneratedDesires,
+    DesireType,
     ExploreDesire,
     ReachParcelDesire,
     DeliverParcelDesire,
 } from "../../../models/desires.js";
+import type { InjectedIntention } from "../../../models/intentions.js";
 import type { Beliefs } from "../belief/beliefs.js";
 
 /**
-    * Generates desires based on the current beliefs of the agent.
-    * The desires are generated according to the following rules:
-    * - For each available parcel with a known position, generate a REACH_PARCEL desire targeting that position.
-    * - If the agent is carrying any parcels, generate a DELIVER_PARCEL desire for each delivery tile, targeting the tile's position.
-    * - If there are no available parcels, generate an EXPLORE desire for each spawn tile, targeting the tile's position.
+    * Generates desires based on the current beliefs and injected intentions.
+    * - For each available parcel with a known position, generate a REACH_PARCEL desire.
+    * - If the agent is carrying any parcels, generate a DELIVER_PARCEL desire for each delivery tile.
+    * - Generate an EXPLORE desire for each spawn tile.
+    * - Injected intentions (from LLM, peer agents) are merged into the appropriate type bucket.
+    * Rule-based filtering and decay projection happen in the sorter, which has BFS distance info.
     * Note: crate-clearing is handled transparently by the Planner as a fallback when A* fails.
-    * @param beliefs Current beliefs of the agent, used to determine available parcels, carried parcels, and tile positions.
-    * @returns A map of desire types to arrays of generated desires, which may be empty if no desires of that type are applicable.
+    * @param beliefs Current beliefs of the agent.
+    * @param injectedIntentions Live injected intentions to merge into the generated desires.
+    * @returns A map of desire types to arrays of generated desires.
  */
-export function generateDesires(beliefs: Beliefs): GeneratedDesires {
+export function generateDesires(
+    beliefs: Beliefs,
+    injectedIntentions: readonly InjectedIntention[],
+): GeneratedDesires {
     const desires: GeneratedDesires = new Map();
 
-    // REACH_PARCEL for each available parcel with a known position
+    // REACH_PARCEL for each available parcel with a known position; rule/decay filtering happens in the sorter
     const reachParcel = generateReachParcelDesires(beliefs);
     if (reachParcel.length > 0) desires.set("REACH_PARCEL", reachParcel);
 
@@ -31,12 +38,20 @@ export function generateDesires(beliefs: Beliefs): GeneratedDesires {
     const explore = generateExploreDesires(beliefs);
     if (explore.length > 0) desires.set("EXPLORE", explore);
 
+    // Merge injected intentions (LLM / peer goals) into the appropriate type bucket
+    for (const entry of injectedIntentions) {
+        const bucket = (desires.get(entry.desire.type) ?? []) as DesireType[];
+        bucket.push(entry.desire);
+        desires.set(entry.desire.type, bucket);
+    }
+
     return desires;
 }
 
 /**
  * Generate REACH_PARCEL desires for each available parcel with a known position.
- * @param beliefs Current beliefs of the agent, used to determine available parcels and their positions.
+ * Rule-based and decay-based filtering is deferred to the sorter, which has BFS distance info.
+ * @param beliefs Current beliefs of the agent.
  * @returns An array of REACH_PARCEL desires, each targeting the last known position of an available parcel.
  */
 function generateReachParcelDesires(beliefs: Beliefs): ReachParcelDesire[] {

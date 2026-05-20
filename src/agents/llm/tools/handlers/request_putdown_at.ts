@@ -36,7 +36,7 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         return JSON.stringify({ error: "Target tile is currently blocked" });
 
     const expiresAt = Date.now() + ttl_seconds * 1_000;
-    ctx.addPersistentDesire({
+    ctx.addInjectedIntention({
         desire: { type: "DELIVER_PARCEL", target: { x: target_x, y: target_y }, bonus: reward },
         expiresAt,
         sourceId: ctx.sourceId,

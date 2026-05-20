@@ -35,6 +35,10 @@ export class AgentBeliefs {
         this.playerSettings = settings;
     }
 
+    getSettings(): PlayerSettings | null {
+        return this.playerSettings;
+    }
+
     /**
      * Update self-belief with the latest info.
      * @param sensedMe Latest info about the agent from the server.
