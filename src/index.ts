@@ -1,60 +1,48 @@
 import { connect } from "./utils/api.js";
 import { BDIAgent } from "./agents/bdi/bdi_agent.js";
+import { LLMAgent } from "./agents/llm/llm_agent.js";
 import { exit } from "node:process";
 
-/**
- * Entry point of the application.
- */
 async function main() {
-    const isCompetitive = process.env.COMPETITIVE === "true";
+    const mode = process.env.MODE ?? "bdi";
 
-    // Always start a single agent
-    await startSingleAgent();
+    if (mode === "bdi") {
+        const socket = await connect(process.env.BDI_TOKEN);
+        new BDIAgent(socket);
 
-    // If we selected competitive mode, also start the competitive agents.
-    if (isCompetitive) {
-        await startCompetitiveAgents();
-        return;
-    }
-}
+    } else if (mode === "llm") {
+        const socket = await connect(process.env.LLM_TOKEN);
+        new LLMAgent(socket);
 
-/**
- * Starts a single agent using TOKEN.
- */
-async function startSingleAgent(): Promise<void> {
-    const socket = await connect(process.env.TOKEN);
-    new BDIAgent(socket);
-}
+    } else if (mode === "cooperative") {
+        const [llmSocket, bdiSocket] = await Promise.all([
+            connect(process.env.LLM_TOKEN),
+            connect(process.env.BDI_TOKEN),
+        ]);
+        new LLMAgent(llmSocket, "llm");
+        new BDIAgent(bdiSocket, "bdi");
 
-/**
- * Starts multiple agents using TOKEN_1, TOKEN_2, ...
- * Each agent receives an `agent-N` id so interleaved logs are demuxable.
- */
-async function startCompetitiveAgents(): Promise<void> {
-    // Collect all TOKEN_N from the environment variables
-    const tokens: string[] = [];
-    for (let i = 1; ; i++) {
-        const token = process.env[`TOKEN_${i}`];
-        if (!token) {
-            break;
+    } else if (mode === "competitive") {
+        const tokens: string[] = [];
+        for (let i = 1; ; i++) {
+            const token = process.env[`COMPETITIVE_TOKEN_${i}`];
+            if (!token) break;
+            tokens.push(token);
         }
-        tokens.push(token);
-    }
+        if (tokens.length === 0) {
+            console.error("No COMPETITIVE_TOKEN_1 found. Add COMPETITIVE_TOKEN_1, COMPETITIVE_TOKEN_2, ... to .env");
+            exit(1);
+        }
+        console.log(`Launching ${tokens.length} competitive BDI agent(s)...`);
+        const sockets = await Promise.all(tokens.map(t => connect(t)));
+        sockets.forEach((socket, i) => new BDIAgent(socket, `agent-${i + 1}`));
 
-    // If no tokens are found, log an error and exit
-    if (tokens.length === 0) {
-        console.error("No TOKEN_1 found. Add TOKEN_1, TOKEN_2, ... to .env");
+    } else {
+        console.error(`Unknown MODE="${mode}". Expected: bdi | llm | cooperative | competitive`);
         exit(1);
     }
-
-    // Launch an agent for each token and wait for all connections to be established before starting the agents
-    console.log(`Launching ${tokens.length} competitive agent(s)...`);
-    const sockets = await Promise.all(tokens.map((token) => connect(token)));
-    sockets.forEach((socket, i) => new BDIAgent(socket, `agent-${i + 1}`));
 }
 
-
-// Run the main function and catch any errors for logging
 main().catch((error) => {
     console.error(error);
     process.exitCode = 1;

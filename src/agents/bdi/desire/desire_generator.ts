@@ -5,7 +5,6 @@ import type {
     DeliverParcelDesire,
 } from "../../../models/desires.js";
 import type { Beliefs } from "../belief/beliefs.js";
-import { manhattanDistance } from "../../../utils/metrics.js";
 
 /**
     * Generates desires based on the current beliefs of the agent.

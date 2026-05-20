@@ -18,17 +18,23 @@
     "doc": "docs"
   },
   "scripts": {
-    "start": "cross-env _DEBUG= node --import tsx --env-file-if-exists=.env src/index.ts",
-    "start:competitive": "cross-env _DEBUG= COMPETITIVE=true node --import tsx --env-file-if-exists=.env src/index.ts",
-    "dev": "node --import tsx --env-file-if-exists=.env src/index.ts",
-    "dev:competitive": "cross-env COMPETITIVE=true node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start": "cross-env _DEBUG= MODE=bdi node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start:llm": "cross-env _DEBUG= MODE=llm node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start:cooperative": "cross-env _DEBUG= MODE=cooperative node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start:competitive": "cross-env _DEBUG= MODE=competitive node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev": "cross-env MODE=bdi node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev:llm": "cross-env MODE=llm node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev:cooperative": "cross-env MODE=cooperative node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev:competitive": "cross-env MODE=competitive node --import tsx --env-file-if-exists=.env src/index.ts",
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "@unitn-asa/deliveroo-js-sdk": "^1.3.0",
     "@unitn-asa/pddl-client": "^0.0.37",
-    "cross-env": "^10.1.0"
+    "cross-env": "^10.1.0",
+    "dotenv": "^17.4.2",
+    "openai": "^6.38.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

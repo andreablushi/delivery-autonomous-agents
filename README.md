@@ -99,27 +99,62 @@ PAAS_HOST=https://solver.planning.domains:5001
 
 The agent will use the unitn online solver (`@unitn-asa/pddl-client`) on startup. You can also point `PAAS_HOST` at a self-hosted instance of the planning service.
 
+## Running the Agent
+
+Four startup modes are available. Each has a production (`start:*`) and a debug (`dev:*`) variant — debug variants respect the `_DEBUG` value in `.env`.
+
+| Command | Mode | Agents spawned | Tokens used |
+|---|---|---|---|
+| `npm start` / `npm run dev` | `bdi` | 1 BDI agent | `BDI_TOKEN` |
+| `npm run start:llm` / `npm run dev:llm` | `llm` | 1 LLM agent | `LLM_TOKEN` |
+| `npm run start:cooperative` / `npm run dev:cooperative` | `cooperative` | LLM + BDI as teammates | `LLM_TOKEN` + `BDI_TOKEN` |
+| `npm run start:competitive` / `npm run dev:competitive` | `competitive` | N BDI agents | `COMPETITIVE_TOKEN_1..N` |
+| `npm run build` | — | — | Type-check only (`tsc → dist/`) |
+
+Set the matching tokens in `.env` before starting. Production scripts suppress all debug output; dev scripts enable it.
+
+### LLM agent
+
+Set `MISSION_AGENT_NAME` in `.env` to the in-game name of the human operator. The LLM agent filters incoming chat messages and only processes those from that sender.
+
+Required `.env` keys for LLM / cooperative modes:
+
+```env
+LLM_BASE_URL=...   # OpenAI-compatible endpoint
+LLM_API_KEY=...
+MODEL_NAME=...
+```
+
 ## Debug Logging
 
-Set `_DEBUG` in `.env` to enable namespaced, color-coded log output. Each namespace (`plan`, `intention`, `execute`, …) is assigned a distinct color.
+Set `_DEBUG` in `.env` to enable namespaced, color-coded log output. Each namespace is assigned a distinct color.
 
 ```bash
 _DEBUG=*                  # all namespaces
 _DEBUG=plan,execute       # only planning and execution
+_DEBUG=llm-prompt         # user message + belief context sent to the LLM each turn
 ```
 
-`npm start` / `npm run start:competitive` always suppress debug output regardless of `.env`.  
-`npm run dev` / `npm run dev:competitive` respect the `_DEBUG` value in `.env`.
+Available namespaces:
 
-## Running the Agent
-
-| Command | Description |
+| Namespace | What it covers |
 |---|---|
-| `npm build` | Compile TypeScript to JavaScript (output in `dist/`). |
-| `npm start` | Single agent, production mode. |
-| `npm run dev` | Single agent, debug logging enabled. |
-| `npm run competitive` | Multiple agents, production mode. Uses `TOKEN_1`, `TOKEN_2`, ... from `.env` (one token per agent). |
-| `npm run dev:competitive` | Multiple agents, development mode with debug logging enabled. Uses `TOKEN_1`, `TOKEN_2`, ... from `.env`. |
+| `perceive` | Belief updates from socket events |
+| `deliberate` | Desire generation and intention selection |
+| `desire` | Desire scoring detail |
+| `intention` | Intention validation and replanning triggers |
+| `plan` | A* planning |
+| `pddl` | PDDL crate-clearing planner |
+| `execute` | Socket action loop (move / pickup / putdown) |
+| `map` | Map belief updates |
+| `api` | Server connection |
+| `llm` | Incoming chat messages handled by the LLM agent |
+| `llm-client` | Tool calls and tool results per hop |
+| `llm-prompt` | User message + belief context sent to the model |
+| `comm` | Outgoing chat messages (messenger) |
+
+Production scripts (`npm start`, `npm run start:*`) always suppress debug output regardless of `.env`.  
+Dev scripts (`npm run dev`, `npm run dev:*`) respect the `_DEBUG` value in `.env`.
 
 
 ## Repository Structure

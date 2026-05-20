@@ -1,0 +1,5 @@
+Message from "{{senderName}}" (id: {{senderId}}):
+{{content}}
+
+--- Current state ---
+{{context}}

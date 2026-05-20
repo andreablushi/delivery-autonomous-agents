@@ -1,9 +1,10 @@
 import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
+import type { PersistentDesireEntry } from "../../models/intentions.js";
 import { Beliefs } from "./belief/beliefs.js";
-import { generateDesires } from "./desire/desire_generator.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
+import { Messenger } from "./communication/messenger.js";
 import { createLogger } from "../../utils/logger.js";
 
 /**
@@ -18,6 +19,7 @@ export class BDIAgent {
     private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
+    private messenger: Messenger;
     private perceiveLog;
     private deliberateLog;
 
@@ -29,6 +31,7 @@ export class BDIAgent {
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, agentId);
+        this.messenger = new Messenger(socket, agentId);
 
         this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);
@@ -37,6 +40,27 @@ export class BDIAgent {
         });
 
         this.perceive();
+    }
+
+    /**
+     * Return current beliefs for external inspection (e.g. by an LLM)
+     * @returns Beliefs object, which is readonly and updated in-place by socket listeners.
+     */
+    getBeliefs(): Readonly<Beliefs> {
+        return this.beliefs;
+    }
+
+    /**
+     * Add a persistent desire that will be included in the intention queue each cycle until it expires.
+     * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
+     * @param entry The persistent desire entry, including the desire itself and its expiration time.
+     */
+    addPersistentDesire(entry: PersistentDesireEntry): void {
+        this.intentions.addPersistentDesire(entry);
+    }
+
+    getMessenger(): Messenger {
+        return this.messenger;
     }
 
     /**

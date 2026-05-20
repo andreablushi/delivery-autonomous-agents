@@ -98,6 +98,7 @@ export class Planner {
     private async findPlannableIntention(from: Position): Promise<Plan | null> {
         for (let head = this.intentionManager.getIntentionHead(); head; head = this.intentionManager.getIntentionHead()) {
             const desire = head.desire;
+            if (desire.type === "STOP") { this.intentionManager.dropIntentionHead(); continue; }
 
             // Try A* first — fast and sufficient for the common case
             const astarPlan = this.astarPlanner.plan(from, desire);
@@ -132,7 +133,7 @@ export class Planner {
     private canReuse(from: Position): boolean {
         if (!this.currentPlan) return false;
         const head = this.intentionManager.getIntentionHead()?.desire;
-        if (!head) return false;
+        if (!head || head.type === "STOP") return false;
 
         // Sticky PDDL: keep the plan, but opportunistically swap to A* if it succeeds.
         if (this.currentPlan.source === "pddl") {

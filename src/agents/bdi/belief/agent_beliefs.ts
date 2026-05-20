@@ -106,6 +106,15 @@ export class AgentBeliefs {
     }
 
     /**
+     * Get the agent's current tile position. Always integer-valued — half positions are
+     * rejected by updateMe before being stored.
+     * @returns The current position, or null if not yet observed.
+     */
+    getCurrentPosition(): Position | null {
+        return this.me?.lastPosition ?? null;
+    }
+
+    /**
      * Get the observation distance from the player settings.
      * @returns The observation distance in tiles, or null if settings are not yet received.
      */
