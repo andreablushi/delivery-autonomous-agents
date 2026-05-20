@@ -5,7 +5,6 @@ import * as requestPutdownAt from "./handlers/request_putdown_at.js";
 import * as markHazardousTile from "./handlers/mark_hazardous_tile.js";
 import * as reply from "./handlers/reply.js";
 import * as calculate from "./handlers/calculate.js";
-import * as webSearch from "./handlers/web_search.js";
 
 export type { ToolContext };
 
@@ -20,12 +19,11 @@ const modules: Record<string, ToolModule> = {
     mark_hazardous_tile: markHazardousTile,
     reply,
     calculate,
-    web_search: webSearch,
 };
 
 export const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = Object.values(modules).map(m => m.definition);
 
-export const FOLLOWUP_TOOLS = new Set(["calculate", "web_search"]);
+export const FOLLOWUP_TOOLS = new Set(["calculate"]);
 
 export async function executeToolCall(name: string, rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const mod = modules[name];

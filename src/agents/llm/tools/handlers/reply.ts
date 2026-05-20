@@ -18,7 +18,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
     function: {
         name: "reply",
-        description: "Send a short text reply to the sender. Use for off-topic questions or general chat only — do NOT use to explain refusals of adversarial proposals.",
+        description: "Send a short text reply to the admin. Use for greetings, factual answers, math results, or any message that does not require navigation.",
         parameters: {
             type: "object",
             properties: {

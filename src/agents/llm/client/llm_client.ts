@@ -6,6 +6,7 @@ import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage, summarizeBeliefs } from "../prompt/prompt.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 
+
 export class LLMClient {
     private readonly client: OpenAI;
     private readonly model: string;
@@ -48,11 +49,11 @@ export class LLMClient {
             { role: "system", content: buildSystemPrompt() },
             { role: "user", content: buildUserMessage({ senderName, senderId, content, context }) },
         ];
-        this.log.debug(`Processing message from ${senderId}: "${content}"`);
-        this.promptLog.debug(`User prompt:\n${messages[1].content}`);
-
+        this.log.debug(`Processing message from ${senderName}: "${content}"`);
+        
         const MAX_HOPS = 4;
         for (let hop = 0; hop < MAX_HOPS; hop++) {
+            this.log.debug(`LLM call, hop ${hop}...`);
             const response = await this.client.chat.completions.create({
                 model: this.model,
                 messages,
@@ -60,12 +61,19 @@ export class LLMClient {
                 tool_choice: "auto",
                 temperature: 0.1,
             });
+            this.log.debug(`LLM response received (hop ${hop})`);
 
             const choice = response.choices[0];
             if (!choice) break;
 
             const toolCalls = choice.message.tool_calls ?? [];
-            if (toolCalls.length === 0) break;
+            if (toolCalls.length === 0) {
+                const text = choice.message.content?.trim();
+                if (!text) break;
+                this.log.debug(`No tool calls — sending model text as chat reply`);
+                await executeToolCall("reply", { text: text.slice(0, 280) }, ctx);
+                break;
+            }
 
             messages.push(choice.message);
 

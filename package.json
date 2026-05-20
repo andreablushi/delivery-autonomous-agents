@@ -18,10 +18,14 @@
     "doc": "docs"
   },
   "scripts": {
-    "start": "cross-env _DEBUG= node --import tsx --env-file-if-exists=.env src/index.ts",
-    "start:competitive": "cross-env _DEBUG= COMPETITIVE=true node --import tsx --env-file-if-exists=.env src/index.ts",
-    "dev": "node --import tsx --env-file-if-exists=.env src/index.ts",
-    "dev:competitive": "cross-env COMPETITIVE=true node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start": "cross-env _DEBUG= MODE=bdi node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start:llm": "cross-env _DEBUG= MODE=llm node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start:cooperative": "cross-env _DEBUG= MODE=cooperative node --import tsx --env-file-if-exists=.env src/index.ts",
+    "start:competitive": "cross-env _DEBUG= MODE=competitive node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev": "cross-env MODE=bdi node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev:llm": "cross-env MODE=llm node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev:cooperative": "cross-env MODE=cooperative node --import tsx --env-file-if-exists=.env src/index.ts",
+    "dev:competitive": "cross-env MODE=competitive node --import tsx --env-file-if-exists=.env src/index.ts",
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

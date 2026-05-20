@@ -38,7 +38,7 @@ export class Intentions {
     }
 
     /**
-     * Removes expired persistent desires from the list. 
+     * Removes expired persistent desires from the list.
      * Should be called at the start of each deliberation cycle before rebuilding the intention queue.
      */
     private prunePersistent(): void {
@@ -47,11 +47,32 @@ export class Intentions {
     }
 
     /**
+     * Drop any persistent desires that are already satisfied in the current beliefs to avoid 
+     * cluttering the intention queue with irrelevant desires.
+     * @param beliefs Current beliefs, used to check if any persistent desires are already satisfied (e.g. REACH_TILE where the agent is already on the target tile).
+     * @returns void
+     */
+    private pruneSatisfiedPersistentIntentions(beliefs: Beliefs): void {
+        const pos = beliefs.agents.getCurrentPosition();
+        if (!pos) return;
+        const before = this.persistentDesires.length;
+        this.persistentDesires = this.persistentDesires.filter(e =>
+            !(e.desire.type === "REACH_TILE" &&
+              e.desire.target.x === pos.x &&
+              e.desire.target.y === pos.y)
+        );
+        if (this.persistentDesires.length !== before) {
+            this.log.debug(`Dropped satisfied REACH_TILE @(${pos.x},${pos.y})`);
+        }
+    }
+
+    /**
      * Rebuild the intention queue from current beliefs plus any live persistent desires.
      * @param beliefs Current beliefs, used by the sorter for distance-based scoring.
      */
     update(beliefs: Beliefs): void {
         this.prunePersistent();
+        this.pruneSatisfiedPersistentIntentions(beliefs);
         const desires = generateDesires(beliefs);
 
         for (const entry of this.persistentDesires) {

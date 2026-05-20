@@ -9,10 +9,17 @@ export type Args = {
     ttl_seconds: number;
 };
 
+function coerceInt(v: unknown): unknown {
+    return typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+}
+
 export function parseArgs(json: unknown): Args | { error: string } {
     if (typeof json !== "object" || json === null) return { error: "args must be an object" };
     const obj = json as Record<string, unknown>;
-    const { target_x, target_y, reward, ttl_seconds } = obj;
+    const target_x = coerceInt(obj.target_x);
+    const target_y = coerceInt(obj.target_y);
+    const reward = coerceInt(obj.reward);
+    const ttl_seconds = coerceInt(obj.ttl_seconds);
     if (typeof target_x !== "number" || !Number.isInteger(target_x))
         return { error: "target_x must be an integer" };
     if (typeof target_y !== "number" || !Number.isInteger(target_y))
@@ -34,7 +41,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
             properties: {
                 target_x: { type: "integer", description: "X coordinate of the target tile." },
                 target_y: { type: "integer", description: "Y coordinate of the target tile." },
-                reward: { type: "integer", description: "Reward value for this goal (1–100)." },
+                reward: { type: "integer", description: "Reward value for this goal." },
                 ttl_seconds: { type: "integer", description: "How many seconds this goal stays active (5–120)." },
             },
             required: ["target_x", "target_y", "reward", "ttl_seconds"],
