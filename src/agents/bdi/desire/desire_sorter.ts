@@ -1,4 +1,5 @@
 import type { Beliefs } from "../belief/beliefs.js";
+import type { RuleStore } from "../belief/rule_store.js";
 import type {
     DesireType,
     ExploreDesire,
@@ -14,30 +15,19 @@ import { IntentionQueue } from "../../../models/intentions.js";
 
 
 /**
- * Determines the priority tier of a desire type.
- * Priority tiers: 
- * - REACH_PARCEL = DELIVER_PARCEL = REACH_TILE = 1;
- * - EXPLORE=0.
- * @param desire The desire to evaluate.
- * @returns The priority tier of the desire, where higher numbers indicate higher priority.
- */
-function getPriorityForDesire(desire: DesireType): number {
-    if (desire.type === 'REACH_PARCEL' || desire.type === 'DELIVER_PARCEL' || desire.type === 'REACH_TILE') return 1;
-    return 0;
-}
-
-/**
  * Build the ordered desire queue for all candidates generated this cycle.
  *
- * Priority tiers:
- *   1. Goal     - REACH_PARCEL and DELIVER_PARCEL, scored independently and compared.
- *   0. Fallback - EXPLORE (nearest spawn outside the observation range).
+ * REACH_PARCEL, DELIVER_PARCEL, and REACH_TILE are always at priority tier 1.
+ * EXPLORE is at tier 1 only when a positive stack_count rule is active (multiplier > 1 or
+ * additive > 0) and the expected stack reward is positive at the agent's current carry count + 1;
+ * otherwise it falls to tier 0 so goal desires always win.
  *
  * @param desires Grouped desires from the generator.
  * @param beliefs Current beliefs of the agent.
+ * @param ruleStore Active scoring rules; applied when scoring REACH_PARCEL, DELIVER_PARCEL, and EXPLORE.
  * @returns The ordered desire queue, or an empty array if no candidates are available.
  */
-export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): IntentionQueue {
+export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, ruleStore: RuleStore): IntentionQueue {
     const queue: IntentionQueue = [];
 
     const me = beliefs.agents.getCurrentMe();
@@ -52,57 +42,65 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs): 
 
     // One BFS per enemy for race factor scoring (typically few enemies)
     const enemies = beliefs.agents.getCurrentEnemies().filter(e => e.lastPosition !== null);
-    const enemyDists = enemies.map(e => bfsDistancesFrom(e.lastPosition!, walkable));
+    const enemyDists = enemies.map(e => {
+        const pos = { x: Math.round(e.lastPosition!.x), y: Math.round(e.lastPosition!.y) };
+        return bfsDistancesFrom(pos, walkable);
+    });
 
-    // Goal desires — scored and compared
+    // Goal desires — always priority tier 1
     const reaches = (desires.get("REACH_PARCEL") ?? []) as ReachParcelDesire[];
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];
 
     for (const desire of reaches) {
-        queue.push({ desire, score: scoreReachDesire(desire, beliefs, meDist, enemyDists) });
+        queue.push({ desire, score: scoreReachDesire(desire, beliefs, meDist, enemyDists, ruleStore), priority: 1 });
     }
     for (const desire of delivers) {
-        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs, meDist) });
+        queue.push({ desire, score: scoreDeliverDesire(desire, beliefs, meDist, ruleStore), priority: 1 });
     }
 
     const reachTiles = (desires.get("REACH_TILE") ?? []) as ReachTileDesire[];
     for (const desire of reachTiles) {
-        queue.push({ desire, score: scoreReachTile(desire, meDist) });
+        queue.push({ desire, score: scoreReachTile(desire, meDist, beliefs), priority: 1 });
     }
 
-    // Fallback to exploration desires
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
     const now = Date.now();
+    const hasPositiveStack = ruleStore.hasPositiveStackRule();
     for (const desire of explores) {
-        queue.push({ desire, score: scoreExplore(desire, meDist, beliefs, now) });
+        const { score, priority } = scoreExplore(desire, meDist, beliefs, ruleStore, now, hasPositiveStack);
+        queue.push({ desire, score, priority });
     }
 
     // Sort by priority tier first, then by score within the same tier
-    return queue.sort((a, b) => getPriorityForDesire(b.desire) - getPriorityForDesire(a.desire) || b.score - a.score);
+    return queue.sort((a, b) => b.priority - a.priority || b.score - a.score);
+}
+
+/** Adds the tile penalty at `target` to `distance`, making penalized targets look farther away. */
+function penalizedDistance(distance: number, target: Position, beliefs: Beliefs): number {
+    return distance + beliefs.map.getTilePenalty(target);
 }
 
 /**
  * Score a REACH_TILE desire as `reward / distance`.
  * Uses the same reward/distance heuristic as REACH_PARCEL so goals compete fairly with parcels.
  */
-function scoreReachTile(desire: ReachTileDesire, meDist: Map<string, number>): number {
+function scoreReachTile(desire: ReachTileDesire, meDist: Map<string, number>, beliefs: Beliefs): number {
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
     if (distance === 0) return Infinity;
-    return desire.reward / distance;
+    return desire.reward / penalizedDistance(distance, desire.target, beliefs);
 }
 
 /**
- * Score a REACH_PARCEL desire as `(parcelReward / distance) * raceFactor`.
- * raceFactor = clamp(closestEnemyDistance / ourDistance, 0, 1): penalises parcels
- * where an enemy is closer than us, proportionally to how much closer they are.
- * Falls back to 0 when the parcel can't be matched or the target is unreachable.
+ * Score a REACH_PARCEL desire based on effective reward after rules, distance, and enemy competition.
+ * Falls back to 0 when the parcel is no longer available, unreachable, effective score ≤ 0, or an enemy can reach it faster.
  */
 function scoreReachDesire(
     desire: ReachParcelDesire,
     beliefs: Beliefs,
     meDist: Map<string, number>,
     enemyDists: Map<string, number>[],
+    ruleStore: RuleStore,
 ): number {
     const parcel = beliefs.parcels.getAvailableParcels().find(
         p => p.lastPosition &&
@@ -111,64 +109,140 @@ function scoreReachDesire(
     );
     if (!parcel) return 0;
 
-    const targetKey = posKey(desire.target);
-    const distance = meDist.get(targetKey);
-    if (distance === undefined) return 0; // unreachable
-    if (distance === 0) return Infinity;
+    const parcelKey = posKey(desire.target);
+    const dPickup = meDist.get(parcelKey);
+    if (dPickup === undefined) return 0; // unreachable
+    if (dPickup === 0) return Infinity;
 
-    // Race factor: discount when an enemy can reach this parcel faster than we can.
-    // An enemy that cannot reach the parcel poses no threat (treat distance as Infinity).
+    const me = beliefs.agents.getCurrentMe();
+    const carried = me ? beliefs.parcels.getCarriedByAgent(me.id) : [];
+
+    // Sum per-parcel effective reward after parcel_value rules applied on raw values
+    const hypotheticalCount = carried.length + 1;
+    const newEffect = ruleStore.parcelValueEffect(parcel.reward);
+    const base = parcel.reward * newEffect.multiplier + newEffect.additive
+        + carried.reduce((sum, p) => {
+            const { multiplier, additive } = ruleStore.parcelValueEffect(p.reward);
+            return sum + p.reward * multiplier + additive;
+        }, 0);
+
+    // Apply stack and delivery-tile rules
+    const stack = ruleStore.stackCountEffect(hypotheticalCount);
+    const effective = base * stack.multiplier + stack.additive;
+    if (effective <= 0) return 0;
+
+    // Race factor: discount when an enemy can reach this parcel faster than we can
     let raceFactor = 1;
     if (enemyDists.length > 0) {
-        const closestEnemyDist = Math.min(...enemyDists.map(d => d.get(targetKey) ?? Infinity));
-        raceFactor = Math.min(1, closestEnemyDist / distance);
+        const closestEnemyDist = Math.min(...enemyDists.map(d => d.get(parcelKey) ?? Infinity));
+        raceFactor = Math.min(1, closestEnemyDist / dPickup);
     }
 
-    return (parcel.reward / distance) * raceFactor;
+    return (effective / penalizedDistance(dPickup, desire.target, beliefs)) * raceFactor;
 }
 
 /**
- * Score a DELIVER_PARCEL desire as `sum(carriedRewards) / (distance + 1)`.
- * Falls back to 0 when nothing is carried or the target is unreachable.
+ * Score a DELIVER_PARCEL desire applying stack_count, delivery_tile, and parcel_value rules on raw rewards.
+ * Falls back to 0 when nothing is carried, the target is unreachable, or effective score ≤ 0.
  */
 function scoreDeliverDesire(
     desire: DeliverParcelDesire,
     beliefs: Beliefs,
     meDist: Map<string, number>,
+    ruleStore: RuleStore,
 ): number {
     const me = beliefs.agents.getCurrentMe();
     if (!me) return 0;
 
-    const carriedReward = beliefs.parcels.getCarriedByAgent(me.id).reduce((s, p) => s + p.reward, 0);
-    if (carriedReward === 0) return 0;
+    const carried = beliefs.parcels.getCarriedByAgent(me.id);
+    if (carried.length === 0) return 0;
 
-    const distance = meDist.get(posKey(desire.target)) ?? undefined;
+    const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
-    return (carriedReward + (desire.bonus ?? 0)) / (distance + 1);
+
+    // Per-parcel value after parcel_value rules applied on raw values
+    // It consider the fact that delivering a parcel with score higher than a value returns 0
+    const base = carried.reduce((sum, p) => {
+        const { multiplier, additive } = ruleStore.parcelValueEffect(p.reward);
+        return sum + p.reward * multiplier + additive;
+    }, 0);
+
+    const stack = ruleStore.stackCountEffect(carried.length);
+    const tile = ruleStore.deliveryTileEffect(desire.target);
+
+    const effective = base * stack.multiplier * tile.multiplier
+        + stack.additive + tile.additive
+        + (desire.bonus ?? 0);
+    if (effective <= 0) return 0;
+
+    return effective / (penalizedDistance(distance, desire.target, beliefs) + 1);
 }
 
 /**
- * Score an ExploreDesire based on how long it's been since the target tile was last sensed,
- * adjusted for distance: score = clusterWeight * age / (distance + 1) / (1 + enemyHeat).
- * Tiles that have never been sensed score Infinity and will always be chosen over sensed tiles.
- * Among sensed tiles, those that haven't been sensed for a long time and are closer will score higher.
- * The enemy heat factor penalises tiles near recently-observed enemies.
+ * Score an ExploreDesire and assign its priority tier.
+ *
+ * Two regimes:
+ *
+ * No positive stack rule (or effective stack reward ≤ 0 for the agent's next pickup):
+ *   priority = 0; score = clusterWeight * ageNormalized / (distance + 1) / (1 + enemyHeat)
+ *   EXPLORE acts as a low-priority fallback, always yielding to goal desires.
+ *
+ * Positive stack rule active and expected reward > 0:
+ *   priority = 1; score = expectedStackReward * clusterWeight * ageNormalized / (distance + 1) / (1 + enemyHeat)
+ *   EXPLORE competes numerically with DELIVER_PARCEL / REACH_PARCEL to encourage building stacks.
+ *   expectedStackReward = reward_avg * (carriedCount + 1) * stackEffect.multiplier + stackEffect.additive
+ *
+ * ageNormalized is capped at 1 using parcel_spawn_interval as the saturation point.
  */
 function scoreExplore(
     desire: ExploreDesire,
     meDist: Map<string, number>,
     beliefs: Beliefs,
+    ruleStore: RuleStore,
     now: number,
-): number {
+    hasPositiveStack: boolean,
+): { score: number; priority: number } {
     const distance = meDist.get(posKey(desire.target));
-    if (distance === undefined) return 0; // unreachable
+    if (distance === undefined) return { score: 0, priority: 0 };
+
+    const settings = beliefs.parcels.getSettings();
+    const spawnInterval = settings?.parcel_spawn_interval;
 
     const lastSensing = beliefs.map.getSpawnTileSensingTime(desire.target);
     const age = lastSensing !== undefined ? now - lastSensing : Infinity;
+    // Cap at 1: tiles unseen for ≥ one spawn cycle are equally "ripe".
+    const ageNormalized = (spawnInterval && isFinite(spawnInterval) && spawnInterval > 0)
+        ? Math.min(1, age / spawnInterval)
+        : 1;
 
     const clusterWeight = beliefs.map.getSpawnTileClusterWeight(desire.target);
     const weight = clusterWeight > 0 ? clusterWeight : 1;
-
     const heat = beliefs.agents.getEnemyHeatAt(desire.target);
-    return weight * age / (distance + 1) / (1 + heat);
+    const legacyScore = weight * ageNormalized / (penalizedDistance(distance, desire.target, beliefs) + 1) / (1 + heat);
+
+    // If no positive stack rule is active or positive behave normally
+    if (!hasPositiveStack) {
+        return { score: legacyScore, priority: 0 };
+    }
+
+    const me = beliefs.agents.getCurrentMe();
+    const carried = me ? beliefs.parcels.getCarriedByAgent(me.id) : [];
+    const targetCount = carried.length + 1;
+    const stackEffect = ruleStore.stackCountEffect(targetCount);
+
+    if ((stackEffect.multiplier ?? 1) <= 1 && (stackEffect.additive ?? 0) <= 0) {
+        return { score: legacyScore, priority: 0 };
+    }
+
+    const rewardAvg = settings?.reward_avg ?? 1;
+    const expectedStackReward = rewardAvg * targetCount * (stackEffect.multiplier ?? 1) + (stackEffect.additive ?? 0);
+
+    if (expectedStackReward <= 0) {
+        return { score: legacyScore, priority: 0 };
+    }
+
+    return {
+        score: expectedStackReward * weight * ageNormalized / (penalizedDistance(distance, desire.target, beliefs) + 1) / (1 + heat),
+        priority: 1,
+    };
 }

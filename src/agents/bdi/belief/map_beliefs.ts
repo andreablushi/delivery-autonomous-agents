@@ -21,6 +21,7 @@ export class MapBeliefs {
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
+    private llmTilePenalties = new Map<string, { id: string; tile: Position; cost: number }>();  // LLM-managed soft traversal costs, keyed by posKey; distinct from temporaryBlocked which is for collision avoidance
     private readonly log: Logger;
 
     constructor(agentId?: string) {
@@ -133,18 +134,21 @@ export class MapBeliefs {
     getMap(): GameMap | null {
         return this.map;
     }
-    
+
+    checkMapBounds(x: number, y: number): boolean {
+        if (!this.map) return false;
+        return x >= 0 && x < this.map.width && y >= 0 && y < this.map.height;
+    }
+
     /**
      * Retrieve the tile at a given position, or null if the position is out of bounds or the map is not yet initialized.
      * @param position The position to query for the tile.
      * @returns The tile at the given position, or null if not found or map not initialized.
      */
     getTileAt(position: Position): Tile | null {
-        if (!this.map) return null;
         const { x, y } = position;
-        // Check bounds
-        if (y < 0 || y >= this.map.height || x < 0 || x >= this.map.width) return null;
-        return { x, y, type: this.map.tiles[y][x] };
+        if (!this.checkMapBounds(x, y)) return null;
+        return { x, y, type: this.map!.tiles[y][x] };
     }
 
     /**
@@ -310,6 +314,48 @@ export class MapBeliefs {
      */
     getCurrentCrates(): Crate[] {
         return this.crates.getCurrentAll();
+    }
+
+    /**
+     * Set (or replace) a soft LLM traversal penalty for a tile.
+     * Unlike markBlocked, this does NOT make the tile unwalkable — it adds cost to the A* edge so the planner avoids it when a detour is cheaper.
+     * @param id LLM-supplied identifier; re-registering with the same id replaces the previous entry.
+     * @param pos The position to penalise.
+     * @param cost Additional path cost to apply when stepping onto this tile (must be ≥ 0).
+     */
+    setTilePenalty(id: string, pos: Position, cost: number): void {
+        // Remove any previous entry with this id (it may have been on a different tile)
+        for (const [key, entry] of this.llmTilePenalties) {
+            if (entry.id === id) { this.llmTilePenalties.delete(key); break; }
+        }
+        this.llmTilePenalties.set(posKey(pos), { id, tile: pos, cost });
+    }
+
+    /**
+     * Remove a soft LLM traversal penalty by id.
+     * @param id The id of the penalty to remove.
+     * @returns true if a penalty was removed, false if no entry with that id existed.
+     */
+    removeTilePenalty(id: string): boolean {
+        for (const [key, entry] of this.llmTilePenalties) {
+            if (entry.id === id) { this.llmTilePenalties.delete(key); return true; }
+        }
+        return false;
+    }
+
+    /**
+     * Return the soft LLM traversal penalty for a tile, or 0 if none is set.
+     * @param pos The position to query.
+     */
+    getTilePenalty(pos: Position): number {
+        return this.llmTilePenalties.get(posKey(pos))?.cost ?? 0;
+    }
+
+    /**
+     * Return all currently active LLM tile penalties.
+     */
+    listTilePenalties(): { id: string; tile: Position; cost: number }[] {
+        return [...this.llmTilePenalties.values()];
     }
 
     /**

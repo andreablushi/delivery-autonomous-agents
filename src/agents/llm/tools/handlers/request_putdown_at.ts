@@ -21,6 +21,12 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     },
 };
 
+/**
+ * Execute the "request_putdown_at" tool by parsing the input arguments, validating them, and then adding a new REACH_TILE desire with a putdown action to the agent's intention stack. Returns a JSON string indicating success or containing an error message if execution failed.
+ * @param rawArgs The raw arguments to the tool, expected to be an object with properties as defined in the Args type
+ * @param ctx The tool context, which provides access to beliefs and a method for adding new intentions
+ * @returns A JSON string containing { ok: true } if the intention was successfully added, or { error: string } if there was a problem with the input arguments, the target tile, or if the agent is not currently carrying any parcels
+ */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const parsed = parseArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
@@ -28,15 +34,14 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     const { target_x, target_y, reward, ttl_seconds } = parsed;
     const map = ctx.beliefs.map.getMap();
     if (!map) return JSON.stringify({ error: "Map not yet loaded" });
-    if (target_x < 0 || target_x >= map.width || target_y < 0 || target_y >= map.height)
-        return JSON.stringify({ error: "Coordinates out of map bounds" });
+    if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
     if (map.tiles[target_y][target_x] === TILE_TYPE.WALL)
         return JSON.stringify({ error: "Target tile is a wall" });
     if (ctx.beliefs.map.isBlocked({ x: target_x, y: target_y }))
         return JSON.stringify({ error: "Target tile is currently blocked" });
 
     const expiresAt = Date.now() + ttl_seconds * 1_000;
-    ctx.addPersistentDesire({
+    ctx.addInjectedIntention({
         desire: { type: "DELIVER_PARCEL", target: { x: target_x, y: target_y }, bonus: reward },
         expiresAt,
         sourceId: ctx.sourceId,

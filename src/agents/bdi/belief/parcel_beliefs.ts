@@ -118,6 +118,10 @@ export class ParcelBeliefs {
 
     }
 
+    getSettings(): ParcelSettings | null {
+        return this.parcelSettings;
+    }
+
     /**
      * Get the current believed positions of all parcels.
      * @returns An array of all parcels with their current believed state

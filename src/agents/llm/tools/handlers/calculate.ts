@@ -3,6 +3,11 @@ import type { ToolContext } from "../context.js";
 
 type Args = { expression: string };
 
+/**
+ * Try to parse the raw arguments as the expected Args type, and return an error message if parsing fails.
+ * @param json The raw arguments to parse
+ * @returns The parsed Args object, or an object with an "error" property if parsing failed
+ */
 function parseArgs(json: unknown): Args | { error: string } {
     if (typeof json !== "object" || json === null) return { error: "args must be an object" };
     const obj = json as Record<string, unknown>;
@@ -12,6 +17,10 @@ function parseArgs(json: unknown): Args | { error: string } {
     return { expression: expression.trim() };
 }
 
+/**
+ * Tool definition for the "calculate" tool, which evaluates a mathematical expression and returns the result.
+ * The LLM should call this tool when it needs to compute a math expression, and then call reply to send the answer back to the sender.
+ */
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
     function: {
@@ -27,6 +36,12 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     },
 };
 
+/**
+ * Execute the "calculate" tool by evaluating the given mathematical expression and returning the result.
+ * @param rawArgs The raw arguments to the tool, expected to be an object with an "expression" string property
+ * @param _ctx The tool context, which is not used in this tool but may be useful for more complex tools
+ * @returns A JSON string containing either the "result" of the calculation or an "error" message if execution failed
+ */
 export async function execute(rawArgs: unknown, _ctx: ToolContext): Promise<string> {
     const parsed = parseArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });

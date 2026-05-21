@@ -7,6 +7,7 @@ export type GameSettings = {
     title: string;                         // Title of the game
     description: string;                   // Description of the game
     max_player: number;                    // Maximum number of players
+    clock: number;                         // Server game-tick duration in milliseconds (from IOConfig.CLOCK)
 }
 
 export type ParcelSettings = {

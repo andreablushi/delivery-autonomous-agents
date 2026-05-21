@@ -48,6 +48,7 @@ export class Beliefs {
             title: config.GAME.title,
             description: config.GAME.description,
             max_player: config.GAME.maxPlayers,
+            clock: config.CLOCK,
         };
         // Distribute relevant config slices to sub-systems
         this.agents.setSettings({
