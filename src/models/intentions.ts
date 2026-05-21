@@ -16,7 +16,7 @@ export type IntentionQueue = Intention[];
 // Used by external sources (LLM, peer agents) to inject goals into the BDI loop.
 export type InjectedIntention = {
     desire: DesireType;
-    expiresAt: number;  // ms epoch
+    expiresAt?: number; // ms epoch
     sourceId: string;   // for logging / dedup
 };
 

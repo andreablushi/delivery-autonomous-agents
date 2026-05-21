@@ -1,8 +1,17 @@
 import { tryDecode } from "../../../models/envelope.js";
-import { parseGotoArgs, parseScoringRuleArgs, parseTraversalPenaltyArgs } from "../../../models/tool_args.js";
+import {
+    parseGotoArgs,
+    parseScoringRuleArgs,
+    parseTraversalPenaltyArgs,
+    parseRendezvousArgs,
+    parseRedLightArgs,
+    parseResumeArgs,
+    parseRendezvousPositionArgs,
+} from "../../../models/tool_args.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../belief/rule_store.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
+import type { DesireType } from "../../../models/desires.js";
 import type { ScoringRule } from "../../../models/rules.js";
 import type { Logger } from "../../../utils/logger.js";
 
@@ -42,6 +51,7 @@ export async function dispatch(
     beliefs: Beliefs,
     ruleStore: RuleStore,
     addInjectedIntention: (entry: InjectedIntention) => void,
+    removeIntentionsByType: (type: DesireType["type"]) => void,
     log: Logger,
 ): Promise<void> {
     // Try to decode the incoming message as a tool call envelope. If decoding fails, ignore the message.
@@ -97,6 +107,58 @@ export async function dispatch(
             const p = tryParse(parseTraversalPenaltyArgs, envelope.args, log, "penalty");
             if (!p || !guardBounds(beliefs.map, p.target_x, p.target_y)) return;
             beliefs.map.setTilePenalty(p.id, { x: p.target_x, y: p.target_y }, p.cost);
+            break;
+        }
+
+        case "request_rendezvous": {
+            const p = tryParse(parseRendezvousArgs, envelope.args, log, "rendezvous");
+            if (!p || !guardBounds(beliefs.map, p.x, p.y)) return;
+            const from = beliefs.agents.getCurrentPosition();
+            if (!from) return;
+            const excluded = (p.excluded_x !== undefined && p.excluded_y !== undefined)
+                ? [{ x: p.excluded_x, y: p.excluded_y }]
+                : [];
+            const tile = beliefs.map.pickRendezvousTile(from, p.x, p.y, p.max_distance, excluded);
+            if (!tile) { log.warn("request_rendezvous: no reachable tile within zone"); return; }
+            addInjectedIntention({
+                desire: {
+                    type: "HOLD_TILE",
+                    target: tile,
+                    sourceId: senderId,
+                    reward: p.reward,
+                    releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
+                },
+                sourceId: senderId,
+            });
+            break;
+        }
+
+        case "rendezvous_position": {
+            const p = tryParse(parseRendezvousPositionArgs, envelope.args, log, "rendezvous position");
+            if (!p || !guardBounds(beliefs.map, p.x, p.y)) return;
+            beliefs.agents.updateFriendPosition(senderId, { x: p.x, y: p.y });
+            break;
+        }
+
+        case "request_red_light": {
+            const p = tryParse(parseRedLightArgs, envelope.args, log, "red_light");
+            if (!p) return;
+            const from = beliefs.agents.getCurrentPosition();
+            if (!from) return;
+            const tile = beliefs.map.pickOddRowTile(from);
+            if (!tile) { log.warn("request_red_light: no odd-row tile reachable"); return; }
+            const expiresAt = Date.now() + p.ttl_seconds * 1_000;
+            addInjectedIntention({
+                desire: { type: "HOLD_TILE", target: tile, sourceId: senderId, expiresAt, reward: p.reward },
+                expiresAt,
+                sourceId: senderId,
+            });
+            break;
+        }
+
+        case "request_resume": {
+            tryParse(parseResumeArgs, envelope.args, log, "resume");
+            removeIntentionsByType("HOLD_TILE");
             break;
         }
     }

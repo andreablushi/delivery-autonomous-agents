@@ -99,6 +99,11 @@ export class Planner {
         for (let head = this.intentionManager.getIntentionHead(); head; head = this.intentionManager.getIntentionHead()) {
             const desire = head.desire;
             if (desire.type === "STOP") { this.intentionManager.dropIntentionHead(); continue; }
+            // Already at target: keep the head (don't drop) and return null so the executor idles
+            // until the hold expires or is cancelled via request_resume.
+            if (desire.type === "HOLD_TILE" && from.x === desire.target.x && from.y === desire.target.y) {
+                return null;
+            }
 
             // Try A* first — fast and sufficient for the common case
             const astarPlan = this.astarPlanner.plan(from, desire);

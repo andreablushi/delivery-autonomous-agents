@@ -30,11 +30,13 @@ export class LLMClient {
     private readonly log: Logger;
     private readonly promptLog: Logger;
     private readonly addInjectedIntention: (entry: InjectedIntention) => void;
+    private readonly removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
     private readonly messenger: Messenger;
     private readonly ruleStore: RuleStore;
 
     constructor(
         addInjectedIntention: (entry: InjectedIntention) => void,
+        removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
         messenger: Messenger,
         ruleStore: RuleStore,
         agentId?: string,
@@ -48,6 +50,7 @@ export class LLMClient {
         this.log = createLogger("llm", agentId);
         this.promptLog = createLogger("llm-prompt", agentId);
         this.addInjectedIntention = addInjectedIntention;
+        this.removeIntentionsByType = removeIntentionsByType;
         this.messenger = messenger;
         this.ruleStore = ruleStore;
     }
@@ -70,6 +73,7 @@ export class LLMClient {
         const ctx = {
             beliefs: beliefs as Beliefs,
             addInjectedIntention: this.addInjectedIntention,
+            removeIntentionsByType: this.removeIntentionsByType,
             messenger: this.messenger,
             sourceId: senderId,
             ruleStore: this.ruleStore,

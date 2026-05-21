@@ -2,6 +2,7 @@ import { dispatch } from "./dispatch.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../belief/rule_store.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
+import type { DesireType } from "../../../models/desires.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 
 export class Messenger {
@@ -51,11 +52,12 @@ export class Messenger {
         beliefs: Beliefs,
         ruleStore: RuleStore,
         addInjectedIntention: (entry: InjectedIntention) => void,
+        removeIntentionsByType: (type: DesireType["type"]) => void,
     ): Promise<void> {
         this.socket.on("msg", async (senderId: string, senderName: string, content: unknown) => {
             this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
             if (!beliefs.agents.getCurrentFriends().some(f => f.id === senderId)) return;
-            await dispatch(content, senderId, senderName, beliefs, ruleStore, addInjectedIntention, this.log);
+            await dispatch(content, senderId, senderName, beliefs, ruleStore, addInjectedIntention, removeIntentionsByType, this.log);
         });
     }
 }

@@ -1,5 +1,7 @@
 import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
 import type { InjectedIntention } from "../../models/intentions.js";
+import type { DesireType } from "../../models/desires.js";
+import { encode } from "../../models/envelope.js";
 import { Beliefs } from "./belief/beliefs.js";
 import { RuleStore } from "./belief/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
@@ -35,7 +37,12 @@ export class BDIAgent {
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
         this.messenger = new Messenger(socket, agentId);
-        this.messenger.receive(this.beliefs, this.ruleStore, entry => this.addInjectedIntention(entry));
+        this.messenger.receive(
+            this.beliefs,
+            this.ruleStore,
+            entry => this.addInjectedIntention(entry),
+            type => this.removeIntentionsByType(type),
+        );
 
         this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);
@@ -71,6 +78,19 @@ export class BDIAgent {
         this.intentions.addInjectedIntention(entry);
     }
 
+    /**
+     * Remove all intentions of a given desire type from the intention queue.
+     * Useful for revoking desires injected by an LLM or other external system.
+     * @param type The type of desire whose intentions should be removed.
+     */
+    removeIntentionsByType(type: DesireType["type"]): void {
+        this.intentions.removeIntentionsByType(type);
+    }
+
+    /**
+     * Expose the messenger for external use (e.g. by LLM tool handlers that need to send messages).
+     * @returns The agent's Messenger instance.
+     */
     getMessenger(): Messenger {
         return this.messenger;
     }
@@ -96,7 +116,7 @@ export class BDIAgent {
         });
 
         // Periodic sensing — agents, parcels, crates; this is the main deliberation trigger
-        this.socket.on('sensing', (sensing: IOSensing) => {
+        this.socket.on('sensing', async (sensing: IOSensing) => {
             this.beliefs.agents.updateOtherAgents(sensing.agents, sensing.positions);
             this.beliefs.parcels.updateParcels(sensing.parcels, sensing.positions);
             this.beliefs.map.updateCrates(sensing.crates, sensing.positions);

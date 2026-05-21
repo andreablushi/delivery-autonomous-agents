@@ -5,7 +5,7 @@ import type { IOTile, IOCrate } from "../../../models/djs.js";
 import { TILE_TYPE, type TileType } from "../../../models/tile_type.js";
 import { Tracker } from "./utils/tracker.js";
 import { computeSafeTiles } from "./utils/reachability.js";
-import { manhattanDistance, posKey } from "../../../utils/metrics.js";
+import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
@@ -389,5 +389,47 @@ export class MapBeliefs {
         return this.crates.getCurrentAll().some(
             c => c.lastPosition?.x === pos.x && c.lastPosition?.y === pos.y
         );
+    }
+
+    /**
+     * Find the closest reachable tile (by BFS travel distance from `from`) whose
+     * Manhattan distance to (cx, cy) is within `maxDistance`, skipping any tile in `excluded`.
+     * The exclusion set lets two agents independently pick different holding spots: the first
+     * agent picks its tile, then passes it as excluded so the peer picks a distinct one.
+     * Uses the static walkability graph so the result is map-topology-aware.
+     */
+    pickRendezvousTile(from: Position, cx: number, cy: number, maxDistance: number, excluded: Position[] = []): Position | null {
+        if (!this.map) return null;
+        const { tiles, width, height } = this.map;
+        const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
+        const dists = bfsDistancesFrom(from, walkable);
+        const excludedKeys = new Set(excluded.map(posKey));
+        let best: { pos: Position; d: number } | null = null;
+        for (const [key, d] of dists) {
+            const [x, y] = key.split(",").map(Number);
+            if (manhattanDistance({ x, y }, { x: cx, y: cy }) > maxDistance) continue;
+            if (excludedKeys.has(key)) continue;
+            if (!best || d < best.d) best = { pos: { x, y }, d };
+        }
+        return best?.pos ?? null;
+    }
+
+    /**
+     * Find the closest reachable tile (by BFS travel distance from `from`) whose
+     * y coordinate is odd (odd-numbered row, as used by the red-light challenge).
+     * Uses the static walkability graph so the result is map-topology-aware.
+     */
+    pickOddRowTile(from: Position): Position | null {
+        if (!this.map) return null;
+        const { tiles, width, height } = this.map;
+        const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
+        const dists = bfsDistancesFrom(from, walkable);
+        let best: { pos: Position; d: number } | null = null;
+        for (const [key, d] of dists) {
+            const [x, y] = key.split(",").map(Number);
+            if (y % 2 !== 1) continue;
+            if (!best || d < best.d) best = { pos: { x, y }, d };
+        }
+        return best?.pos ?? null;
     }
 }

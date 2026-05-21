@@ -4,6 +4,9 @@ import * as requestGoto from "./handlers/request_goto.js";
 import * as requestPutdownAt from "./handlers/request_putdown_at.js";
 import * as registerScoringRule from "./handlers/register_scoring_rule.js";
 import * as registerTraversalPenalty from "./handlers/register_traversal_penalty.js";
+import * as requestRendezvous from "./handlers/request_rendezvous.js";
+import * as requestRedLight from "./handlers/request_red_light.js";
+import * as requestGreenLight from "./handlers/request_green_light.js";
 import * as reply from "./handlers/reply.js";
 import * as calculate from "./handlers/calculate.js";
 
@@ -19,6 +22,9 @@ const modules: Record<string, ToolModule> = {
     request_putdown_at: requestPutdownAt,
     register_scoring_rule: registerScoringRule,
     register_traversal_penalty: registerTraversalPenalty,
+    request_rendezvous: requestRendezvous,
+    request_red_light: requestRedLight,
+    request_green_light: requestGreenLight,
     reply,
     calculate,
 };

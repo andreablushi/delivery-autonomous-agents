@@ -27,7 +27,7 @@ export function parseGotoArgs(json: unknown): GotoArgs | { error: string } {
     const ttl_seconds = coerceNum(obj.ttl_seconds);
     if (typeof target_x   !== "number" || !Number.isInteger(target_x))   return { error: "target_x must be an integer" };
     if (typeof target_y   !== "number" || !Number.isInteger(target_y))   return { error: "target_y must be an integer" };
-    if (typeof reward     !== "number" || !Number.isInteger(reward))     return { error: "reward must be an integer" };
+    if (typeof reward     !== "number" || reward <= 0)     return { error: "reward must be a positive number" };
     if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
         return { error: "ttl_seconds must be an integer in [5, 120]" };
     return { target_x, target_y, reward, ttl_seconds };
@@ -112,6 +112,82 @@ export function parseScoringRuleArgs(json: unknown): ScoringRuleArgs | { error: 
     if (max_reward !== undefined && (typeof max_reward !== "number" || max_reward < 0))
         return { error: "max_reward must be a non-negative number" };
     return { id, conditioned_axis, min_reward: min_reward as number | undefined, max_reward: max_reward as number | undefined, multiplier: multiplier as number | undefined, additive: additive as number | undefined };
+}
+
+
+/** Arguments for `request_rendezvous`. */
+export type RendezvousArgs = {
+    x: number;
+    y: number;
+    max_distance: number;
+    reward: number;
+    // Tile already claimed by the sender — receiver should pick a different spot.
+    excluded_x?: number;
+    excluded_y?: number;
+};
+
+export function parseRendezvousArgs(json: unknown): RendezvousArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    const x            = coerceNum(obj.x);
+    const y            = coerceNum(obj.y);
+    const max_distance = coerceNum(obj.max_distance);
+    const reward       = coerceNum(obj.reward);
+    if (typeof x !== "number" || !Number.isInteger(x)) return { error: "x must be an integer" };
+    if (typeof y !== "number" || !Number.isInteger(y)) return { error: "y must be an integer" };
+    if (typeof max_distance !== "number" || !Number.isInteger(max_distance) || max_distance < 0 || max_distance > 10)
+        return { error: "max_distance must be an integer in [0, 10]" };
+    if (typeof reward !== "number" || reward <= 0) return { error: "reward must be a positive number" };
+    const excluded_x = coerceNum(obj.excluded_x);
+    const excluded_y = coerceNum(obj.excluded_y);
+    const hasExcluded = excluded_x !== undefined || excluded_y !== undefined;
+    if (hasExcluded) {
+        if (typeof excluded_x !== "number" || !Number.isInteger(excluded_x)) return { error: "excluded_x must be an integer" };
+        if (typeof excluded_y !== "number" || !Number.isInteger(excluded_y)) return { error: "excluded_y must be an integer" };
+        return { x, y, max_distance, reward, excluded_x, excluded_y };
+    }
+    return { x, y, max_distance, reward };
+}
+
+
+/** Arguments for `request_red_light`. */
+export type RedLightArgs = {
+    ttl_seconds: number;
+    reward: number;
+};
+
+export function parseRedLightArgs(json: unknown): RedLightArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    const reward      = coerceNum(obj.reward);
+    const ttl_seconds = coerceNum(obj.ttl_seconds);
+    if (typeof reward !== "number" || reward <= 0) return { error: "reward must be a positive number" };
+    if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
+        return { error: "ttl_seconds must be an integer in [5, 120]" };
+    return { ttl_seconds, reward };
+}
+
+
+/** Arguments for `request_resume` (no fields — empties are valid). */
+export type ResumeArgs = Record<string, never>;
+
+export function parseResumeArgs(json: unknown): ResumeArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    return {};
+}
+
+
+/** Arguments for `rendezvous_position` — the sender's current tile. */
+export type RendezvousPositionArgs = { x: number; y: number };
+
+export function parseRendezvousPositionArgs(json: unknown): RendezvousPositionArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    const x = coerceNum(obj.x);
+    const y = coerceNum(obj.y);
+    if (typeof x !== "number" || !Number.isInteger(x)) return { error: "x must be an integer" };
+    if (typeof y !== "number" || !Number.isInteger(y)) return { error: "y must be an integer" };
+    return { x, y };
 }
 
 

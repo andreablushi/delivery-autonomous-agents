@@ -9,7 +9,11 @@ export type PeerInjectionKind =
     | "request_goto"
     | "request_putdown_at"
     | "register_scoring_rule"
-    | "register_traversal_penalty";
+    | "register_traversal_penalty"
+    | "request_rendezvous"
+    | "request_red_light"
+    | "request_resume"
+    | "rendezvous_position";
 
 /** Wire format for a peer-injection message. */
 export type PeerInjectionEnvelope = {
@@ -24,6 +28,10 @@ const VALID_TOOLS: ReadonlySet<string> = new Set([
     "request_putdown_at",
     "register_scoring_rule",
     "register_traversal_penalty",
+    "request_rendezvous",
+    "request_red_light",
+    "request_resume",
+    "rendezvous_position",
 ]);
 
 /** Serialise an envelope to a JSON string ready for `emitSay`. */

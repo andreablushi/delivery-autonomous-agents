@@ -133,6 +133,17 @@ export class AgentBeliefs {
     getCurrentFriends(): Agent[] {
         return this.friends.getCurrentAll();
     }
+
+    /**
+     * Refresh the believed position of a friend from a direct peer message.
+     * @param id Friend agent id
+     * @param position Latest believed position for that friend
+     */
+    updateFriendPosition(id: string, position: Position): void {
+        const friend = this.friends.getCurrentAll().find(agent => agent.id === id);
+        if (!friend) return;
+        this.friends.updateValuePreservingTimestamp(id, { ...friend, lastPosition: position });
+    }
     
     /**
      * Get the list of all currently believed enemy agents

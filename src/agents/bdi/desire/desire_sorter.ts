@@ -6,6 +6,7 @@ import type {
     ReachParcelDesire,
     DeliverParcelDesire,
     ReachTileDesire,
+    HoldTileDesire,
     GeneratedDesires,
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
@@ -63,6 +64,11 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, r
         queue.push({ desire, score: scoreReachTile(desire, meDist, beliefs), priority: 1 });
     }
 
+    const holdTiles = (desires.get("HOLD_TILE") ?? []) as HoldTileDesire[];
+    for (const desire of holdTiles) {
+        queue.push({ desire, score: scoreHoldTile(desire, meDist, beliefs), priority: 1 });
+    }
+
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
     const now = Date.now();
     const hasPositiveStack = ruleStore.hasPositiveStackRule();
@@ -85,6 +91,18 @@ function penalizedDistance(distance: number, target: Position, beliefs: Beliefs)
  * Uses the same reward/distance heuristic as REACH_PARCEL so goals compete fairly with parcels.
  */
 function scoreReachTile(desire: ReachTileDesire, meDist: Map<string, number>, beliefs: Beliefs): number {
+    const distance = meDist.get(posKey(desire.target));
+    if (distance === undefined) return 0; // unreachable
+    if (distance === 0) return Infinity;
+    return desire.reward / penalizedDistance(distance, desire.target, beliefs);
+}
+
+/**
+ * Score a HOLD_TILE desire identically to REACH_TILE.
+ * Returns Infinity when already at the target so the hold outcompetes all tier-1 desires
+ * and keeps the agent anchored at the tile.
+ */
+function scoreHoldTile(desire: HoldTileDesire, meDist: Map<string, number>, beliefs: Beliefs): number {
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
     if (distance === 0) return Infinity;
