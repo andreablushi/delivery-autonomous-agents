@@ -38,6 +38,16 @@ export class RuleStore {
     }
 
     /**
+     * Returns true if any stack_count rule would increase reward (multiplier > 1 or additive > 0).
+     */
+    hasPositiveStackRule(): boolean {
+        return this.rules.some(
+            r => r.conditioned_axis === "stack_count" &&
+                ((r.effect.multiplier ?? 1) > 1 || (r.effect.additive ?? 0) > 0)
+        );
+    }
+
+    /**
      * Return the effective multiplier + additive for a given carried parcel count.
      * Finds the most recently registered stack_count rule whose predicate matches, or identity if none.
      * @param carriedCount Number of parcels currently carried by the agent.
