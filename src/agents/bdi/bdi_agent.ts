@@ -110,6 +110,7 @@ export class BDIAgent {
             this.perceiveLog.debug("  - Crates:", this.beliefs.map.getCurrentCrates().length, "crates");
 
             this.deliberate();
+            this.executor.kick();
         });
     }
 
