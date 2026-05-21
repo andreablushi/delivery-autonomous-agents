@@ -7,7 +7,14 @@ import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage, summarizeBeliefs } from "../prompt/prompt.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 
+const MAX_HOPS = 5;             // Maximum number of consecutive tool calls before giving up
 
+/**
+ * Try to parse a text response as a tool call. 
+ * This allows the model to call tools even if it doesn't use the official tool call format.
+ * @param text 
+ * @returns 
+ */
 function tryParseTextToolCall(text: string): { name: string; args: unknown } | null {
     try {
         const obj = JSON.parse(text);
@@ -75,7 +82,7 @@ export class LLMClient {
         ];
         this.log.debug(`Processing message from ${senderName}: "${content}"`);
         
-        const MAX_HOPS = 4;
+        // Perform multiple hops of LLM calls if the model indicates that follow-up calls are needed
         for (let hop = 0; hop < MAX_HOPS; hop++) {
             this.log.debug(`LLM call, hop ${hop}...`);
             const response = await this.client.chat.completions.create({
@@ -87,12 +94,15 @@ export class LLMClient {
             });
             this.log.debug(`LLM response received (hop ${hop})`);
 
+            // Log the full prompt and response for debugging purposes
             const choice = response.choices[0];
+            this.promptLog.debug(`LLM response (hop ${hop}): ${JSON.stringify(choice)}`);
             if (!choice) break;
 
+            // If the model doesn't use the official tool call format, try to parse the content as a tool call anyway
             const toolCalls = choice.message.tool_calls ?? [];
             if (toolCalls.length === 0) {
-                const text = choice.message.content?.trim();
+                const text = choice.message.content?.trim();    // Trim whitespace to avoid parsing issues
                 if (!text) break;
                 const textCall = tryParseTextToolCall(text);
                 if (textCall) {
@@ -106,8 +116,10 @@ export class LLMClient {
                 break;
             }
 
+            // Add the model's message to the conversation history for the next hop
             messages.push(choice.message);
 
+            // Execute all tool calls in the model's response
             let needsFollowUp = false;
             for (const call of toolCalls) {
                 if (call.type !== "function") continue;

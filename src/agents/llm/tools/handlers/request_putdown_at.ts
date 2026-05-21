@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { TILE_TYPE } from "../../../../models/tile_type.js";
 import { parseArgs } from "./request_goto.js";
+import { checkMapBounds } from "./utils.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -26,10 +27,9 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
     const { target_x, target_y, reward, ttl_seconds } = parsed;
-    const map = ctx.beliefs.map.getMap();
-    if (!map) return JSON.stringify({ error: "Map not yet loaded" });
-    if (target_x < 0 || target_x >= map.width || target_y < 0 || target_y >= map.height)
-        return JSON.stringify({ error: "Coordinates out of map bounds" });
+    const mapResult = checkMapBounds(ctx, target_x, target_y);
+    if ("error" in mapResult) return JSON.stringify({ error: mapResult.error });
+    const { map } = mapResult;
     if (map.tiles[target_y][target_x] === TILE_TYPE.WALL)
         return JSON.stringify({ error: "Target tile is a wall" });
     if (ctx.beliefs.map.isBlocked({ x: target_x, y: target_y }))

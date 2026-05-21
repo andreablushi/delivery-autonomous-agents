@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { TILE_TYPE } from "../../../../models/tile_type.js";
+import { coerceNum, checkMapBounds } from "./utils.js";
 
 export type Args = {
     target_x: number;
@@ -9,17 +10,13 @@ export type Args = {
     ttl_seconds: number;
 };
 
-function coerceInt(v: unknown): unknown {
-    return typeof v === "string" && v.trim() !== "" ? Number(v) : v;
-}
-
 export function parseArgs(json: unknown): Args | { error: string } {
     if (typeof json !== "object" || json === null) return { error: "args must be an object" };
     const obj = json as Record<string, unknown>;
-    const target_x = coerceInt(obj.target_x);
-    const target_y = coerceInt(obj.target_y);
-    const reward = coerceInt(obj.reward);
-    const ttl_seconds = coerceInt(obj.ttl_seconds);
+    const target_x = coerceNum(obj.target_x);
+    const target_y = coerceNum(obj.target_y);
+    const reward = coerceNum(obj.reward);
+    const ttl_seconds = coerceNum(obj.ttl_seconds);
     if (typeof target_x !== "number" || !Number.isInteger(target_x))
         return { error: "target_x must be an integer" };
     if (typeof target_y !== "number" || !Number.isInteger(target_y))
@@ -54,10 +51,9 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
     const { target_x, target_y, reward, ttl_seconds } = parsed;
-    const map = ctx.beliefs.map.getMap();
-    if (!map) return JSON.stringify({ error: "Map not yet loaded" });
-    if (target_x < 0 || target_x >= map.width || target_y < 0 || target_y >= map.height)
-        return JSON.stringify({ error: "Coordinates out of map bounds" });
+    const mapResult = checkMapBounds(ctx, target_x, target_y);
+    if ("error" in mapResult) return JSON.stringify({ error: mapResult.error });
+    const { map } = mapResult;
     if (map.tiles[target_y][target_x] === TILE_TYPE.WALL)
         return JSON.stringify({ error: "Target tile is a wall" });
     if (ctx.beliefs.map.isBlocked({ x: target_x, y: target_y }))

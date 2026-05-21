@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import type { ScoringRule } from "../../../../models/rules.js";
+import { coerceNum, checkMapBounds } from "./utils.js";
 
 type Args = {
     id: string;
@@ -20,10 +21,11 @@ type Args = {
     additive?: number;
 };
 
-function coerceNum(v: unknown): unknown {
-    return typeof v === "string" && v.trim() !== "" ? Number(v) : v;
-}
-
+/**
+ * Try to parse the raw arguments as the expected Args type, and return an error message if parsing fails.
+ * @param json The raw arguments to parse
+ * @returns The parsed Args object, or an object with an "error" property if parsing failed
+ */
 function parseArgs(json: unknown): Args | { error: string } {
     if (typeof json !== "object" || json === null) return { error: "args must be an object" };
     const obj = json as Record<string, unknown>;
@@ -104,6 +106,12 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     },
 };
 
+/**
+ * Execute the "register_scoring_rule" tool by parsing the input arguments, validating them, and then upserting the new scoring rule into the rule store. Returns a JSON string indicating success or containing an error message if execution failed.
+ * @param rawArgs The raw arguments to the tool, expected to be an object with properties as defined in the Args type
+ * @param ctx The tool context, which provides access to beliefs and the rule store for registering the new rule
+ * @returns A JSON string containing { ok: true } if the rule was successfully registered, or { error: string } if there was a problem with the input arguments
+ */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const parsed = parseArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
@@ -116,12 +124,10 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
             predicate: { equals: parsed.equals, min: parsed.min, max: parsed.max },
             effect };
     } else if (parsed.conditioned_axis === "delivery_tile") {
-        const map = ctx.beliefs.map.getMap();
-        if (!map) return JSON.stringify({ error: "Map not yet loaded" });
         const tx = parsed.tile_x!;
         const ty = parsed.tile_y!;
-        if (tx < 0 || tx >= map.width || ty < 0 || ty >= map.height)
-            return JSON.stringify({ error: "Tile coordinates out of map bounds" });
+        const mapResult = checkMapBounds(ctx, tx, ty);
+        if ("error" in mapResult) return JSON.stringify({ error: mapResult.error });
         rule = { id: parsed.id, conditioned_axis: "delivery_tile", registeredAt: 0,
             tile: { x: tx, y: ty },
             effect };
