@@ -21,8 +21,8 @@ export function parseArgs(json: unknown): Args | { error: string } {
         return { error: "target_x must be an integer" };
     if (typeof target_y !== "number" || !Number.isInteger(target_y))
         return { error: "target_y must be an integer" };
-    if (typeof reward !== "number" || !Number.isInteger(reward) || reward < 1)
-        return { error: "reward must be an integer >= 1" };
+    if (typeof reward !== "number" || !Number.isInteger(reward))
+        return { error: "reward must be an integer" };
     if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
         return { error: "ttl_seconds must be an integer in [5, 120]" };
     return { target_x, target_y, reward, ttl_seconds };
@@ -38,7 +38,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
             properties: {
                 target_x: { type: "integer", description: "X coordinate of the target tile." },
                 target_y: { type: "integer", description: "Y coordinate of the target tile." },
-                reward: { type: "integer", description: "Reward value for this goal." },
+                reward: { type: "integer", description: "Reward value for this goal (can be negative to penalise reaching the tile)." },
                 ttl_seconds: { type: "integer", description: "How many seconds this goal stays active (5–120)." },
             },
             required: ["target_x", "target_y", "reward", "ttl_seconds"],

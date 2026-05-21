@@ -60,7 +60,7 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, r
 
     const reachTiles = (desires.get("REACH_TILE") ?? []) as ReachTileDesire[];
     for (const desire of reachTiles) {
-        queue.push({ desire, score: scoreReachTile(desire, meDist), priority: 1 });
+        queue.push({ desire, score: scoreReachTile(desire, meDist, beliefs), priority: 1 });
     }
 
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
@@ -75,15 +75,20 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, r
     return queue.sort((a, b) => b.priority - a.priority || b.score - a.score);
 }
 
+/** Adds the tile penalty at `target` to `distance`, making penalized targets look farther away. */
+function penalizedDistance(distance: number, target: Position, beliefs: Beliefs): number {
+    return distance + beliefs.map.getTilePenalty(target);
+}
+
 /**
  * Score a REACH_TILE desire as `reward / distance`.
  * Uses the same reward/distance heuristic as REACH_PARCEL so goals compete fairly with parcels.
  */
-function scoreReachTile(desire: ReachTileDesire, meDist: Map<string, number>): number {
+function scoreReachTile(desire: ReachTileDesire, meDist: Map<string, number>, beliefs: Beliefs): number {
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
     if (distance === 0) return Infinity;
-    return desire.reward / distance;
+    return desire.reward / penalizedDistance(distance, desire.target, beliefs);
 }
 
 /**
@@ -133,7 +138,7 @@ function scoreReachDesire(
         raceFactor = Math.min(1, closestEnemyDist / dPickup);
     }
 
-    return (effective / dPickup) * raceFactor;
+    return (effective / penalizedDistance(dPickup, desire.target, beliefs)) * raceFactor;
 }
 
 /**
@@ -170,7 +175,7 @@ function scoreDeliverDesire(
         + (desire.bonus ?? 0);
     if (effective <= 0) return 0;
 
-    return effective / (distance + 1);
+    return effective / (penalizedDistance(distance, desire.target, beliefs) + 1);
 }
 
 /**
@@ -213,7 +218,7 @@ function scoreExplore(
     const clusterWeight = beliefs.map.getSpawnTileClusterWeight(desire.target);
     const weight = clusterWeight > 0 ? clusterWeight : 1;
     const heat = beliefs.agents.getEnemyHeatAt(desire.target);
-    const legacyScore = weight * ageNormalized / (distance + 1) / (1 + heat);
+    const legacyScore = weight * ageNormalized / (penalizedDistance(distance, desire.target, beliefs) + 1) / (1 + heat);
 
     // If no positive stack rule is active or positive behave normally
     if (!hasPositiveStack) {
@@ -237,7 +242,7 @@ function scoreExplore(
     }
 
     return {
-        score: expectedStackReward * weight * ageNormalized / (distance + 1) / (1 + heat),
+        score: expectedStackReward * weight * ageNormalized / (penalizedDistance(distance, desire.target, beliefs) + 1) / (1 + heat),
         priority: 1,
     };
 }

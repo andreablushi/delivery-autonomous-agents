@@ -109,7 +109,10 @@ export class LLMClient {
                     this.log.debug(`Text tool call [hop ${hop}]: ${textCall.name}(${JSON.stringify(textCall.args)})`);
                     const result = await executeToolCall(textCall.name, textCall.args, ctx);
                     this.log.debug(`Tool result [hop ${hop}]: ${result}`);
-                    break;
+                    if (!FOLLOWUP_TOOLS.has(textCall.name)) break;
+                    messages.push({ role: "assistant", content: text });
+                    messages.push({ role: "user", content: `Tool result: ${result}` });
+                    continue;
                 }
                 this.log.debug(`No tool calls — sending model text as chat reply`);
                 await executeToolCall("reply", { text: text.slice(0, 280) }, ctx);
