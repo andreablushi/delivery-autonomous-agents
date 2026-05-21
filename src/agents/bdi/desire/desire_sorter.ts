@@ -55,7 +55,10 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, r
 
     // One BFS per enemy for race factor scoring (typically few enemies)
     const enemies = beliefs.agents.getCurrentEnemies().filter(e => e.lastPosition !== null);
-    const enemyDists = enemies.map(e => bfsDistancesFrom(e.lastPosition!, walkable));
+    const enemyDists = enemies.map(e => {
+        const pos = { x: Math.round(e.lastPosition!.x), y: Math.round(e.lastPosition!.y) };
+        return bfsDistancesFrom(pos, walkable);
+    });
 
     // Settings needed for decay projection
     const parcelSettings = beliefs.parcels.getSettings();
