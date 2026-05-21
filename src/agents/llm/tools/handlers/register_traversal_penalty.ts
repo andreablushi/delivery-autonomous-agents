@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
-import { coerceNum, checkMapBounds } from "./utils.js";
+import { coerceNum } from "./utils.js";
 
 type Args = { id: string; target_x: number; target_y: number; cost: number };
 
@@ -58,8 +58,8 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
     const { id, target_x, target_y, cost } = parsed;
-    const mapResult = checkMapBounds(ctx, target_x, target_y);
-    if ("error" in mapResult) return JSON.stringify({ error: mapResult.error });
+    if (!ctx.beliefs.map.getMap()) return JSON.stringify({ error: "Map not yet loaded" });
+    if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
 
     ctx.beliefs.map.setTilePenalty(id, { x: target_x, y: target_y }, cost);
     return JSON.stringify({ ok: true });

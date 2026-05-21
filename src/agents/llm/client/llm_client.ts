@@ -45,7 +45,7 @@ export class LLMClient {
             timeout: 15_000,
         });
         this.model = process.env.MODEL_NAME ?? "llama-3.3-70b-lmstudio";
-        this.log = createLogger("llm-client", agentId);
+        this.log = createLogger("llm", agentId);
         this.promptLog = createLogger("llm-prompt", agentId);
         this.addInjectedIntention = addInjectedIntention;
         this.messenger = messenger;

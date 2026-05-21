@@ -134,18 +134,21 @@ export class MapBeliefs {
     getMap(): GameMap | null {
         return this.map;
     }
-    
+
+    checkMapBounds(x: number, y: number): boolean {
+        if (!this.map) return false;
+        return x >= 0 && x < this.map.width && y >= 0 && y < this.map.height;
+    }
+
     /**
      * Retrieve the tile at a given position, or null if the position is out of bounds or the map is not yet initialized.
      * @param position The position to query for the tile.
      * @returns The tile at the given position, or null if not found or map not initialized.
      */
     getTileAt(position: Position): Tile | null {
-        if (!this.map) return null;
         const { x, y } = position;
-        // Check bounds
-        if (y < 0 || y >= this.map.height || x < 0 || x >= this.map.width) return null;
-        return { x, y, type: this.map.tiles[y][x] };
+        if (!this.checkMapBounds(x, y)) return null;
+        return { x, y, type: this.map!.tiles[y][x] };
     }
 
     /**

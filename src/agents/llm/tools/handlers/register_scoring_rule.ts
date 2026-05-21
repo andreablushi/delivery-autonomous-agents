@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import type { ScoringRule } from "../../../../models/rules.js";
-import { coerceNum, checkMapBounds } from "./utils.js";
+import { coerceNum } from "./utils.js";
 
 type Args = {
     id: string;
@@ -126,8 +126,8 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     } else if (parsed.conditioned_axis === "delivery_tile") {
         const tx = parsed.tile_x!;
         const ty = parsed.tile_y!;
-        const mapResult = checkMapBounds(ctx, tx, ty);
-        if ("error" in mapResult) return JSON.stringify({ error: mapResult.error });
+        if (!ctx.beliefs.map.getMap()) return JSON.stringify({ error: "Map not yet loaded" });
+        if (!ctx.beliefs.map.checkMapBounds(tx, ty)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         rule = { id: parsed.id, conditioned_axis: "delivery_tile", registeredAt: 0,
             tile: { x: tx, y: ty },
             effect };

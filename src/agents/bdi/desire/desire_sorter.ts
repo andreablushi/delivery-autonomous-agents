@@ -215,6 +215,7 @@ function scoreExplore(
     const heat = beliefs.agents.getEnemyHeatAt(desire.target);
     const legacyScore = weight * ageNormalized / (distance + 1) / (1 + heat);
 
+    // If no positive stack rule is active or positive behave normally
     if (!hasPositiveStack) {
         return { score: legacyScore, priority: 0 };
     }
