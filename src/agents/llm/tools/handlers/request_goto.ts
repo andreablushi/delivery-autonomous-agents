@@ -1,32 +1,8 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { TILE_TYPE } from "../../../../models/tile_type.js";
-import { coerceNum } from "./utils.js";
-
-export type Args = {
-    target_x: number;
-    target_y: number;
-    reward: number;
-    ttl_seconds: number;
-};
-
-export function parseArgs(json: unknown): Args | { error: string } {
-    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
-    const obj = json as Record<string, unknown>;
-    const target_x = coerceNum(obj.target_x);
-    const target_y = coerceNum(obj.target_y);
-    const reward = coerceNum(obj.reward);
-    const ttl_seconds = coerceNum(obj.ttl_seconds);
-    if (typeof target_x !== "number" || !Number.isInteger(target_x))
-        return { error: "target_x must be an integer" };
-    if (typeof target_y !== "number" || !Number.isInteger(target_y))
-        return { error: "target_y must be an integer" };
-    if (typeof reward !== "number" || !Number.isInteger(reward))
-        return { error: "reward must be an integer" };
-    if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
-        return { error: "ttl_seconds must be an integer in [5, 120]" };
-    return { target_x, target_y, reward, ttl_seconds };
-}
+import { parseGotoArgs } from "../../../../models/tool_args.js";
+import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -53,7 +29,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string containing { ok: true } if the intention was successfully added, or { error: string } if there was a problem with the input arguments or the target tile
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseArgs(rawArgs);
+    const parsed = parseGotoArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
     const { target_x, target_y, reward, ttl_seconds } = parsed;
@@ -71,5 +47,6 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         expiresAt,
         sourceId: ctx.sourceId,
     });
+    await communicate(ctx, "request_goto", parsed as unknown as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }

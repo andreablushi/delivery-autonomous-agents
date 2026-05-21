@@ -1,29 +1,8 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
-import { coerceNum } from "./utils.js";
+import { parseTraversalPenaltyArgs } from "../../../../models/tool_args.js";
+import { communicate } from "../../communication/communicate.js";
 
-type Args = { id: string; target_x: number; target_y: number; cost: number };
-
-/**
- * Try to parse the raw arguments as the expected Args type, and return an error message if parsing fails.
- * @param json The raw arguments to parse
- * @returns The parsed Args object, or an object with an "error" property if parsing failed
- */
-function parseArgs(json: unknown): Args | { error: string } {
-    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
-    const obj = json as Record<string, unknown>;
-
-    if (typeof obj.id !== "string" || obj.id.trim() === "") return { error: "id must be a non-empty string" };
-    const target_x = coerceNum(obj.target_x);
-    const target_y = coerceNum(obj.target_y);
-    const cost     = coerceNum(obj.cost);
-
-    if (typeof target_x !== "number" || !Number.isInteger(target_x)) return { error: "target_x must be an integer" };
-    if (typeof target_y !== "number" || !Number.isInteger(target_y)) return { error: "target_y must be an integer" };
-    if (typeof cost !== "number" || cost < 0 || cost > 1000) return { error: "cost must be a number in [0, 1000]" };
-
-    return { id: obj.id, target_x, target_y, cost };
-}
 
 /**
  * Tool definition for the "register_traversal_penalty" tool, which allows the agent to register a soft penalty on stepping onto a specific tile. This can be used to influence the agent's pathfinding without making the tile completely impassable.
@@ -54,7 +33,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string containing { ok: true } if the rule was successfully registered, or { error: string } if there was a problem with the input arguments
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseArgs(rawArgs);
+    const parsed = parseTraversalPenaltyArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
     const { id, target_x, target_y, cost } = parsed;
@@ -62,5 +41,6 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
 
     ctx.beliefs.map.setTilePenalty(id, { x: target_x, y: target_y }, cost);
+    await communicate(ctx, "register_traversal_penalty", parsed as unknown as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }

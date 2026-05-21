@@ -49,7 +49,7 @@ export class AgentBeliefs {
         this.me = {
             id: sensedMe.id,
             name: sensedMe.name,
-            teamId: sensedMe.teamId,
+            teamName: sensedMe.teamName,
             score: sensedMe.score,
             penalty: sensedMe.penalty,
             lastPosition: { x: sensedMe.x, y: sensedMe.y },
@@ -77,13 +77,13 @@ export class AgentBeliefs {
             const data: Agent = {
                 id: agent.id,
                 name: agent.name,
-                teamId: agent.teamId,
+                teamName: agent.teamName,
                 score: agent.score,
                 penalty: agent.penalty,
                 lastPosition: { x: agent.x, y: agent.y },
             };
             // Update friend beliefs
-            if (agent.teamId === this.me?.teamId) {
+            if (agent.teamName === this.me?.teamName) {
                 this.friends.update(agent.id, data);
             } 
             // Update enemy beliefs

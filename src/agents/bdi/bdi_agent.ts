@@ -35,6 +35,7 @@ export class BDIAgent {
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
         this.messenger = new Messenger(socket, agentId);
+        this.messenger.receive(this.beliefs, this.ruleStore, entry => this.addInjectedIntention(entry));
 
         this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);

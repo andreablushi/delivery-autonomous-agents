@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { TILE_TYPE } from "../../../../models/tile_type.js";
-import { parseArgs } from "./request_goto.js";
+import { parseGotoArgs } from "../../../../models/tool_args.js";
+import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -28,7 +29,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string containing { ok: true } if the intention was successfully added, or { error: string } if there was a problem with the input arguments, the target tile, or if the agent is not currently carrying any parcels
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseArgs(rawArgs);
+    const parsed = parseGotoArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
     const { target_x, target_y, reward, ttl_seconds } = parsed;
@@ -46,5 +47,6 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         expiresAt,
         sourceId: ctx.sourceId,
     });
+    await communicate(ctx, "request_putdown_at", parsed as unknown as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }
