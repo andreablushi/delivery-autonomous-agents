@@ -392,44 +392,44 @@ export class MapBeliefs {
     }
 
     /**
-     * Find the closest reachable tile (by BFS travel distance from `from`) whose
-     * Manhattan distance to (cx, cy) is within `maxDistance`, skipping any tile in `excluded`.
-     * The exclusion set lets two agents independently pick different holding spots: the first
-     * agent picks its tile, then passes it as excluded so the peer picks a distinct one.
-     * Uses the static walkability graph so the result is map-topology-aware.
+     * Return all reachable tiles (by BFS travel distance from `from`) within `maxDistance` manhattan distance of (cx, cy),
+     * @param from The position from which to calculate reachable tiles.
+     * @param cx The x coordinate of the center of the rendezvous zone.
+     * @param cy The y coordinate of the center of the rendezvous zone.
+     * @param maxDistance The maximum manhattan distance from (cx, cy) for tiles to be included in the results.
+     * @returns An array of positions of reachable tiles within the specified manhattan distance, sorted by ascending travel distance.
      */
-    pickRendezvousTile(from: Position, cx: number, cy: number, maxDistance: number, excluded: Position[] = []): Position | null {
-        if (!this.map) return null;
+    allRendezvousTiles(from: Position, cx: number, cy: number, maxDistance: number): Position[] {
+        if (!this.map) return [];
         const { tiles, width, height } = this.map;
         const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
         const dists = bfsDistancesFrom(from, walkable);
-        const excludedKeys = new Set(excluded.map(posKey));
-        let best: { pos: Position; d: number } | null = null;
+        const results: { pos: Position; d: number }[] = [];
         for (const [key, d] of dists) {
             const [x, y] = key.split(",").map(Number);
             if (manhattanDistance({ x, y }, { x: cx, y: cy }) > maxDistance) continue;
-            if (excludedKeys.has(key)) continue;
-            if (!best || d < best.d) best = { pos: { x, y }, d };
+            results.push({ pos: { x, y }, d });
         }
-        return best?.pos ?? null;
+        return results.sort((a, b) => a.d - b.d).map(r => r.pos);
     }
 
     /**
-     * Find the closest reachable tile (by BFS travel distance from `from`) whose
-     * y coordinate is odd (odd-numbered row, as used by the red-light challenge).
-     * Uses the static walkability graph so the result is map-topology-aware.
+     * Return all reachable tiles (by BFS travel distance from `from`) that are on odd-numbered rows (y % 2 === 1).
+     * Used for rendezvous points in the "odd row" strategy, which spaces agents out vertically to reduce congestion.
+      * @param from The position from which to calculate reachable tiles.
+      * @returns An array of positions of reachable tiles on odd-numbered rows, sorted by ascending travel distance.
      */
-    pickOddRowTile(from: Position): Position | null {
-        if (!this.map) return null;
+    allOddRowTiles(from: Position): Position[] {
+        if (!this.map) return [];
         const { tiles, width, height } = this.map;
         const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
         const dists = bfsDistancesFrom(from, walkable);
-        let best: { pos: Position; d: number } | null = null;
+        const results: { pos: Position; d: number }[] = [];
         for (const [key, d] of dists) {
             const [x, y] = key.split(",").map(Number);
             if (y % 2 !== 1) continue;
-            if (!best || d < best.d) best = { pos: { x, y }, d };
+            results.push({ pos: { x, y }, d });
         }
-        return best?.pos ?? null;
+        return results.sort((a, b) => a.d - b.d).map(r => r.pos);
     }
 }

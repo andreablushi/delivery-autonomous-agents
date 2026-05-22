@@ -48,6 +48,10 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, r
         return bfsDistancesFrom(pos, walkable);
     });
 
+    // One BFS per friend with a known position, used for joint rendezvous scoring
+    const friends = beliefs.agents.getCurrentFriends().filter(f => f.lastPosition !== null);
+    const friendDists = friends.map(f => bfsDistancesFrom(f.lastPosition!, walkable));
+
     // Goal desires — always priority tier 1
     const reaches = (desires.get("REACH_PARCEL") ?? []) as ReachParcelDesire[];
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];
@@ -66,7 +70,7 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, r
 
     const holdTiles = (desires.get("HOLD_TILE") ?? []) as HoldTileDesire[];
     for (const desire of holdTiles) {
-        queue.push({ desire, score: scoreHoldTile(desire, meDist, beliefs), priority: 1 });
+        queue.push({ desire, score: scoreHoldTile(desire, meDist, beliefs, friendDists), priority: 1 });
     }
 
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];
@@ -98,14 +102,35 @@ function scoreReachTile(desire: ReachTileDesire, meDist: Map<string, number>, be
 }
 
 /**
- * Score a HOLD_TILE desire identically to REACH_TILE.
- * Returns Infinity when already at the target so the hold outcompetes all tier-1 desires
- * and keeps the agent anchored at the tile.
+ * Score a HOLD_TILE desire.
+ *
+ * Red-light holds (no releaseZone): `reward / penalizedDistance` — identical to REACH_TILE.
+ * Returns Infinity when already at the target so the hold anchors the agent there.
+ *
+ * Rendezvous holds (releaseZone present): `reward / max(distSelf, maxFriendDist)` — the
+ * effective meeting time is the bottleneck across all agents. Both agents evaluate the same
+ * formula independently, so they converge on the joint-optimal tile. Tiles unreachable by
+ * any friend score 0 so the agent never waits at a spot a friend cannot reach.
+ * Falls back to individual scoring when no friend positions are known.
  */
-function scoreHoldTile(desire: HoldTileDesire, meDist: Map<string, number>, beliefs: Beliefs): number {
+function scoreHoldTile(
+    desire: HoldTileDesire,
+    meDist: Map<string, number>,
+    beliefs: Beliefs,
+    friendDists: Map<string, number>[],
+): number {
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
     if (distance === 0) return Infinity;
+
+    if (desire.releaseZone && friendDists.length > 0) {
+        const key = posKey(desire.target);
+        const maxFriendDist = Math.max(...friendDists.map(fd => fd.get(key) ?? Infinity));
+        const meetingTime = Math.max(distance, maxFriendDist);
+        if (!isFinite(meetingTime)) return 0; // a friend cannot reach this tile
+        return desire.reward / meetingTime;
+    }
+
     return desire.reward / penalizedDistance(distance, desire.target, beliefs);
 }
 

@@ -37,26 +37,23 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     const from = ctx.beliefs.agents.getCurrentPosition();
     if (!from) return JSON.stringify({ error: "Agent position not yet known" });
 
-    const tile = ctx.beliefs.map.pickRendezvousTile(from, x, y, max_distance);
-    if (!tile) return JSON.stringify({ error: "No reachable tile within rendezvous zone" });
+    const tiles = ctx.beliefs.map.allRendezvousTiles(from, x, y, max_distance);
+    if (tiles.length === 0) return JSON.stringify({ error: "No reachable tile within rendezvous zone" });
 
-    ctx.addInjectedIntention({
-        desire: {
-            type: "HOLD_TILE",
-            target: tile,
+    for (const tile of tiles) {
+        ctx.addInjectedIntention({
+            desire: {
+                type: "HOLD_TILE",
+                target: tile,
+                sourceId: ctx.sourceId,
+                reward,
+                releaseZone: { center: { x, y }, maxDistance: max_distance },
+            },
             sourceId: ctx.sourceId,
-            reward,
-            releaseZone: { center: { x, y }, maxDistance: max_distance },
-        },
-        sourceId: ctx.sourceId,
-    });
+        });
+    }
 
-    // Include our tile as excluded so the peer picks a different spot in the zone.
-    await communicate(ctx, "request_rendezvous", {
-        ...(parsed as unknown as Record<string, unknown>),
-        excluded_x: tile.x,
-        excluded_y: tile.y,
-    });
-    await communicate(ctx, "rendezvous_position", { x: tile.x, y: tile.y });
-    return JSON.stringify({ ok: true, myTile: tile });
+    // Peer independently enumerates its own candidate tiles via allRendezvousTiles.
+    await communicate(ctx, "request_rendezvous", parsed as unknown as Record<string, unknown>);
+    return JSON.stringify({ ok: true, candidateCount: tiles.length });
 }

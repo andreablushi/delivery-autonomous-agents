@@ -57,6 +57,8 @@ export class Messenger {
         this.socket.on("msg", async (senderId: string, senderName: string, content: unknown) => {
             this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
             if (!beliefs.agents.getCurrentFriends().some(f => f.id === senderId)) return;
+
+            // Route the message content to the dispatcher, which will decode and handle it appropriately based on the tool name. The dispatcher may mutate beliefs, rules, and intentions as needed.
             await dispatch(content, senderId, senderName, beliefs, ruleStore, addInjectedIntention, removeIntentionsByType, this.log);
         });
     }

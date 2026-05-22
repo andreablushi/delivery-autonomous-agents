@@ -34,16 +34,18 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     const from = ctx.beliefs.agents.getCurrentPosition();
     if (!from) return JSON.stringify({ error: "Agent position not yet known" });
 
-    const tile = ctx.beliefs.map.pickOddRowTile(from);
-    if (!tile) return JSON.stringify({ error: "No odd-row tile reachable" });
+    const tiles = ctx.beliefs.map.allOddRowTiles(from);
+    if (tiles.length === 0) return JSON.stringify({ error: "No odd-row tile reachable" });
 
     const expiresAt = Date.now() + ttl_seconds * 1_000;
-    ctx.addInjectedIntention({
-        desire: { type: "HOLD_TILE", target: tile, sourceId: ctx.sourceId, expiresAt, reward },
-        expiresAt,
-        sourceId: ctx.sourceId,
-    });
+    for (const tile of tiles) {
+        ctx.addInjectedIntention({
+            desire: { type: "HOLD_TILE", target: tile, sourceId: ctx.sourceId, reward },
+            expiresAt,
+            sourceId: ctx.sourceId,
+        });
+    }
 
     await communicate(ctx, "request_red_light", parsed as unknown as Record<string, unknown>);
-    return JSON.stringify({ ok: true, myTile: tile });
+    return JSON.stringify({ ok: true, candidateCount: tiles.length });
 }

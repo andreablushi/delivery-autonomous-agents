@@ -73,23 +73,20 @@ export class AgentBeliefs {
      * @param sensedAgents List of all observed agents from the latest observation, used to update beliefs about friends and enemies.
      */
     updateOtherAgents(sensedAgents: IOAgent[], sensedPositions: Position[]): void {
-        sensedAgents.forEach(agent => {                           // Create a new Agent belief from the observed IOAgent data
+        sensedAgents.forEach(agent => {
             const data: Agent = {
                 id: agent.id,
                 name: agent.name,
                 teamName: agent.teamName,
                 score: agent.score,
-                penalty: agent.penalty,
-                lastPosition: { x: agent.x, y: agent.y },
+                penalty: agent.penalty ?? 0,
+                lastPosition: (agent.x != null && agent.y != null) ? { x: agent.x, y: agent.y } : null,
             };
-            // Update friend beliefs
             if (agent.teamName === this.me?.teamName) {
                 this.friends.update(agent.id, data);
-            } 
-            // Update enemy beliefs
-            else {                                        
+            } else {
                 this.enemies.update(agent.id, data);
-                this.enemiesMemory.update(agent.id, data);     // Also update the memory of enemies for long-term tracking
+                this.enemiesMemory.update(agent.id, data);
             }
         });
 

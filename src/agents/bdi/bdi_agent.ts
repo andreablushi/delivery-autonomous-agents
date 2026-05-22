@@ -44,6 +44,8 @@ export class BDIAgent {
             type => this.removeIntentionsByType(type),
         );
 
+        this.communicate();
+
         this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);
             const obsDist = this.beliefs.agents.getObservationDistance();
@@ -93,6 +95,29 @@ export class BDIAgent {
      */
     getMessenger(): Messenger {
         return this.messenger;
+    }
+
+    /** Milliseconds between position broadcasts to friends. */
+    private static readonly POSITION_BROADCAST_INTERVAL_MS = 2000;
+
+    /**
+     * Set up BDI-layer position sharing with peer agents.
+     */
+    communicate(): void {
+        // Bootstrap: register the connected controller teammate once.
+        this.socket.once('controller', (status: string, agent: { id: string; name: string; teamId: string; teamName: string; score: number }) => {
+            if (status === 'connected') this.beliefs.agents.updateOtherAgents([agent as IOAgent], []);
+        });
+
+        // Broadcast own position at a fixed interval (independent of move events)
+        setInterval(() => {
+            const friends = this.beliefs.agents.getCurrentFriends();
+            if (friends.length === 0) return;
+            const pos = this.beliefs.agents.getCurrentPosition();
+            if (!pos) return;
+            const msg = encode({ v: 1, kind: "peer_injection", tool: "position_update", args: { x: pos.x, y: pos.y } });
+            for (const friend of friends) void this.messenger.say(friend.id, msg);
+        }, BDIAgent.POSITION_BROADCAST_INTERVAL_MS);
     }
 
     /**

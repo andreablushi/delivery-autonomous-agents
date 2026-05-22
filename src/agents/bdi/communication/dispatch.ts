@@ -6,7 +6,6 @@ import {
     parseRendezvousArgs,
     parseRedLightArgs,
     parseResumeArgs,
-    parseRendezvousPositionArgs,
 } from "../../../models/tool_args.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../belief/rule_store.js";
@@ -115,28 +114,20 @@ export async function dispatch(
             if (!p || !guardBounds(beliefs.map, p.x, p.y)) return;
             const from = beliefs.agents.getCurrentPosition();
             if (!from) return;
-            const excluded = (p.excluded_x !== undefined && p.excluded_y !== undefined)
-                ? [{ x: p.excluded_x, y: p.excluded_y }]
-                : [];
-            const tile = beliefs.map.pickRendezvousTile(from, p.x, p.y, p.max_distance, excluded);
-            if (!tile) { log.warn("request_rendezvous: no reachable tile within zone"); return; }
-            addInjectedIntention({
-                desire: {
-                    type: "HOLD_TILE",
-                    target: tile,
+            const tiles = beliefs.map.allRendezvousTiles(from, p.x, p.y, p.max_distance);
+            if (tiles.length === 0) { log.warn("request_rendezvous: no reachable tile within zone"); return; }
+            for (const tile of tiles) {
+                addInjectedIntention({
+                    desire: {
+                        type: "HOLD_TILE",
+                        target: tile,
+                        sourceId: senderId,
+                        reward: p.reward,
+                        releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
+                    },
                     sourceId: senderId,
-                    reward: p.reward,
-                    releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
-                },
-                sourceId: senderId,
-            });
-            break;
-        }
-
-        case "rendezvous_position": {
-            const p = tryParse(parseRendezvousPositionArgs, envelope.args, log, "rendezvous position");
-            if (!p || !guardBounds(beliefs.map, p.x, p.y)) return;
-            beliefs.agents.updateFriendPosition(senderId, { x: p.x, y: p.y });
+                });
+            }
             break;
         }
 
@@ -145,20 +136,30 @@ export async function dispatch(
             if (!p) return;
             const from = beliefs.agents.getCurrentPosition();
             if (!from) return;
-            const tile = beliefs.map.pickOddRowTile(from);
-            if (!tile) { log.warn("request_red_light: no odd-row tile reachable"); return; }
+            const tiles = beliefs.map.allOddRowTiles(from);
+            if (tiles.length === 0) { log.warn("request_red_light: no odd-row tile reachable"); return; }
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
-            addInjectedIntention({
-                desire: { type: "HOLD_TILE", target: tile, sourceId: senderId, expiresAt, reward: p.reward },
-                expiresAt,
-                sourceId: senderId,
-            });
+            for (const tile of tiles) {
+                addInjectedIntention({
+                    desire: { type: "HOLD_TILE", target: tile, sourceId: senderId, reward: p.reward },
+                    expiresAt,
+                    sourceId: senderId,
+                });
+            }
             break;
         }
 
         case "request_resume": {
             tryParse(parseResumeArgs, envelope.args, log, "resume");
             removeIntentionsByType("HOLD_TILE");
+            break;
+        }
+        
+        case "position_update": {
+            const x = Number((envelope.args as { x?: unknown }).x);
+            const y = Number((envelope.args as { y?: unknown }).y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+            beliefs.agents.updateFriendPosition(senderId, { x, y });
             break;
         }
     }

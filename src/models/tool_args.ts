@@ -121,9 +121,6 @@ export type RendezvousArgs = {
     y: number;
     max_distance: number;
     reward: number;
-    // Tile already claimed by the sender — receiver should pick a different spot.
-    excluded_x?: number;
-    excluded_y?: number;
 };
 
 export function parseRendezvousArgs(json: unknown): RendezvousArgs | { error: string } {
@@ -138,14 +135,6 @@ export function parseRendezvousArgs(json: unknown): RendezvousArgs | { error: st
     if (typeof max_distance !== "number" || !Number.isInteger(max_distance) || max_distance < 0 || max_distance > 10)
         return { error: "max_distance must be an integer in [0, 10]" };
     if (typeof reward !== "number" || reward <= 0) return { error: "reward must be a positive number" };
-    const excluded_x = coerceNum(obj.excluded_x);
-    const excluded_y = coerceNum(obj.excluded_y);
-    const hasExcluded = excluded_x !== undefined || excluded_y !== undefined;
-    if (hasExcluded) {
-        if (typeof excluded_x !== "number" || !Number.isInteger(excluded_x)) return { error: "excluded_x must be an integer" };
-        if (typeof excluded_y !== "number" || !Number.isInteger(excluded_y)) return { error: "excluded_y must be an integer" };
-        return { x, y, max_distance, reward, excluded_x, excluded_y };
-    }
     return { x, y, max_distance, reward };
 }
 

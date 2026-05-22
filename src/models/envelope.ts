@@ -13,7 +13,7 @@ export type PeerInjectionKind =
     | "request_rendezvous"
     | "request_red_light"
     | "request_resume"
-    | "rendezvous_position";
+    | "position_update";
 
 /** Wire format for a peer-injection message. */
 export type PeerInjectionEnvelope = {
@@ -31,7 +31,7 @@ const VALID_TOOLS: ReadonlySet<string> = new Set([
     "request_rendezvous",
     "request_red_light",
     "request_resume",
-    "rendezvous_position",
+    "position_update",
 ]);
 
 /** Serialise an envelope to a JSON string ready for `emitSay`. */
