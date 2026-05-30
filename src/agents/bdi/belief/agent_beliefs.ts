@@ -49,7 +49,7 @@ export class AgentBeliefs {
         this.me = {
             id: sensedMe.id,
             name: sensedMe.name,
-            teamId: sensedMe.teamId,
+            teamName: sensedMe.teamName,
             score: sensedMe.score,
             penalty: sensedMe.penalty,
             lastPosition: { x: sensedMe.x, y: sensedMe.y },
@@ -73,23 +73,20 @@ export class AgentBeliefs {
      * @param sensedAgents List of all observed agents from the latest observation, used to update beliefs about friends and enemies.
      */
     updateOtherAgents(sensedAgents: IOAgent[], sensedPositions: Position[]): void {
-        sensedAgents.forEach(agent => {                           // Create a new Agent belief from the observed IOAgent data
+        sensedAgents.forEach(agent => {
             const data: Agent = {
                 id: agent.id,
                 name: agent.name,
-                teamId: agent.teamId,
+                teamName: agent.teamName,
                 score: agent.score,
-                penalty: agent.penalty,
-                lastPosition: { x: agent.x, y: agent.y },
+                penalty: agent.penalty ?? 0,
+                lastPosition: (agent.x != null && agent.y != null) ? { x: agent.x, y: agent.y } : null,
             };
-            // Update friend beliefs
-            if (agent.teamId === this.me?.teamId) {
+            if (agent.teamName && agent.teamName === this.me?.teamName) {
                 this.friends.update(agent.id, data);
-            } 
-            // Update enemy beliefs
-            else {                                        
+            } else {
                 this.enemies.update(agent.id, data);
-                this.enemiesMemory.update(agent.id, data);     // Also update the memory of enemies for long-term tracking
+                this.enemiesMemory.update(agent.id, data);
             }
         });
 
@@ -132,6 +129,17 @@ export class AgentBeliefs {
      */
     getCurrentFriends(): Agent[] {
         return this.friends.getCurrentAll();
+    }
+
+    /**
+     * Refresh the believed position of a friend from a direct peer message.
+     * @param id Friend agent id
+     * @param position Latest believed position for that friend
+     */
+    updateFriendPosition(id: string, position: Position): void {
+        const friend = this.friends.getCurrentAll().find(agent => agent.id === id);
+        if (!friend) return;
+        this.friends.updateValuePreservingTimestamp(id, { ...friend, lastPosition: position });
     }
     
     /**

@@ -1,85 +1,9 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import type { ScoringRule } from "../../../../models/rules.js";
-import { coerceNum } from "./utils.js";
+import { parseScoringRuleArgs } from "../../../../models/tool_args.js";
+import { communicate } from "../../communication/communicate.js";
 
-type Args = {
-    id: string;
-    conditioned_axis: "stack_count" | "delivery_tile" | "parcel_value";
-    // stack_count predicate
-    equals?: number;
-    min?: number;
-    max?: number;
-    // delivery_tile
-    tile_x?: number;
-    tile_y?: number;
-    // parcel_value predicate
-    min_reward?: number;
-    max_reward?: number;
-    // effect
-    multiplier?: number;
-    additive?: number;
-};
-
-/**
- * Try to parse the raw arguments as the expected Args type, and return an error message if parsing fails.
- * @param json The raw arguments to parse
- * @returns The parsed Args object, or an object with an "error" property if parsing failed
- */
-function parseArgs(json: unknown): Args | { error: string } {
-    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
-    const obj = json as Record<string, unknown>;
-
-    const id = obj.id;
-    if (typeof id !== "string" || id.trim() === "") return { error: "id must be a non-empty string" };
-
-    const conditioned_axis = obj.conditioned_axis;
-    if (conditioned_axis !== "stack_count" && conditioned_axis !== "delivery_tile" && conditioned_axis !== "parcel_value")
-        return { error: "conditioned_axis must be one of: stack_count, delivery_tile, parcel_value" };
-
-    const multiplier = coerceNum(obj.multiplier);
-    const additive   = coerceNum(obj.additive);
-    if (multiplier !== undefined && (typeof multiplier !== "number" || multiplier < 0))
-        return { error: "multiplier must be a non-negative number" };
-    if (additive !== undefined && (typeof additive !== "number" || Math.abs(additive as number) > 1000))
-        return { error: "additive must be a number with |additive| ≤ 1000" };
-    if (multiplier === undefined && additive === undefined)
-        return { error: "at least one of multiplier or additive is required" };
-
-    if (conditioned_axis === "stack_count") {
-        const equals = coerceNum(obj.equals);
-        const min    = coerceNum(obj.min);
-        const max    = coerceNum(obj.max);
-        if (equals === undefined && min === undefined && max === undefined)
-            return { error: "stack_count axis requires at least one of: equals, min, max" };
-        if (equals !== undefined && (typeof equals !== "number" || !Number.isInteger(equals) || equals < 1))
-            return { error: "equals must be a positive integer" };
-        if (min !== undefined && (typeof min !== "number" || !Number.isInteger(min) || min < 1))
-            return { error: "min must be a positive integer" };
-        if (max !== undefined && (typeof max !== "number" || !Number.isInteger(max) || max < 1))
-            return { error: "max must be a positive integer" };
-        return { id, conditioned_axis, equals: equals as number | undefined, min: min as number | undefined, max: max as number | undefined, multiplier: multiplier as number | undefined, additive: additive as number | undefined };
-    }
-
-    if (conditioned_axis === "delivery_tile") {
-        const tile_x = coerceNum(obj.tile_x);
-        const tile_y = coerceNum(obj.tile_y);
-        if (typeof tile_x !== "number" || !Number.isInteger(tile_x)) return { error: "tile_x must be an integer" };
-        if (typeof tile_y !== "number" || !Number.isInteger(tile_y)) return { error: "tile_y must be an integer" };
-        return { id, conditioned_axis, tile_x, tile_y, multiplier: multiplier as number | undefined, additive: additive as number | undefined };
-    }
-
-    // parcel_value
-    const min_reward = coerceNum(obj.min_reward);
-    const max_reward = coerceNum(obj.max_reward);
-    if (min_reward === undefined && max_reward === undefined)
-        return { error: "parcel_value axis requires at least one of: min_reward, max_reward" };
-    if (min_reward !== undefined && (typeof min_reward !== "number" || min_reward < 0))
-        return { error: "min_reward must be a non-negative number" };
-    if (max_reward !== undefined && (typeof max_reward !== "number" || max_reward < 0))
-        return { error: "max_reward must be a non-negative number" };
-    return { id, conditioned_axis, min_reward: min_reward as number | undefined, max_reward: max_reward as number | undefined, multiplier: multiplier as number | undefined, additive: additive as number | undefined };
-}
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -113,7 +37,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string containing { ok: true } if the rule was successfully registered, or { error: string } if there was a problem with the input arguments
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseArgs(rawArgs);
+    const parsed = parseScoringRuleArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
     const effect = { multiplier: parsed.multiplier, additive: parsed.additive };
@@ -138,5 +62,6 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     }
 
     ctx.ruleStore.upsert(rule);
+    await communicate(ctx, "register_scoring_rule", parsed as unknown as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }

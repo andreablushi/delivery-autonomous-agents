@@ -5,7 +5,7 @@ import type { IOTile, IOCrate } from "../../../models/djs.js";
 import { TILE_TYPE, type TileType } from "../../../models/tile_type.js";
 import { Tracker } from "./utils/tracker.js";
 import { computeSafeTiles } from "./utils/reachability.js";
-import { manhattanDistance, posKey } from "../../../utils/metrics.js";
+import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
@@ -389,5 +389,47 @@ export class MapBeliefs {
         return this.crates.getCurrentAll().some(
             c => c.lastPosition?.x === pos.x && c.lastPosition?.y === pos.y
         );
+    }
+
+    /**
+     * Return all reachable tiles (by BFS travel distance from `from`) within `maxDistance` manhattan distance of (cx, cy),
+     * @param from The position from which to calculate reachable tiles.
+     * @param cx The x coordinate of the center of the rendezvous zone.
+     * @param cy The y coordinate of the center of the rendezvous zone.
+     * @param maxDistance The maximum manhattan distance from (cx, cy) for tiles to be included in the results.
+     * @returns An array of positions of reachable tiles within the specified manhattan distance, sorted by ascending travel distance.
+     */
+    allRendezvousTiles(from: Position, cx: number, cy: number, maxDistance: number): Position[] {
+        if (!this.map) return [];
+        const { tiles, width, height } = this.map;
+        const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
+        const dists = bfsDistancesFrom(from, walkable);
+        const results: { pos: Position; d: number }[] = [];
+        for (const [key, d] of dists) {
+            const [x, y] = key.split(",").map(Number);
+            if (manhattanDistance({ x, y }, { x: cx, y: cy }) > maxDistance) continue;
+            results.push({ pos: { x, y }, d });
+        }
+        return results.sort((a, b) => a.d - b.d).map(r => r.pos);
+    }
+
+    /**
+     * Return all reachable tiles (by BFS travel distance from `from`) that are on odd-numbered rows (y % 2 === 1).
+     * Used for rendezvous points in the "odd row" strategy, which spaces agents out vertically to reduce congestion.
+      * @param from The position from which to calculate reachable tiles.
+      * @returns An array of positions of reachable tiles on odd-numbered rows, sorted by ascending travel distance.
+     */
+    allOddRowTiles(from: Position): Position[] {
+        if (!this.map) return [];
+        const { tiles, width, height } = this.map;
+        const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
+        const dists = bfsDistancesFrom(from, walkable);
+        const results: { pos: Position; d: number }[] = [];
+        for (const [key, d] of dists) {
+            const [x, y] = key.split(",").map(Number);
+            if (y % 2 !== 1) continue;
+            results.push({ pos: { x, y }, d });
+        }
+        return results.sort((a, b) => a.d - b.d).map(r => r.pos);
     }
 }

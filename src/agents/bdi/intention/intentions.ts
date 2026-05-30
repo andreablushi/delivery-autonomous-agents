@@ -1,6 +1,7 @@
 import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../belief/rule_store.js";
-import type { DesireType } from "../../../models/desires.js";
+import type { DesireType, HoldTileDesire } from "../../../models/desires.js";
+import { manhattanDistance } from "../../../utils/metrics.js";
 import type { IntentionQueue, InjectedIntention } from "../../../models/intentions.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
 import { generateDesires } from "../desire/desire_generator.js";
@@ -26,7 +27,7 @@ export class Intentions {
 
     /**
      * Adds an injected intention that will be included in the intention queue each cycle until it expires.
-     * @param entry The injected intention entry, including the desire itself and its expiration time.
+        * @param entry The injected intention entry, including the desire itself and an optional expiration time.
      */
     addInjectedIntention(entry: InjectedIntention): void {
         // Remove any existing entry for the same desire (by type and target) to avoid duplicates, then add the new one.
@@ -44,7 +45,7 @@ export class Intentions {
      */
     private pruneInjectedIntentions(): void {
         const now = Date.now();
-        this.injectedIntentions = this.injectedIntentions.filter(e => e.expiresAt > now);
+        this.injectedIntentions = this.injectedIntentions.filter(e => e.expiresAt === undefined || e.expiresAt > now);
     }
 
     /**
@@ -57,14 +58,29 @@ export class Intentions {
         const pos = beliefs.agents.getCurrentPosition();
         if (!pos) return;
         const before = this.injectedIntentions.length;
-        this.injectedIntentions = this.injectedIntentions.filter(e =>
-            !(e.desire.type === "REACH_TILE" &&
-              e.desire.target.x === pos.x &&
-              e.desire.target.y === pos.y)
-        );
+        this.injectedIntentions = this.injectedIntentions.filter(e => {
+            if (e.desire.type === "REACH_TILE") {
+                return !(e.desire.target.x === pos.x && e.desire.target.y === pos.y);
+            }
+            if (e.desire.type === "HOLD_TILE") {
+                const d = e.desire as HoldTileDesire;
+                if (!d.releaseZone) return true; // indefinite hold (red light) — only TTL / resume clears it
+                const z = d.releaseZone;
+                const inZone = (p: { x: number; y: number }) => manhattanDistance(p, z.center) <= z.maxDistance;
+                const friends = beliefs.agents.getCurrentFriends().filter(f => f.lastPosition !== null);
+                const allInside = inZone(pos) && friends.every(f => inZone(f.lastPosition!));
+                return !allInside; // drop when everyone is in zone
+            }
+            return true;
+        });
         if (this.injectedIntentions.length !== before) {
-            this.log.debug(`Dropped satisfied REACH_TILE @(${pos.x},${pos.y})`);
+            this.log.debug(`Pruned satisfied injected intentions (${before} → ${this.injectedIntentions.length})`);
         }
+    }
+
+    /** Remove all injected intentions of the given desire type. Used by request_resume. */
+    removeIntentionsByType(type: DesireType["type"]): void {
+        this.injectedIntentions = this.injectedIntentions.filter(e => e.desire.type !== type);
     }
 
     /**

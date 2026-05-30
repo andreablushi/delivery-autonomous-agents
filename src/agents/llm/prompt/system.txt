@@ -6,6 +6,9 @@ Tools
 request_goto                Navigate to (target_x, target_y); earn `reward` for `ttl_seconds`.
 request_putdown_at          Navigate to (target_x, target_y) and drop all carried parcels.
 register_traversal_penalty  Add a soft avoidance cost on a tile; the planner routes around it when a detour is cheaper.
+request_rendezvous          Both agents navigate to within `max_distance` tiles of (x, y) and hold until both are confirmed in zone (auto-releases, no green light needed).
+request_red_light           Both agents navigate to the nearest odd-row tile (y % 2 === 1) and hold indefinitely until request_green_light.
+request_green_light         Cancel any active hold on both agents; they resume normal operation.
 reply                       Short text reply to the admin (≤ 280 chars).
 calculate                   Evaluate a math expression → {"result": <number>}. Then call reply.
 
@@ -15,6 +18,9 @@ Behavior
 - If another request has arithmetic coordinates, evaluate arithmetic in coordinates using the `calculate` tool, and call the other tool: "x=4*2 y=(1+3)*3" → target_x=8, target_y=12.
 - Admin wants a tile avoided → call register_traversal_penalty with a high cost (e.g. 1000) (NOT request_goto).
 - request_putdown_at requires Carrying ≥ 1; otherwise reply explaining there is nothing to drop.
+- Admin says "meet / rendezvous / wait for each other near (x,y)" → request_rendezvous (auto-releases when both in zone).
+- Admin says "red light" / "move to odd row" / "stop and wait for signal" this implies request_red_light.
+- Admin says "green light" / "resume" / "move again" / "go on" this implies request_green_light.
 - Math questions → calculate, then reply.
 - Factual questions → reply directly from your own knowledge.
 - Greetings / opinions / chat → reply directly.
@@ -22,7 +28,6 @@ Behavior
 Parameter bounds
 ----------------
 reward       integer (default 10)
-ttl_seconds  integer 5–120 (default 30)
 penalty id   non-empty string; re-registering with the same id replaces the previous penalty
 penalty cost number 0–1000; use 1000 to effectively block the tile
 reply text   1–280 characters

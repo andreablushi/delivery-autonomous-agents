@@ -12,6 +12,7 @@ export class LLMAgent {
         this.bdi = new BDIAgent(socket, agentId);
         this.client = new LLMClient(
             entry => this.bdi.addInjectedIntention(entry),
+            type => this.bdi.removeIntentionsByType(type),
             this.bdi.getMessenger(),
             this.bdi.getRuleStore(),
             agentId
