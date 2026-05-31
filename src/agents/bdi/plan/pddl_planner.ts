@@ -31,6 +31,10 @@ export class PddlPlanner {
     private static readonly WAIT_MAX_MS = 1_500;
     private static readonly BLOCKED_TTL_MS = 1_000;
     private static readonly RETRY_LIMIT = 2;
+    private static readonly CACHE_SIZE = 32;
+
+    /** Keyed by `entry|exit|sortedCratePositions`. Stores the parsed move/push steps (no terminal). */
+    private readonly maneuverCache = new Map<string, PlanStep[]>();
 
     constructor(
         private readonly beliefs: Beliefs,
@@ -69,6 +73,56 @@ export class PddlPlanner {
 
         this.log.debug(`Plan ready: ${steps.length} step(s)`);
         return { source: "pddl", steps, cursor: 0, target: intention };
+    }
+
+    /**
+     * Solve the crate-clearing maneuver from `entry` to `exit` using PDDL, with a cache.
+     * The PDDL problem uses the full map (no windowing) but anchors start=entry, goal=exit —
+     * decoupling the maneuver from the agent's distant position and delivery target. This lets
+     * the cache key (`entry + exit + nearby crate positions`) remain stable while the agent
+     * approaches the cluster along the A* prefix, so moving 1 tile toward the cluster is a hit.
+     * @param entry Tile adjacent to the crate cluster; PDDL start.
+     * @param exit Tile just past the cluster; PDDL goal.
+     * @param clusterCrates Crates in the cluster bounding box, used to compute the cache key.
+     * @returns Parsed move/push steps (no terminal), or null if the solver fails.
+     */
+    async solveManeuver(
+        entry: Position,
+        exit: Position,
+        clusterCrates: { id: string; position: Position }[],
+    ): Promise<PlanStep[] | null> {
+        // Build the cache key from entry+exit+cluster crate positions
+        const key = [
+            `${entry.x},${entry.y}`,
+            `${exit.x},${exit.y}`,
+            clusterCrates.map(c => `${c.position.x},${c.position.y}`).sort().join(","),
+        ].join("|");
+        
+        // Check cache for existing solution before invoking the solver
+        const cached = this.maneuverCache.get(key);
+        if (cached) {
+            this.log.debug("Maneuver cache hit");
+            return [...cached];
+        }
+        
+        // If not cached, build the problem and solve it
+        const problem = buildProblem(exit, this.beliefs, entry);
+        if (!problem) return null;
+        const raw = await this.solve(this.domain, problem);
+        const steps = parsePddlPlan(raw);
+        if (steps.length === 0) {
+            this.log.debug("Solver returned no steps for maneuver");
+            return null;
+        }
+
+        // Evict oldest entry (FIFO) when the cache is full
+        if (this.maneuverCache.size >= PddlPlanner.CACHE_SIZE) {
+            const oldest = this.maneuverCache.keys().next().value;
+            if (oldest !== undefined) this.maneuverCache.delete(oldest);
+        }
+        this.maneuverCache.set(key, steps);
+        this.log.debug(`Maneuver cached (${steps.length} steps, cache size: ${this.maneuverCache.size})`);
+        return [...steps];
     }
 
     /**

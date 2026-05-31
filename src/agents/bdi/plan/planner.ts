@@ -1,7 +1,8 @@
-import { AStarPlanner } from "./astar_planner.js";
+import { AStarPlanner, TERMINAL_STEP } from "./astar_planner.js";
 import { PddlPlanner } from "./pddl_planner.js";
 import { Intentions } from "../intention/intentions.js";
-import { detectCrateBlock } from "../belief/utils/crate_block.js";
+import { detectCrateBlock, findCrateSegment } from "../belief/utils/crate_block.js";
+import { stepsTo } from "./navigation/a_star.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Position } from "../../../models/position.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
@@ -111,15 +112,39 @@ export class Planner {
                 return astarPlan;
             }
 
-            // A* failed — check if crates are blocking the route
-            const crateIds = detectCrateBlock(this.beliefs, from, desire);
-            if (crateIds) {
-                this.log.debug(`Crate block on ${desire.type} — falling back to PDDL`);
-                const pddlPlan = await this.pddlPlanner.plan(from, desire, crateIds);
+            // A* failed — check if crates are blocking the route and find the local cluster
+            const seg = findCrateSegment(this.beliefs, from, desire.target);
+            if (seg) {
+                // Try stitched A*/PDDL plan: A* to cluster entry, PDDL clears crates, A* to target.
+                // The PDDL maneuver is anchored at entry→exit (not agent position→target), making
+                // it independent of where the agent is and enabling cache reuse across re-deliberations.
+                const prefix = stepsTo(this.beliefs, from, seg.entry);
+                const maneuver = await this.pddlPlanner.solveManeuver(seg.entry, seg.exit, seg.clusterCrates);
+                const suffix = stepsTo(this.beliefs, seg.exit, desire.target);
+                if (prefix !== null && maneuver !== null && suffix !== null) {
+                    const terminal = TERMINAL_STEP[desire.type];
+                    const steps = [...prefix, ...maneuver, ...suffix];
+                    if (terminal) steps.push(terminal);
+                    this.log.debug(`Stitched plan for ${desire.type}: ${prefix.length} prefix + ${maneuver.length} maneuver + ${suffix.length} suffix steps`);
+                    return { source: "pddl", steps, cursor: 0, target: desire };
+                }
+                // Fallback: whole-trip PDDL if stitching fails (e.g. maneuver infeasible from entry)
+                this.log.debug(`Stitched plan failed for ${desire.type} — falling back to whole-trip PDDL`);
+                const pddlPlan = await this.pddlPlanner.plan(from, desire, seg.clusterCrates.map(c => c.id));
                 if (pddlPlan) return pddlPlan;
                 this.log.debug(`PDDL failed for ${desire.type} — dropping desire`);
             } else {
-                this.log.debug(`A* failed (no crate block) for ${desire.type} — dropping desire`);
+                // Push-aware path returned null: every reachable path through crates was via an
+                // immovable crate (wall behind it). However, a multi-step corridor case can slip
+                // through the single-step pushability check, so try the whole-trip PDDL once as
+                // a completeness backstop before dropping — at most 1 extra solve, not a loop.
+                const crateIds = detectCrateBlock(this.beliefs, from, desire);
+                if (crateIds) {
+                    this.log.debug(`Push-aware path failed for ${desire.type} — trying whole-trip PDDL (corridor backstop)`);
+                    const pddlPlan = await this.pddlPlanner.plan(from, desire, crateIds);
+                    if (pddlPlan) return pddlPlan;
+                }
+                this.log.debug(`A* failed (no viable crate path) for ${desire.type} — dropping desire`);
             }
 
             this.intentionManager.dropIntentionHead();
