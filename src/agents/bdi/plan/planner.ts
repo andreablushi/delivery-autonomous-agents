@@ -119,7 +119,7 @@ export class Planner {
                 // The PDDL maneuver is anchored at entry→exit (not agent position→target), making
                 // it independent of where the agent is and enabling cache reuse across re-deliberations.
                 const prefix = stepsTo(this.beliefs, from, seg.entry);
-                const maneuver = await this.pddlPlanner.solveManeuver(seg.entry, seg.exit, seg.clusterCrates);
+                const maneuver = await this.pddlPlanner.solveManeuver(seg);
                 const suffix = stepsTo(this.beliefs, seg.exit, desire.target);
                 if (prefix !== null && maneuver !== null && suffix !== null) {
                     const terminal = TERMINAL_STEP[desire.type];

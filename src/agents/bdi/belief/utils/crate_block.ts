@@ -3,6 +3,8 @@ import { posKey } from "../../../../utils/metrics.js";
 import type { Beliefs } from "../beliefs.js";
 import type { Position } from "../../../../models/position.js";
 import type { NavigationDesire } from "../../../../models/desires.js";
+import type { LocatedCrate } from "../../../../models/crate.js";
+import type { CrateSegment } from "../../../../models/plan.js";
 
 /**
  * Check whether any currently believed crate blocks the direct path from `from` to `desire.target`.
@@ -46,8 +48,8 @@ export function findCrateSegment(
     beliefs: Beliefs,
     from: Position,
     target: Position,
-): { entry: Position; exit: Position; clusterCrates: { id: string; position: Position }[] } | null {
-    const crates = beliefs.map.getCurrentCrates().flatMap(c =>
+): CrateSegment | null {
+    const crates: LocatedCrate[] = beliefs.map.getCurrentCrates().flatMap(c =>
         c.lastPosition ? [{ id: c.id, position: c.lastPosition }] : [],
     );
     if (crates.length === 0) return null;

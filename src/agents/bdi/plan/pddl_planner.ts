@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { NavigationDesire } from "../../../models/desires.js";
-import type { Plan, PlanStep } from "../../../models/plan.js";
+import type { Plan, PlanStep, CrateSegment } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
 import { parsePddlPlan } from "./pddl/response_parser.js";
@@ -76,35 +76,29 @@ export class PddlPlanner {
     }
 
     /**
-     * Solve the crate-clearing maneuver from `entry` to `exit` using PDDL, with a cache.
+     * Solve the crate-clearing maneuver from `segment.entry` to `segment.exit` using PDDL, with a cache.
      * The PDDL problem uses the full map (no windowing) but anchors start=entry, goal=exit —
      * decoupling the maneuver from the agent's distant position and delivery target. This lets
      * the cache key (`entry + exit + nearby crate positions`) remain stable while the agent
      * approaches the cluster along the A* prefix, so moving 1 tile toward the cluster is a hit.
-     * @param entry Tile adjacent to the crate cluster; PDDL start.
-     * @param exit Tile just past the cluster; PDDL goal.
-     * @param clusterCrates Crates in the cluster bounding box, used to compute the cache key.
+     * @param segment The crate-blocked segment to clear, as returned by `findCrateSegment`.
      * @returns Parsed move/push steps (no terminal), or null if the solver fails.
      */
-    async solveManeuver(
-        entry: Position,
-        exit: Position,
-        clusterCrates: { id: string; position: Position }[],
-    ): Promise<PlanStep[] | null> {
-        // Build the cache key from entry+exit+cluster crate positions
+    async solveManeuver(segment: CrateSegment): Promise<PlanStep[] | null> {
+        const { entry, exit, clusterCrates } = segment;
         const key = [
             `${entry.x},${entry.y}`,
             `${exit.x},${exit.y}`,
-            clusterCrates.map(c => `${c.position.x},${c.position.y}`).sort().join(","),
+            clusterCrates.map(c => `${c.position.x},${c.position.y}`).sort().join("|"),
         ].join("|");
-        
+
         // Check cache for existing solution before invoking the solver
         const cached = this.maneuverCache.get(key);
         if (cached) {
             this.log.debug("Maneuver cache hit");
             return [...cached];
         }
-        
+
         // If not cached, build the problem and solve it
         const problem = buildProblem(exit, this.beliefs, entry);
         if (!problem) return null;
