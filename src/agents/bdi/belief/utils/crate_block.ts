@@ -49,6 +49,7 @@ export function findCrateSegment(
     from: Position,
     target: Position,
 ): CrateSegment | null {
+    // Get all currently believed crates with known positions
     const crates: LocatedCrate[] = beliefs.map.getCurrentCrates().flatMap(c =>
         c.lastPosition ? [{ id: c.id, position: c.lastPosition }] : [],
     );
@@ -59,7 +60,7 @@ export function findCrateSegment(
     const path = pathThroughPushableCrates(beliefs, from, target);
     if (!path) return null;
 
-    // Find the first (ENTRY) and last (EXIT) indices where the path crosses a crate tile
+    // Find the first and last indices where the path crosses a crate tile
     let firstIdx = -1;
     let lastIdx = -1;
     for (let i = 0; i < path.length; i++) {

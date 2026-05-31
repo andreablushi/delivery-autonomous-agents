@@ -29,10 +29,13 @@ export function buildProblem(target: Position, beliefs: Beliefs, from?: Position
 
     // Convert to integer the start position to avoid issues with PDDL parsing (e.g. t_3.0_5.0 vs t_3_5)
     let me_x: number, me_y: number;
+    // If an explicit start position is provided, use it
     if (from) {
         me_x = Math.round(from.x);
         me_y = Math.round(from.y);
-    } else {
+    }
+    // Otherwise, use the agent's current position from beliefs 
+    else {
         const me = beliefs.agents.getCurrentMe();
         if (!me?.lastPosition) return "";
         me_x = Math.round(me.lastPosition.x);

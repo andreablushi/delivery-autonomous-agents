@@ -120,12 +120,9 @@ export class Planner {
                 // it independent of where the agent is and enabling cache reuse across re-deliberations.
                 const prefix = stepsTo(this.beliefs, from, seg.entry);
                 const maneuver = await this.pddlPlanner.solveManeuver(seg);
-                const suffix = stepsTo(this.beliefs, seg.exit, desire.target);
-                if (prefix !== null && maneuver !== null && suffix !== null) {
-                    const terminal = TERMINAL_STEP[desire.type];
-                    const steps = [...prefix, ...maneuver, ...suffix];
-                    if (terminal) steps.push(terminal);
-                    this.log.debug(`Stitched plan for ${desire.type}: ${prefix.length} prefix + ${maneuver.length} maneuver + ${suffix.length} suffix steps`);
+                if (prefix !== null && maneuver !== null) {
+                    const steps = [...prefix, ...maneuver];
+                    this.log.debug(`Stitched plan for ${desire.type}: ${prefix.length} prefix + ${maneuver.length} maneuver steps`);
                     return { source: "pddl", steps, cursor: 0, target: desire };
                 }
                 // Fallback: whole-trip PDDL if stitching fails (e.g. maneuver infeasible from entry)
