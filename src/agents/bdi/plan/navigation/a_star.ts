@@ -89,6 +89,37 @@ export function pathIgnoring(
 }
 
 /**
+ * Find a path from `from` to `to` that may pass through crate tiles, but only those where the
+ * crate is single-step pushable in the direction of travel — i.e. the tile beyond the crate
+ * (in the same direction) is a crate-space and currently free.
+ * This matches the PDDL domain's push precondition exactly, so the returned path is guaranteed
+ * to contain only crates the solver can actually clear. Crates that cannot be pushed are treated
+ * as walls, causing A* to route around them (or to another viable path).
+ * A small penalty is added to each crate tile so the search naturally prefers fewer pushes
+ * when multiple viable paths exist.
+ */
+export function pathThroughPushableCrates(
+    beliefs: Beliefs,
+    from: Position,
+    to: Position,
+): Position[] | null {
+    const crateSpaces = new Set(beliefs.map.getCrateSpaceTiles().map(t => posKey(t)));
+    const CRATE_PUSH_PENALTY = 4;
+
+    return aStar(
+        from, to,
+        (f, t) => {
+            if (beliefs.map.isWalkable(f, t)) return true;
+            if (!beliefs.map.isCrateAt(t)) return false;
+            // Crate at `t` entered from direction (t-f): push destination is one tile further
+            const beyond = { x: t.x + (t.x - f.x), y: t.y + (t.y - f.y) };
+            return crateSpaces.has(posKey(beyond)) && !beliefs.map.isCrateAt(beyond);
+        },
+        (_, t) => 1 + (beliefs.map.isCrateAt(t) ? CRATE_PUSH_PENALTY : 0),
+    );
+}
+
+/**
  * Compute the steps to move from `from` to `to`, treating `blockedTile` as an impassable obstacle.
  * Used for crate-block detection: proves a target is unreachable if the blocked tile is not cleared.
  * @param beliefs Current beliefs, used to check walkability and tile penalties.

@@ -7,6 +7,7 @@
 
 import type { Position } from "./position.js";
 import type { NavigationDesire } from "./desires.js";
+import type { LocatedCrate } from "./crate.js";
 
 export type MoveDirection = "up" | "down" | "left" | "right";
 
@@ -21,6 +22,14 @@ export type PlanStep =
     | { kind: "putdown" }; // executed at the tile where the agent stands
 
 export type PlanSource = "astar" | "pddl";
+
+/** The crate-blocked segment on a push-aware path, used as input to the PDDL maneuver solver. */
+export type CrateSegment = {
+    entry: Position;
+    exit: Position;
+    clusterCrates: LocatedCrate[];
+};
+
 
 export type Plan = {
     source: PlanSource;
