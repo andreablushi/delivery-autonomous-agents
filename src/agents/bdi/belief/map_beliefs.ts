@@ -5,8 +5,9 @@ import type { IOTile, IOCrate } from "../../../models/djs.js";
 import { TILE_TYPE, type TileType } from "../../../models/tile_type.js";
 import { Tracker } from "./utils/tracker.js";
 import { computeSafeTiles } from "./utils/reachability.js";
-import { manhattanDistance, posKey } from "../../../utils/metrics.js";
+import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
+import { config } from "../../../config.js";
 
 /**
  * Beliefs about the static map layout and dynamic crate positions.
@@ -21,6 +22,7 @@ export class MapBeliefs {
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
+    private llmTilePenalties = new Map<string, { id: string; tile: Position; cost: number }>();  // LLM-managed soft traversal costs, keyed by posKey; distinct from temporaryBlocked which is for collision avoidance
     private readonly log: Logger;
 
     constructor(agentId?: string) {
@@ -37,7 +39,6 @@ export class MapBeliefs {
     updateMap(width: number, height: number, tiles: IOTile[]): void {
         // Normalize tile types to strings — the server may send numeric values (e.g. 1) instead of strings ('1')
         const normalizedTiles = tiles.map(t => ({ ...t, type: String(t.type) as TileType }));
-
         // Pre-fill with WALL so any tile absent from the server payload is treated as unwalkable
         const matrix = Array.from({ length: height }, () =>
             Array<TileType>(width).fill(TILE_TYPE.WALL)
@@ -46,15 +47,15 @@ export class MapBeliefs {
             matrix[t.y][t.x] = t.type;
         }
 
-        // Seal off conveyor sinks and dead zones: only tiles in SCCs that contain BOTH a
-        // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
-        // is treated as a wall for pathfinding purposes.
         const deliveryPositions = normalizedTiles
             .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
             .map(t => ({ x: t.x, y: t.y }));
         const spawnPositions = normalizedTiles
             .filter(t => t.type === TILE_TYPE.SPAWN_POINT)
             .map(t => ({ x: t.x, y: t.y }));
+        // Seal off conveyor sinks and dead zones: only tiles in SCCs that contain BOTH a
+        // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
+        // is treated as a wall for pathfinding purposes.
         const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions, MapBeliefs.isStaticWalkable);
         
         // Any tile which is not safe can be treated as a wall
@@ -133,18 +134,21 @@ export class MapBeliefs {
     getMap(): GameMap | null {
         return this.map;
     }
-    
+
+    checkMapBounds(x: number, y: number): boolean {
+        if (!this.map) return false;
+        return x >= 0 && x < this.map.width && y >= 0 && y < this.map.height;
+    }
+
     /**
      * Retrieve the tile at a given position, or null if the position is out of bounds or the map is not yet initialized.
      * @param position The position to query for the tile.
      * @returns The tile at the given position, or null if not found or map not initialized.
      */
     getTileAt(position: Position): Tile | null {
-        if (!this.map) return null;
         const { x, y } = position;
-        // Check bounds
-        if (y < 0 || y >= this.map.height || x < 0 || x >= this.map.width) return null;
-        return { x, y, type: this.map.tiles[y][x] };
+        if (!this.checkMapBounds(x, y)) return null;
+        return { x, y, type: this.map!.tiles[y][x] };
     }
 
     /**
@@ -313,11 +317,53 @@ export class MapBeliefs {
     }
 
     /**
+     * Set (or replace) a soft LLM traversal penalty for a tile.
+     * Unlike markBlocked, this does NOT make the tile unwalkable — it adds cost to the A* edge so the planner avoids it when a detour is cheaper.
+     * @param id LLM-supplied identifier; re-registering with the same id replaces the previous entry.
+     * @param pos The position to penalise.
+     * @param cost Additional path cost to apply when stepping onto this tile (must be ≥ 0).
+     */
+    setTilePenalty(id: string, pos: Position, cost: number): void {
+        // Remove any previous entry with this id (it may have been on a different tile)
+        for (const [key, entry] of this.llmTilePenalties) {
+            if (entry.id === id) { this.llmTilePenalties.delete(key); break; }
+        }
+        this.llmTilePenalties.set(posKey(pos), { id, tile: pos, cost });
+    }
+
+    /**
+     * Remove a soft LLM traversal penalty by id.
+     * @param id The id of the penalty to remove.
+     * @returns true if a penalty was removed, false if no entry with that id existed.
+     */
+    removeTilePenalty(id: string): boolean {
+        for (const [key, entry] of this.llmTilePenalties) {
+            if (entry.id === id) { this.llmTilePenalties.delete(key); return true; }
+        }
+        return false;
+    }
+
+    /**
+     * Return the soft LLM traversal penalty for a tile, or 0 if none is set.
+     * @param pos The position to query.
+     */
+    getTilePenalty(pos: Position): number {
+        return this.llmTilePenalties.get(posKey(pos))?.cost ?? 0;
+    }
+
+    /**
+     * Return all currently active LLM tile penalties.
+     */
+    listTilePenalties(): { id: string; tile: Position; cost: number }[] {
+        return [...this.llmTilePenalties.values()];
+    }
+
+    /**
      * Mark a tile as temporarily blocked for pathfinding purposes
      * @param pos The position to mark as blocked
      * @param ttl How long to keep the tile blocked in milliseconds (default 1000ms)
      */
-    markBlocked(pos: Position, ttl = 1_000): void {
+    markBlocked(pos: Position, ttl: number = config.map.defaultBlockedTtlMs): void {
         this.temporaryBlocked.set(posKey(pos), Date.now() + ttl);
     }
 
@@ -343,5 +389,47 @@ export class MapBeliefs {
         return this.crates.getCurrentAll().some(
             c => c.lastPosition?.x === pos.x && c.lastPosition?.y === pos.y
         );
+    }
+
+    /**
+     * Return all reachable tiles (by BFS travel distance from `from`) within `maxDistance` manhattan distance of (cx, cy),
+     * @param from The position from which to calculate reachable tiles.
+     * @param cx The x coordinate of the center of the rendezvous zone.
+     * @param cy The y coordinate of the center of the rendezvous zone.
+     * @param maxDistance The maximum manhattan distance from (cx, cy) for tiles to be included in the results.
+     * @returns An array of positions of reachable tiles within the specified manhattan distance, sorted by ascending travel distance.
+     */
+    allRendezvousTiles(from: Position, cx: number, cy: number, maxDistance: number): Position[] {
+        if (!this.map) return [];
+        const { tiles, width, height } = this.map;
+        const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
+        const dists = bfsDistancesFrom(from, walkable);
+        const results: { pos: Position; d: number }[] = [];
+        for (const [key, d] of dists) {
+            const [x, y] = key.split(",").map(Number);
+            if (manhattanDistance({ x, y }, { x: cx, y: cy }) > maxDistance) continue;
+            results.push({ pos: { x, y }, d });
+        }
+        return results.sort((a, b) => a.d - b.d).map(r => r.pos);
+    }
+
+    /**
+     * Return all reachable tiles (by BFS travel distance from `from`) that are on odd-numbered rows (y % 2 === 1).
+     * Used for rendezvous points in the "odd row" strategy, which spaces agents out vertically to reduce congestion.
+      * @param from The position from which to calculate reachable tiles.
+      * @returns An array of positions of reachable tiles on odd-numbered rows, sorted by ascending travel distance.
+     */
+    allOddRowTiles(from: Position): Position[] {
+        if (!this.map) return [];
+        const { tiles, width, height } = this.map;
+        const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
+        const dists = bfsDistancesFrom(from, walkable);
+        const results: { pos: Position; d: number }[] = [];
+        for (const [key, d] of dists) {
+            const [x, y] = key.split(",").map(Number);
+            if (y % 2 !== 1) continue;
+            results.push({ pos: { x, y }, d });
+        }
+        return results.sort((a, b) => a.d - b.d).map(r => r.pos);
     }
 }

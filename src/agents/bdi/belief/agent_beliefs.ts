@@ -6,25 +6,25 @@ import { isHalfPosition } from "../../../utils/metrics.js";
 import { Memory } from "./utils/memory.js";
 import { Tracker } from "./utils/tracker.js";
 import { predictAgentNextPosition } from "./utils/enemy_predictor.js";
+import { config } from "../../../config.js";
 
 /**
  * Beliefs about the agent itself and other observed agents.
  */
 export class AgentBeliefs {
-
-    private me: Agent | null = null;                        // Current self-belief, updated directly from observations, without memory
-    private friends = new Tracker<Agent>();                 // Tracker of friend agents, keyed by ID, without memory
-    private enemies = new Tracker<Agent>(true);             // Tracker of enemy agents, keyed by ID, keeping only the latest observation for each enemy, without memory, keeping half positions
-    private enemiesMemory = new Memory<Agent>(1_000, 20);   // Memory of enemy agents, keyed by ID, with TTL-based eviction
-    private playerSettings: PlayerSettings | null = null;   // Player settings from config
-
-    private readonly POSITION_STALE_THRESHOLD_MS = 2_000;   // Discard agent positions not refreshed within this window to avoid blocking on ghost agents
-    private static readonly HEAT_SIGMA = 3;                 // Spatial spread (tiles): controls how far an enemy's presence radiates
-    private static readonly HEAT_TAU   = 5_000;             // Time decay constant (ms): matches enemiesMemory TTL
-
-    // Memory management - EvictInterval prevents the agent from evicting stale beliefs too frequently,
-    private lastEvict = 0;                          // Timestamp of the last eviction of stale beliefs
-    private readonly EVICT_INTERVAL = 1_000;        // Number of milliseconds between evictions of stale beliefs
+    // Current self-belief about this agent, updated directly from observations
+    private me: Agent | null = null;            
+    // Trackers of friend agents, keyed by agent ID, without memory
+    private friends = new Tracker<Agent>();
+    // Trackers of enemy agents, keyed by agent ID, keeping only the last known position
+    private enemies = new Tracker<Agent>(true);
+    // Memory of enemy agents, keyed by agent ID, with TTL eviction and size limit
+    private enemiesMemory = new Memory<Agent>(
+        config.beliefs.enemy.memoryTtlMs, 
+        config.beliefs.enemy.memorySizeEntries
+    );
+    private playerSettings: PlayerSettings | null = null;
+    private lastEvict = 0;
 
     /**
      * Update player settings belief with the latest config info.
@@ -33,6 +33,10 @@ export class AgentBeliefs {
      */
     setSettings(settings: PlayerSettings): void {
         this.playerSettings = settings;
+    }
+
+    getSettings(): PlayerSettings | null {
+        return this.playerSettings;
     }
 
     /**
@@ -45,7 +49,7 @@ export class AgentBeliefs {
         this.me = {
             id: sensedMe.id,
             name: sensedMe.name,
-            teamId: sensedMe.teamId,
+            teamName: sensedMe.teamName,
             score: sensedMe.score,
             penalty: sensedMe.penalty,
             lastPosition: { x: sensedMe.x, y: sensedMe.y },
@@ -69,23 +73,20 @@ export class AgentBeliefs {
      * @param sensedAgents List of all observed agents from the latest observation, used to update beliefs about friends and enemies.
      */
     updateOtherAgents(sensedAgents: IOAgent[], sensedPositions: Position[]): void {
-        sensedAgents.forEach(agent => {                           // Create a new Agent belief from the observed IOAgent data
+        sensedAgents.forEach(agent => {
             const data: Agent = {
                 id: agent.id,
                 name: agent.name,
-                teamId: agent.teamId,
+                teamName: agent.teamName,
                 score: agent.score,
-                penalty: agent.penalty,
-                lastPosition: { x: agent.x, y: agent.y },
+                penalty: agent.penalty ?? 0,
+                lastPosition: (agent.x != null && agent.y != null) ? { x: agent.x, y: agent.y } : null,
             };
-            // Update friend beliefs
-            if (agent.teamId === this.me?.teamId) {
+            if (agent.teamName && agent.teamName === this.me?.teamName) {
                 this.friends.update(agent.id, data);
-            } 
-            // Update enemy beliefs
-            else {                                        
+            } else {
                 this.enemies.update(agent.id, data);
-                this.enemiesMemory.update(agent.id, data);     // Also update the memory of enemies for long-term tracking
+                this.enemiesMemory.update(agent.id, data);
             }
         });
 
@@ -129,7 +130,7 @@ export class AgentBeliefs {
     getCurrentFriends(): Agent[] {
         return this.friends.getCurrentAll();
     }
-    
+
     /**
      * Get the list of all currently believed enemy agents
      * @returns An array of enemy agents
@@ -151,7 +152,7 @@ export class AgentBeliefs {
         const freshAgents = (list: Agent[], tracker: Tracker<Agent>) =>
             list.filter(a => {
                 const ts = tracker.getLastTimestamp(a.id);
-                return ts !== undefined && (now - ts) <= this.POSITION_STALE_THRESHOLD_MS;
+                return ts !== undefined && (now - ts) <= config.beliefs.positionStaleThresholdMs;
             });
         const agents = [
             ...freshAgents(this.getCurrentEnemies(), this.enemies),
@@ -175,10 +176,10 @@ export class AgentBeliefs {
             // Retrieve a prediction for the agent's next position based on its movement history
             const predicted = predictAgentNextPosition(agent, this.enemiesMemory.getHistory(agent.id), isWalkable);
 
-            // If the predicted next position of the enemy has a confidence of 0.5 or higher and matches the next tile, consider it blocked
+            // If the predicted next position of the enemy has a confidence above the threshold and matches the next tile, consider it blocked
             if (
                 predicted &&
-                predicted.confidence >= 0.5 &&
+                predicted.confidence >= config.beliefs.enemy.confidenceThreshold &&
                 predicted.position.x === next.x &&
                 predicted.position.y === next.y
             ) {
@@ -196,7 +197,7 @@ export class AgentBeliefs {
      * @returns Confidence score between 0 and 1
      */
     getEnemyConfidence(id: string): number | undefined {
-        return this.enemies.getConfidence(id, 2000);
+        return this.enemies.getConfidence(id, config.beliefs.enemy.confidenceHalfLifeMs);
     }
 
     /**
@@ -222,8 +223,8 @@ export class AgentBeliefs {
             const ePos = obs.value.lastPosition;
             if (!ePos) continue;
             const d = Math.abs(pos.x - ePos.x) + Math.abs(pos.y - ePos.y);
-            const spatialDecay = Math.exp(-(d * d) / (2 * AgentBeliefs.HEAT_SIGMA * AgentBeliefs.HEAT_SIGMA));
-            const timeDecay = Math.exp(-(now - obs.seenAt) / AgentBeliefs.HEAT_TAU);
+            const spatialDecay = Math.exp(-(d * d) / (2 * config.beliefs.enemy.heatSigma * config.beliefs.enemy.heatSigma));
+            const timeDecay = Math.exp(-(now - obs.seenAt) / config.beliefs.enemy.heatTau);
             heat += spatialDecay * timeDecay;
         }
         return heat;
@@ -248,7 +249,7 @@ export class AgentBeliefs {
      */
     private evict(): void {
         const now = Date.now();
-        if (now - this.lastEvict < this.EVICT_INTERVAL) return;
+        if (now - this.lastEvict < config.beliefs.evictIntervalMs) return;
         this.lastEvict = now;
         this.enemiesMemory.evict();
     }

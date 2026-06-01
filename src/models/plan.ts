@@ -1,12 +1,6 @@
-/**
- * Plan types for the BDI agent's planner.
- * A Plan is a concrete sequence of executable steps (move/pickup/putdown) that
- * achieves the underlying desire. Plans come from two sources: A* for single-target
- * navigation, and PDDL for paths blocked by crates.
- */
-
 import type { Position } from "./position.js";
 import type { NavigationDesire } from "./desires.js";
+import type { LocatedCrate } from "./crate.js";
 
 export type MoveDirection = "up" | "down" | "left" | "right";
 
@@ -21,6 +15,14 @@ export type PlanStep =
     | { kind: "putdown" }; // executed at the tile where the agent stands
 
 export type PlanSource = "astar" | "pddl";
+
+/** The crate-blocked segment on a push-aware path, used as input to the PDDL maneuver solver. */
+export type CrateSegment = {
+    entry: Position;
+    exit: Position;
+    clusterCrates: LocatedCrate[];
+};
+
 
 export type Plan = {
     source: PlanSource;

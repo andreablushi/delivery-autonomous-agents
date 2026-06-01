@@ -6,16 +6,17 @@ import type { DesireType } from "./desires.js";
 export type Intention = {
     desire: DesireType;     // The type of desire
     score: number;          // A computed score representing the desirability of this intention
+    priority: number;       // Priority tier: higher tiers always beat lower ones before score is compared
 };
 
 // The IntentionQueue is an ordered list of intentions, where the head of the queue is the current intention the agent is committed to pursuing.
 export type IntentionQueue = Intention[];
 
-// A persistent desire entry that survives across deliberation ticks until it expires.
+// An injected intention that survives across deliberation ticks until it expires.
 // Used by external sources (LLM, peer agents) to inject goals into the BDI loop.
-export type PersistentDesireEntry = {
+export type InjectedIntention = {
     desire: DesireType;
-    expiresAt: number;  // ms epoch
+    expiresAt?: number; // ms epoch
     sourceId: string;   // for logging / dedup
 };
 

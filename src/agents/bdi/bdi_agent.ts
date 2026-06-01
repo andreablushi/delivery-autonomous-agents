@@ -1,6 +1,8 @@
 import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
-import type { PersistentDesireEntry } from "../../models/intentions.js";
+import type { InjectedIntention } from "../../models/intentions.js";
+import type { DesireType } from "../../models/desires.js";
 import { Beliefs } from "./belief/beliefs.js";
+import { RuleStore } from "./belief/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
@@ -16,6 +18,7 @@ import { createLogger } from "../../utils/logger.js";
 export class BDIAgent {
     private socket: any;
     private beliefs: Beliefs;
+    private ruleStore: RuleStore;
     private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
@@ -28,10 +31,21 @@ export class BDIAgent {
         this.perceiveLog = createLogger("perceive", agentId);
         this.deliberateLog = createLogger("deliberate", agentId);
         this.beliefs = new Beliefs(agentId);
+        this.ruleStore = new RuleStore();
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
-        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, agentId);
+        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
         this.messenger = new Messenger(socket, agentId);
+        this.messenger.receive(
+            this.beliefs,
+            this.ruleStore,
+            entry => this.addInjectedIntention(entry),
+            type => this.removeIntentionsByType(type),
+        );
+
+        this.socket.once('controller', (status: string, agent: { id: string; name: string; teamId: string; teamName: string; score: number }) => {
+            if (status === 'connected') this.beliefs.agents.updateOtherAgents([agent as IOAgent], []);
+        });
 
         this.socket.on('config', (config: IOConfig) => {
             this.beliefs.setSettings(config);
@@ -51,17 +65,39 @@ export class BDIAgent {
     }
 
     /**
-     * Add a persistent desire that will be included in the intention queue each cycle until it expires.
-     * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
-     * @param entry The persistent desire entry, including the desire itself and its expiration time.
+     * Expose the rule store for external mutation (e.g. by LLM tool handlers).
+     * @returns The agent's RuleStore instance.
      */
-    addPersistentDesire(entry: PersistentDesireEntry): void {
-        this.intentions.addPersistentDesire(entry);
+    getRuleStore(): RuleStore {
+        return this.ruleStore;
     }
 
+    /**
+     * Add an injected intention that will be included in the intention queue each cycle until it expires.
+     * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
+     * @param entry The injected intention entry, including the desire itself and its expiration time.
+     */
+    addInjectedIntention(entry: InjectedIntention): void {
+        this.intentions.addInjectedIntention(entry);
+    }
+
+    /**
+     * Remove all intentions of a given desire type from the intention queue.
+     * Useful for revoking desires injected by an LLM or other external system.
+     * @param type The type of desire whose intentions should be removed.
+     */
+    removeIntentionsByType(type: DesireType["type"]): void {
+        this.intentions.removeIntentionsByType(type);
+    }
+
+    /**
+     * Expose the messenger for external use (e.g. by LLM tool handlers that need to send messages).
+     * @returns The agent's Messenger instance.
+     */
     getMessenger(): Messenger {
         return this.messenger;
     }
+
 
     /**
      * Register socket listeners that update beliefs and drive the deliberation cycle.
@@ -84,7 +120,7 @@ export class BDIAgent {
         });
 
         // Periodic sensing — agents, parcels, crates; this is the main deliberation trigger
-        this.socket.on('sensing', (sensing: IOSensing) => {
+        this.socket.on('sensing', async (sensing: IOSensing) => {
             this.beliefs.agents.updateOtherAgents(sensing.agents, sensing.positions);
             this.beliefs.parcels.updateParcels(sensing.parcels, sensing.positions);
             this.beliefs.map.updateCrates(sensing.crates, sensing.positions);
@@ -99,6 +135,7 @@ export class BDIAgent {
             this.perceiveLog.debug("  - Crates:", this.beliefs.map.getCurrentCrates().length, "crates");
 
             this.deliberate();
+            this.executor.kick();
         });
     }
 
@@ -106,7 +143,7 @@ export class BDIAgent {
      * One deliberation cycle: rebuild desires → update intention queue → plan → execute one step.
      */
     deliberate(): void {
-        this.intentions.update(this.beliefs);
+        this.intentions.update(this.beliefs, this.ruleStore);
         this.deliberateLog.debug("Intention selected:", this.intentions.getIntentionHead());
 
         this.executor.start();

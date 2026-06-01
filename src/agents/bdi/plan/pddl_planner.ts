@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { NavigationDesire } from "../../../models/desires.js";
-import type { Plan, PlanStep } from "../../../models/plan.js";
+import type { Plan, PlanStep, CrateSegment } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
 import { parsePddlPlan } from "./pddl/response_parser.js";
@@ -12,6 +12,7 @@ import type { PddlPlanStep } from "./pddl/response_parser.js";
 import { TERMINAL_STEP } from "./astar_planner.js";
 import { CollisionTimer } from "./collision/collision_timer.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
+import { config } from "../../../config.js";
 
 const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", "domain-crates.pddl");
 
@@ -27,10 +28,9 @@ export class PddlPlanner {
     private readonly log: Logger;
     private invalidationCount = 0;
 
-    private static readonly WAIT_MIN_MS = 1_000;
-    private static readonly WAIT_MAX_MS = 1_500;
-    private static readonly BLOCKED_TTL_MS = 1_000;
-    private static readonly RETRY_LIMIT = 2;
+
+    /** Keyed by `entry|exit|sortedCratePositions`. Stores the parsed move/push steps (no terminal). */
+    private readonly maneuverCache = new Map<string, PlanStep[]>();
 
     constructor(
         private readonly beliefs: Beliefs,
@@ -72,6 +72,50 @@ export class PddlPlanner {
     }
 
     /**
+     * Solve the crate-clearing maneuver from `segment.entry` to `segment.exit` using PDDL, with a cache.
+     * The PDDL problem uses the full map (no windowing) but anchors start=entry, goal=exit —
+     * decoupling the maneuver from the agent's distant position and delivery target. This lets
+     * the cache key (`entry + exit + nearby crate positions`) remain stable while the agent
+     * approaches the cluster along the A* prefix, so moving 1 tile toward the cluster is a hit.
+     * @param segment The crate-blocked segment to clear, as returned by `findCrateSegment`.
+     * @returns Parsed move/push steps (no terminal), or null if the solver fails.
+     */
+    async solveManeuver(segment: CrateSegment): Promise<PlanStep[] | null> {
+        const { entry, exit, clusterCrates } = segment;
+        const key = [
+            `${entry.x},${entry.y}`,
+            `${exit.x},${exit.y}`,
+            clusterCrates.map(c => `${c.position.x},${c.position.y}`).sort().join("|"),
+        ].join("|");
+
+        // Check cache for existing solution before invoking the solver
+        const cached = this.maneuverCache.get(key);
+        if (cached) {
+            this.log.debug("Maneuver cache hit");
+            return [...cached];
+        }
+
+        // If not cached, build the problem and solve it
+        const problem = buildProblem(exit, this.beliefs, entry);
+        if (!problem) return null;
+        const raw = await this.solve(this.domain, problem);
+        const steps = parsePddlPlan(raw);
+        if (steps.length === 0) {
+            this.log.debug("Solver returned no steps for maneuver");
+            return null;
+        }
+
+        // Evict oldest entry (FIFO) when the cache is full
+        if (this.maneuverCache.size >= config.pddl.cacheSize) {
+            const oldest = this.maneuverCache.keys().next().value;
+            if (oldest !== undefined) this.maneuverCache.delete(oldest);
+        }
+        this.maneuverCache.set(key, steps);
+        this.log.debug(`Maneuver cached (${steps.length} steps, cache size: ${this.maneuverCache.size})`);
+        return [...steps];
+    }
+
+    /**
      * Get the next step from the plan.
      * If the next move tile is occupied by another agent, waits until a random backoff
      * expires before letting the move attempt through (no detour — PDDL step order is causal).
@@ -85,7 +129,7 @@ export class PddlPlanner {
         if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
 
         if (!this.timer.isWaitingFor(step.to)) {
-            this.timer.start(step.to, PddlPlanner.WAIT_MIN_MS, PddlPlanner.WAIT_MAX_MS);
+            this.timer.start(step.to, config.pddl.waitMinMs, config.pddl.waitMaxMs);
         }
         if (!this.timer.hasExpired()) return "wait";
 
@@ -113,8 +157,8 @@ export class PddlPlanner {
         if (!step || step.kind !== "move") return true;
 
         this.invalidationCount++;
-        if (this.invalidationCount > PddlPlanner.RETRY_LIMIT) {
-            this.beliefs.map.markBlocked(step.to, PddlPlanner.BLOCKED_TTL_MS);
+        if (this.invalidationCount > config.pddl.retryLimit) {
+            this.beliefs.map.markBlocked(step.to, config.pddl.blockedTtlMs);
             this.resetCollision();
             return true;
         }

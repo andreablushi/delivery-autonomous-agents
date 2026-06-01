@@ -3,6 +3,7 @@ import { manhattanDistance, posKey, NEIGHBOURS } from "../../../../utils/metrics
 import type { Beliefs } from "../../belief/beliefs.js";
 import { toMoveSteps } from "../utils/action_mapper.js";
 import type { PlanStep } from "../../../../models/plan.js";
+import { config } from "../../../../config.js";
 
 type Node = {
     pos: Position;       // Position of the node
@@ -17,6 +18,8 @@ type Node = {
  * @param start      Starting position (not included in the returned path).
  * @param goal       Target position (included in the returned path).
  * @param isWalkable Predicate that returns true for passable tiles.
+ * @param edgeCost   Function to calculate the cost to move from `from` to `to` (default: uniform cost of 1). 
+ * Must return values ≥ 1 to keep the Manhattan heuristic admissible.
  * @returns          Ordered array of positions from the step after `start` to
  *                   `goal`, or `null` if no path exists.
  */
@@ -24,6 +27,7 @@ export function aStar(
     start: Position,
     goal: Position,
     isWalkable: (from: Position, to: Position) => boolean,
+    edgeCost: (from: Position, to: Position) => number = () => 1,
 ): Position[] | null {
     const open = new Map<string, Node>();
     const closed = new Set<string>();
@@ -61,7 +65,7 @@ export function aStar(
             if (closed.has(nKey)) continue;
             if (!isWalkable(current.pos, neighbour)) continue;
 
-            const g = current.g + 1;
+            const g = current.g + edgeCost(current.pos, neighbour);
             const existing = open.get(nKey);
             if (existing && existing.g <= g) continue;
 
@@ -86,7 +90,43 @@ export function pathIgnoring(
 }
 
 /**
- * Compute the move steps from `from` to `to` using A*, optionally treating one tile as impassable.
+ * Find a path from `from` to `to` that may pass through crate tiles, but only those where the
+ * crate is single-step pushable in the direction of travel — i.e. the tile beyond the crate
+ * (in the same direction) is a crate-space and currently free.
+ * This matches the PDDL domain's push precondition exactly, so the returned path is guaranteed
+ * to contain only crates the solver can actually clear. Crates that cannot be pushed are treated
+ * as walls, causing A* to route around them (or to another viable path).
+ * A small penalty is added to each crate tile so the search naturally prefers fewer pushes
+ * when multiple viable paths exist.
+ */
+export function pathThroughPushableCrates(
+    beliefs: Beliefs,
+    from: Position,
+    to: Position,
+): Position[] | null {
+    const crateSpaces = new Set(beliefs.map.getCrateSpaceTiles().map(t => posKey(t)));
+
+    return aStar(
+        from, to,
+        (f, t) => {
+            if (beliefs.map.isWalkable(f, t)) return true;
+            if (!beliefs.map.isCrateAt(t)) return false;
+            // Crate at `t` entered from direction (t-f): push destination is one tile further
+            const beyond = { x: t.x + (t.x - f.x), y: t.y + (t.y - f.y) };
+            return crateSpaces.has(posKey(beyond)) && !beliefs.map.isCrateAt(beyond);
+        },
+        (_, t) => 1 + (beliefs.map.isCrateAt(t) ? config.navigation.cratePushPenalty : 0),
+    );
+}
+
+/**
+ * Compute the steps to move from `from` to `to`, treating `blockedTile` as an impassable obstacle.
+ * Used for crate-block detection: proves a target is unreachable if the blocked tile is not cleared.
+ * @param beliefs Current beliefs, used to check walkability and tile penalties.
+ * @param from Starting position (not included in the returned steps).
+ * @param to Target position (included in the returned steps).
+ * @param blockedTile Position to treat as blocked (not included in the returned steps), or `null` to ignore.
+ * @returns 
  */
 export function stepsTo(
     beliefs: Beliefs,
@@ -94,9 +134,10 @@ export function stepsTo(
     to: Position,
     blockedTile: Position | null = null,
 ): PlanStep[] | null {
-    const path = aStar(from, to, (f, t) =>
-        !(blockedTile && t.x === blockedTile.x && t.y === blockedTile.y) &&
-        beliefs.map.isWalkable(f, t),
+    const path = aStar(
+        from, to,
+        (f, t) => !(blockedTile && t.x === blockedTile.x && t.y === blockedTile.y) && beliefs.map.isWalkable(f, t),
+        (_, t) => 1 + beliefs.map.getTilePenalty(t),
     );
     return path ? toMoveSteps(from, path) : null;
 }

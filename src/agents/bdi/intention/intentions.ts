@@ -1,6 +1,8 @@
 import type { Beliefs } from "../belief/beliefs.js";
-import type { DesireType, GeneratedDesires } from "../../../models/desires.js";
-import type { IntentionQueue, PersistentDesireEntry } from "../../../models/intentions.js";
+import type { RuleStore } from "../belief/rule_store.js";
+import type { DesireType, HoldTileDesire } from "../../../models/desires.js";
+import { manhattanDistance } from "../../../utils/metrics.js";
+import type { IntentionQueue, InjectedIntention } from "../../../models/intentions.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
 import { generateDesires } from "../desire/desire_generator.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
@@ -13,8 +15,8 @@ import { createLogger, type Logger } from "../../../utils/logger.js";
 export class Intentions {
     // List of candidate intentions, ordered by priority and score, with the head at index 0.
     private intentionsQueue: IntentionQueue = [];
-    // List of persistent desires injected externally (e.g. by an LLM) that should be added to the generated desires each cycle, with expiration.
-    private persistentDesires: PersistentDesireEntry[] = [];
+    // List of injected intentions from external sources (e.g. LLM, peer agents) that should be merged into the generated desires each cycle, with expiration.
+    private injectedIntentions: InjectedIntention[] = [];
     private readonly desireLog: Logger;
     private readonly log: Logger;
 
@@ -24,62 +26,72 @@ export class Intentions {
     }
 
     /**
-     * Adds a persistent desire that will be included in the intention queue each cycle until it expires.
-     * @param entry 
+     * Adds an injected intention that will be included in the intention queue each cycle until it expires.
+        * @param entry The injected intention entry, including the desire itself and an optional expiration time.
      */
-    addPersistentDesire(entry: PersistentDesireEntry): void {
+    addInjectedIntention(entry: InjectedIntention): void {
         // Remove any existing entry for the same desire (by type and target) to avoid duplicates, then add the new one.
-        this.persistentDesires = this.persistentDesires.filter(
+        this.injectedIntentions = this.injectedIntentions.filter(
             e => !(e.desire.type === entry.desire.type &&
                    e.desire.target.x === entry.desire.target.x &&
                    e.desire.target.y === entry.desire.target.y)
         );
-        this.persistentDesires.push(entry);
+        this.injectedIntentions.push(entry);
     }
 
     /**
-     * Removes expired persistent desires from the list.
+     * Removes expired injected intentions from the list.
      * Should be called at the start of each deliberation cycle before rebuilding the intention queue.
      */
-    private prunePersistent(): void {
+    private pruneInjectedIntentions(): void {
         const now = Date.now();
-        this.persistentDesires = this.persistentDesires.filter(e => e.expiresAt > now);
+        this.injectedIntentions = this.injectedIntentions.filter(e => e.expiresAt === undefined || e.expiresAt > now);
     }
 
     /**
-     * Drop any persistent desires that are already satisfied in the current beliefs to avoid 
+     * Drop any injected intentions that are already satisfied in the current beliefs to avoid
      * cluttering the intention queue with irrelevant desires.
-     * @param beliefs Current beliefs, used to check if any persistent desires are already satisfied (e.g. REACH_TILE where the agent is already on the target tile).
+     * @param beliefs Current beliefs, used to check if any injected intentions are already satisfied (e.g. REACH_TILE where the agent is already on the target tile).
      * @returns void
      */
-    private pruneSatisfiedPersistentIntentions(beliefs: Beliefs): void {
+    private pruneSatisfiedInjectedIntentions(beliefs: Beliefs): void {
         const pos = beliefs.agents.getCurrentPosition();
         if (!pos) return;
-        const before = this.persistentDesires.length;
-        this.persistentDesires = this.persistentDesires.filter(e =>
-            !(e.desire.type === "REACH_TILE" &&
-              e.desire.target.x === pos.x &&
-              e.desire.target.y === pos.y)
-        );
-        if (this.persistentDesires.length !== before) {
-            this.log.debug(`Dropped satisfied REACH_TILE @(${pos.x},${pos.y})`);
+        const before = this.injectedIntentions.length;
+        this.injectedIntentions = this.injectedIntentions.filter(e => {
+            if (e.desire.type === "REACH_TILE") {
+                return !(e.desire.target.x === pos.x && e.desire.target.y === pos.y);
+            }
+            if (e.desire.type === "HOLD_TILE") {
+                const d = e.desire as HoldTileDesire;
+                if (!d.releaseZone) return true; // indefinite hold (red light) — only TTL / resume clears it
+                const z = d.releaseZone;
+                const inZone = (p: { x: number; y: number }) => manhattanDistance(p, z.center) <= z.maxDistance;
+                const friends = beliefs.agents.getCurrentFriends().filter(f => f.lastPosition !== null);
+                const allInside = inZone(pos) && friends.every(f => inZone(f.lastPosition!));
+                return !allInside; // drop when everyone is in zone
+            }
+            return true;
+        });
+        if (this.injectedIntentions.length !== before) {
+            this.log.debug(`Pruned satisfied injected intentions (${before} → ${this.injectedIntentions.length})`);
         }
     }
 
-    /**
-     * Rebuild the intention queue from current beliefs plus any live persistent desires.
-     * @param beliefs Current beliefs, used by the sorter for distance-based scoring.
-     */
-    update(beliefs: Beliefs): void {
-        this.prunePersistent();
-        this.pruneSatisfiedPersistentIntentions(beliefs);
-        const desires = generateDesires(beliefs);
+    /** Remove all injected intentions of the given desire type. Used by request_resume. */
+    removeIntentionsByType(type: DesireType["type"]): void {
+        this.injectedIntentions = this.injectedIntentions.filter(e => e.desire.type !== type);
+    }
 
-        for (const entry of this.persistentDesires) {
-            const bucket = (desires.get(entry.desire.type) ?? []) as DesireType[];
-            bucket.push(entry.desire);
-            desires.set(entry.desire.type, bucket);
-        }
+    /**
+     * Rebuild the intention queue from current beliefs, live injected intentions, and active scoring rules.
+     * @param beliefs Current beliefs, used by the generator and sorter.
+     * @param ruleStore Active scoring rules, forwarded to the generator (for pre-filtering) and sorter (for scoring).
+     */
+    update(beliefs: Beliefs, ruleStore: RuleStore): void {
+        this.pruneInjectedIntentions();
+        this.pruneSatisfiedInjectedIntentions(beliefs);
+        const desires = generateDesires(beliefs, this.injectedIntentions);
 
         this.desireLog.debug(
             `Desires generated — ${[...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none"}`
@@ -91,7 +103,7 @@ export class Intentions {
             return;
         }
 
-        this.intentionsQueue = getIntentionQueue(desires, beliefs);
+        this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore);
         const head = this.intentionsQueue[0];
         this.log.debug(
             `Queue rebuilt (${this.intentionsQueue.length} items)` +

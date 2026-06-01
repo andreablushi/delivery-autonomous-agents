@@ -9,3 +9,9 @@ export type Crate = {
     id: string;                     // Unique identifier for the crate
     lastPosition: Position | null;  // Position of the crate on the map
 };
+
+/** A crate whose position is known (resolved from `Crate.lastPosition`). */
+export type LocatedCrate = {
+    id: string;
+    position: Position;
+};
