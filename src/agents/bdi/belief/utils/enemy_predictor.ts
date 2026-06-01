@@ -2,11 +2,7 @@ import type { Agent } from "../../../../models/agent.js";
 import type { Observation } from "../../../../models/memory.js";
 import type { Position, PositionPrediction } from "../../../../models/position.js";
 import { posKey } from "../../../../utils/metrics.js";
-
-// Threshold bands used to decide which neighbouring tile an agent is committed to
-// when its reported position is fractional (i.e. mid-move between two tiles).
-const FRACTION_CEIL_THRESHOLD = 0.6;
-const FRACTION_FLOOR_THRESHOLD = 0.4;
+import { config } from "../../../../config.js";
 
 /**
  * Predict the next tile an observed agent will step onto, based on either its current
@@ -119,7 +115,7 @@ function getFractionalMove(value: number): number | null {
     const upper = Math.ceil(value);
     const fraction = value - lower;
     // If the fractional part is above the upper threshold
-    if (fraction >= FRACTION_CEIL_THRESHOLD) return upper;
-    if (fraction <= FRACTION_FLOOR_THRESHOLD) return lower;
+    if (fraction >= config.beliefs.enemy.predictionCeilThreshold) return upper;
+    if (fraction <= config.beliefs.enemy.predictionFloorThreshold) return lower;
     return null;
 }

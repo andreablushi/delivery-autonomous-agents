@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
-import { parseRendezvousArgs } from "../../../../models/tool_args.js";
+import { applyInjection } from "../../../../models/apply_injection.js";
 import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -28,32 +28,9 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string indicating success or error details.
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseRendezvousArgs(rawArgs);
-    if ("error" in parsed) return JSON.stringify({ error: parsed.error });
-
-    const { x, y, max_distance, reward } = parsed;
-    if (!ctx.beliefs.map.checkMapBounds(x, y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
-
-    const from = ctx.beliefs.agents.getCurrentPosition();
-    if (!from) return JSON.stringify({ error: "Agent position not yet known" });
-
-    const tiles = ctx.beliefs.map.allRendezvousTiles(from, x, y, max_distance);
-    if (tiles.length === 0) return JSON.stringify({ error: "No reachable tile within rendezvous zone" });
-
-    for (const tile of tiles) {
-        ctx.addInjectedIntention({
-            desire: {
-                type: "HOLD_TILE",
-                target: tile,
-                sourceId: ctx.sourceId,
-                reward,
-                releaseZone: { center: { x, y }, maxDistance: max_distance },
-            },
-            sourceId: ctx.sourceId,
-        });
-    }
-
+    const r = applyInjection("request_rendezvous", rawArgs, ctx);
+    if ("error" in r) return JSON.stringify(r);
     // Peer independently enumerates its own candidate tiles via allRendezvousTiles.
-    await communicate(ctx, "request_rendezvous", parsed as unknown as Record<string, unknown>);
-    return JSON.stringify({ ok: true, candidateCount: tiles.length });
+    await communicate(ctx, "request_rendezvous", rawArgs as Record<string, unknown>);
+    return JSON.stringify({ ok: true });
 }

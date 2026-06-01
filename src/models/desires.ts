@@ -1,9 +1,3 @@
-/**
- * Desire types for the BDI agent.
- * Pickup/putdown actions are no longer separate desires: they are appended as
- * terminal PlanSteps on REACH_PARCEL / DELIVER_PARCEL plans by the Planner.
- */
-
 import type { Position } from "./position.js";
 
 export type ExploreDesire = {

@@ -1,8 +1,3 @@
-/**
- * Raw socket IO types for the Deliveroo.js SDK.
- * These types mirror the payloads emitted by the game server over the socket connection.
- */
-
 import { TileType } from "./tile_type.js";
 import { Position } from "./position.js";
 

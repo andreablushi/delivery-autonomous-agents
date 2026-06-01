@@ -3,6 +3,7 @@ import { manhattanDistance, posKey, NEIGHBOURS } from "../../../../utils/metrics
 import type { Beliefs } from "../../belief/beliefs.js";
 import { toMoveSteps } from "../utils/action_mapper.js";
 import type { PlanStep } from "../../../../models/plan.js";
+import { config } from "../../../../config.js";
 
 type Node = {
     pos: Position;       // Position of the node
@@ -104,7 +105,6 @@ export function pathThroughPushableCrates(
     to: Position,
 ): Position[] | null {
     const crateSpaces = new Set(beliefs.map.getCrateSpaceTiles().map(t => posKey(t)));
-    const CRATE_PUSH_PENALTY = 4;
 
     return aStar(
         from, to,
@@ -115,7 +115,7 @@ export function pathThroughPushableCrates(
             const beyond = { x: t.x + (t.x - f.x), y: t.y + (t.y - f.y) };
             return crateSpaces.has(posKey(beyond)) && !beliefs.map.isCrateAt(beyond);
         },
-        (_, t) => 1 + (beliefs.map.isCrateAt(t) ? CRATE_PUSH_PENALTY : 0),
+        (_, t) => 1 + (beliefs.map.isCrateAt(t) ? config.navigation.cratePushPenalty : 0),
     );
 }
 

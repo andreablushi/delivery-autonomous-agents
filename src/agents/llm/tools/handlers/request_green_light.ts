@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
+import { applyInjection } from "../../../../models/apply_injection.js";
 import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -17,8 +18,9 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @param ctx The tool context, providing access to beliefs, intentions, and communication.
  * @returns A JSON string indicating success.
  */
-export async function execute(_rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    ctx.removeIntentionsByType("HOLD_TILE");
+export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
+    const r = applyInjection("request_resume", rawArgs, ctx);
+    if ("error" in r) return JSON.stringify(r);
     await communicate(ctx, "request_resume", {});
     return JSON.stringify({ ok: true });
 }

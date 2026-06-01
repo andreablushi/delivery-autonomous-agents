@@ -12,6 +12,7 @@ import type { PddlPlanStep } from "./pddl/response_parser.js";
 import { TERMINAL_STEP } from "./astar_planner.js";
 import { CollisionTimer } from "./collision/collision_timer.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
+import { config } from "../../../config.js";
 
 const CRATE_DOMAIN_PATH = join(dirname(fileURLToPath(import.meta.url)), "pddl", "domain-crates.pddl");
 
@@ -27,11 +28,6 @@ export class PddlPlanner {
     private readonly log: Logger;
     private invalidationCount = 0;
 
-    private static readonly WAIT_MIN_MS = 1_000;
-    private static readonly WAIT_MAX_MS = 1_500;
-    private static readonly BLOCKED_TTL_MS = 1_000;
-    private static readonly RETRY_LIMIT = 2;
-    private static readonly CACHE_SIZE = 32;
 
     /** Keyed by `entry|exit|sortedCratePositions`. Stores the parsed move/push steps (no terminal). */
     private readonly maneuverCache = new Map<string, PlanStep[]>();
@@ -110,7 +106,7 @@ export class PddlPlanner {
         }
 
         // Evict oldest entry (FIFO) when the cache is full
-        if (this.maneuverCache.size >= PddlPlanner.CACHE_SIZE) {
+        if (this.maneuverCache.size >= config.pddl.cacheSize) {
             const oldest = this.maneuverCache.keys().next().value;
             if (oldest !== undefined) this.maneuverCache.delete(oldest);
         }
@@ -133,7 +129,7 @@ export class PddlPlanner {
         if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
 
         if (!this.timer.isWaitingFor(step.to)) {
-            this.timer.start(step.to, PddlPlanner.WAIT_MIN_MS, PddlPlanner.WAIT_MAX_MS);
+            this.timer.start(step.to, config.pddl.waitMinMs, config.pddl.waitMaxMs);
         }
         if (!this.timer.hasExpired()) return "wait";
 
@@ -161,8 +157,8 @@ export class PddlPlanner {
         if (!step || step.kind !== "move") return true;
 
         this.invalidationCount++;
-        if (this.invalidationCount > PddlPlanner.RETRY_LIMIT) {
-            this.beliefs.map.markBlocked(step.to, PddlPlanner.BLOCKED_TTL_MS);
+        if (this.invalidationCount > config.pddl.retryLimit) {
+            this.beliefs.map.markBlocked(step.to, config.pddl.blockedTtlMs);
             this.resetCollision();
             return true;
         }

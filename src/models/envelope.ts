@@ -1,10 +1,3 @@
-/**
- * Shared peer-injection envelope contract used by both the LLM side (encode)
- * and the BDI side (decode). Neither agent subtree owns this — it is the
- * neutral inter-agent message format.
- */
-
-/** Union of all tool names a peer agent may inject via a message. */
 export type PeerInjectionKind =
     | "request_goto"
     | "request_putdown_at"
@@ -13,7 +6,8 @@ export type PeerInjectionKind =
     | "request_rendezvous"
     | "request_red_light"
     | "request_resume"
-    | "position_update";
+    | "request_beliefs"
+    | "beliefs_report";
 
 /** Wire format for a peer-injection message. */
 export type PeerInjectionEnvelope = {
@@ -31,7 +25,8 @@ const VALID_TOOLS: ReadonlySet<string> = new Set([
     "request_rendezvous",
     "request_red_light",
     "request_resume",
-    "position_update",
+    "request_beliefs",
+    "beliefs_report",
 ]);
 
 /** Serialise an envelope to a JSON string ready for `emitSay`. */

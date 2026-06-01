@@ -4,10 +4,12 @@ import type { InjectedIntention } from "../../../models/intentions.js";
 import type { Messenger } from "../../bdi/communication/messenger.js";
 import type { RuleStore } from "../../bdi/belief/rule_store.js";
 import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
-import { buildSystemPrompt, buildUserMessage, summarizeBeliefs } from "../prompt/prompt.js";
+import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
+import { buildCoordinationPrompt } from "../prompt/coordination/index.js";
+import type { BeliefsReport } from "../../../models/team.js";
+import type { TeamGeometry } from "../coordination/geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
-
-const MAX_HOPS = 5;             // Maximum number of consecutive tool calls before giving up
+import { config } from "../../../config.js";
 
 /**
  * Try to parse a text response as a tool call. 
@@ -44,7 +46,7 @@ export class LLMClient {
         this.client = new OpenAI({
             baseURL: process.env.LLM_BASE_URL,
             apiKey: process.env.LLM_API_KEY ?? "no-key",
-            timeout: 15_000,
+            timeout: config.llm.timeoutMs,
         });
         this.model = process.env.MODEL_NAME ?? "llama-3.3-70b-lmstudio";
         this.log = createLogger("llm", agentId);
@@ -56,38 +58,13 @@ export class LLMClient {
     }
 
     /**
-     * Process an incoming message by calling the LLM with the message content and current beliefs, and executing any tool calls in the response.
-     * @param senderId ID of the message sender (e.g. "ADMIN" or "agent-1")
-     * @param senderName Name of the message sender (e.g. "ADMIN" or "agent-1")
-     * @param content The message content to process with the LLM
-     * @param beliefs Current beliefs to include in the LLM context
+     * Shared multi-hop tool-call loop used by both processMessage and coordinate.
      */
-    async processMessage(
-        senderId: string,
-        senderName: string,
-        content: string,
-        beliefs: Readonly<Beliefs>,
+    private async runHops(
+        messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+        ctx: import("../tools/context.js").ToolContext,
     ): Promise<void> {
-        // Define the context object that will be passed to tool calls, 
-        // containing relevant information and utilities.
-        const ctx = {
-            beliefs: beliefs as Beliefs,
-            addInjectedIntention: this.addInjectedIntention,
-            removeIntentionsByType: this.removeIntentionsByType,
-            messenger: this.messenger,
-            sourceId: senderId,
-            ruleStore: this.ruleStore,
-        };
-
-        const context = summarizeBeliefs(beliefs, this.ruleStore);
-        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            { role: "system", content: buildSystemPrompt() },
-            { role: "user", content: buildUserMessage({ senderName, senderId, content, context }) },
-        ];
-        this.log.debug(`Processing message from ${senderName}: "${content}"`);
-        
-        // Perform multiple hops of LLM calls if the model indicates that follow-up calls are needed
-        for (let hop = 0; hop < MAX_HOPS; hop++) {
+        for (let hop = 0; hop < config.llm.maxHops; hop++) {
             this.log.debug(`LLM call, hop ${hop}...`);
             const response = await this.client.chat.completions.create({
                 model: this.model,
@@ -98,15 +75,13 @@ export class LLMClient {
             });
             this.log.debug(`LLM response received (hop ${hop})`);
 
-            // Log the full prompt and response for debugging purposes
             const choice = response.choices[0];
             this.promptLog.debug(`LLM response (hop ${hop}): ${JSON.stringify(choice)}`);
             if (!choice) break;
 
-            // If the model doesn't use the official tool call format, try to parse the content as a tool call anyway
             const toolCalls = choice.message.tool_calls ?? [];
             if (toolCalls.length === 0) {
-                const text = choice.message.content?.trim();    // Trim whitespace to avoid parsing issues
+                const text = choice.message.content?.trim();
                 if (!text) break;
                 const textCall = tryParseTextToolCall(text);
                 if (textCall) {
@@ -119,14 +94,12 @@ export class LLMClient {
                     continue;
                 }
                 this.log.debug(`No tool calls — sending model text as chat reply`);
-                await executeToolCall("reply", { text: text.slice(0, 280) }, ctx);
+                await executeToolCall("reply", { text: text.slice(0, config.llm.replyMaxChars) }, ctx);
                 break;
             }
 
-            // Add the model's message to the conversation history for the next hop
             messages.push(choice.message);
 
-            // Execute all tool calls in the model's response
             let needsFollowUp = false;
             for (const call of toolCalls) {
                 if (call.type !== "function") continue;
@@ -145,5 +118,64 @@ export class LLMClient {
 
             if (!needsFollowUp) break;
         }
+    }
+
+    /**
+     * Process an incoming message by calling the LLM with the message content and current beliefs, and executing any tool calls in the response.
+     * @param senderId ID of the message sender (e.g. "ADMIN" or "agent-1")
+     * @param senderName Name of the message sender (e.g. "ADMIN" or "agent-1")
+     * @param content The message content to process with the LLM
+     * @param beliefs Current beliefs to include in the LLM context
+     */
+    async processMessage(
+        senderId: string,
+        senderName: string,
+        content: string,
+        beliefs: Readonly<Beliefs>,
+    ): Promise<void> {
+        const ctx = {
+            beliefs: beliefs as Beliefs,
+            addInjectedIntention: this.addInjectedIntention,
+            removeIntentionsByType: this.removeIntentionsByType,
+            messenger: this.messenger,
+            sourceId: senderId,
+            ruleStore: this.ruleStore,
+        };
+
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: "system", content: buildSystemPrompt() },
+            { role: "user", content: buildUserMessage({ senderName, senderId, content, beliefs, ruleStore: this.ruleStore }) },
+        ];
+        this.log.debug(`Processing message from ${senderName}: "${content}"`);
+        await this.runHops(messages, ctx);
+    }
+
+    /**
+     * Run a team coordination pass: the LLM is given teammate reports + map geometry
+     * and expected to call `assign_goto` for each agent.
+     */
+    async coordinate(
+        reports: Map<string, BeliefsReport>,
+        geometry: TeamGeometry,
+        beliefs: Readonly<Beliefs>,
+        requestTeamStatus: () => void,
+    ): Promise<void> {
+        const ctx = {
+            beliefs: beliefs as Beliefs,
+            addInjectedIntention: this.addInjectedIntention,
+            removeIntentionsByType: this.removeIntentionsByType,
+            messenger: this.messenger,
+            sourceId: "coordinator",
+            ruleStore: this.ruleStore,
+            requestTeamStatus,
+        };
+
+        const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore);
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: "system", content: system },
+            { role: "user", content: user },
+        ];
+        this.log.debug("Running coordination pass");
+        await this.runHops(messages, ctx);
     }
 }

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
+import { config } from "../../../../config.js";
 
 type Args = { text: string };
 
@@ -14,8 +15,8 @@ function parseArgs(json: unknown): Args | { error: string } {
     const { text } = obj;
     if (typeof text !== "string" || text.trim().length === 0)
         return { error: "text must be a non-empty string" };
-    if (text.length > 280)
-        return { error: "text must be 280 characters or fewer" };
+    if (text.length > config.llm.replyMaxChars)
+        return { error: `text must be ${config.llm.replyMaxChars} characters or fewer` };
     return { text };
 }
 
@@ -27,7 +28,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
         parameters: {
             type: "object",
             properties: {
-                text: { type: "string", description: "The reply text (1–280 characters)." },
+                text: { type: "string", description: `The reply text (1–${config.llm.replyMaxChars} characters).` },
             },
             required: ["text"],
         },

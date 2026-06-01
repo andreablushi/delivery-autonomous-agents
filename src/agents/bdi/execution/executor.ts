@@ -5,6 +5,7 @@ import type { RuleStore } from "../belief/rule_store.js";
 import type { Planner } from "../plan/planner.js";
 import type { Intentions } from "../intention/intentions.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
+import { config } from "../../../config.js";
 
 /**
  * Drives the action loop: retrieves the next step from the Planner, emits the corresponding
@@ -166,7 +167,7 @@ export class Executor {
 
                 if (!shouldContinue) {
                     // Idle wait: sleep for one server clock tick, or until kick() fires.
-                    const ms = this.beliefs.settings?.clock ?? 50;
+                    const ms = this.beliefs.settings?.clock ?? config.execution.defaultClockTickMs;
                     await Promise.race([
                         new Promise<void>(r => setTimeout(r, ms)),
                         new Promise<void>(r => { this.kickResolver = r; }),
