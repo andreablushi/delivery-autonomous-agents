@@ -1,5 +1,6 @@
 import { encode, type PeerInjectionKind } from "../../../models/envelope.js";
 import type { ToolContext } from "../tools/context.js";
+import type { Messenger } from "../../bdi/communication/messenger.js";
 import { createLogger } from "../../../utils/logger.js";
 
 const log = createLogger("communication");
@@ -25,4 +26,21 @@ export async function communicate(
     for (const friend of friends) {
         await ctx.messenger.say(friend.id, msg);
     }
+}
+
+/**
+ * Send a peer injection message to a single specific agent.
+ * @param messenger Messenger to use for sending the message.
+ * @param toId Socket ID of the target agent.
+ * @param tool The peer injection tool kind.
+ * @param args Arguments for the tool.
+ */
+export async function communicateTo(
+    messenger: Messenger,
+    toId: string,
+    tool: PeerInjectionKind,
+    args: Record<string, unknown>,
+): Promise<void> {
+    const msg = encode({ v: 1, kind: "peer_injection", tool, args });
+    await messenger.say(toId, msg);
 }

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
-import { parseTraversalPenaltyArgs } from "../../../../models/tool_args.js";
+import { applyInjection } from "../../../../models/apply_injection.js";
 import { communicate } from "../../communication/communicate.js";
 
 
@@ -33,14 +33,8 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string containing { ok: true } if the rule was successfully registered, or { error: string } if there was a problem with the input arguments
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseTraversalPenaltyArgs(rawArgs);
-    if ("error" in parsed) return JSON.stringify({ error: parsed.error });
-
-    const { id, target_x, target_y, cost } = parsed;
-    if (!ctx.beliefs.map.getMap()) return JSON.stringify({ error: "Map not yet loaded" });
-    if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
-
-    ctx.beliefs.map.setTilePenalty(id, { x: target_x, y: target_y }, cost);
-    await communicate(ctx, "register_traversal_penalty", parsed as unknown as Record<string, unknown>);
+    const r = applyInjection("register_traversal_penalty", rawArgs, ctx);
+    if ("error" in r) return JSON.stringify(r);
+    await communicate(ctx, "register_traversal_penalty", rawArgs as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }

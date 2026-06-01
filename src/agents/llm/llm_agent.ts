@@ -1,10 +1,12 @@
 import { BDIAgent } from "../bdi/bdi_agent.js";
 import { LLMClient } from "./client/llm_client.js";
+import { Coordinator } from "./coordination/coordinator.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 
 export class LLMAgent {
     private readonly bdi: BDIAgent;
     private readonly client: LLMClient;
+    private readonly coordinator: Coordinator;
     private readonly log: Logger;
 
     constructor(socket: any, agentId?: string) {
@@ -17,13 +19,19 @@ export class LLMAgent {
             this.bdi.getRuleStore(),
             agentId
         );
+        this.coordinator = new Coordinator(this.bdi.getBeliefs(), this.bdi.getMessenger(), this.client);
+        this.coordinator.start();
 
-        // Listen for incoming messages and process them with the LLM if they are valid.
+        // Listen for incoming messages.
+        // Always route to the coordinator first so beliefs_report envelopes are captured
+        // regardless of the MISSION_EMITTER filter that gates LLM processing.
         socket.on("msg", (senderId: string, senderName: string, content: unknown) => {
+            this.coordinator.handleInbound(senderId, content);
+
             if (!this.isValidMessage(senderId, senderName, content)) return;
-            
+
             this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
-            
+
             this.client
                 .processMessage(senderId, senderName, content as string, this.bdi.getBeliefs())
                 .catch((err: unknown) => this.log.error("LLM call failed:", err));

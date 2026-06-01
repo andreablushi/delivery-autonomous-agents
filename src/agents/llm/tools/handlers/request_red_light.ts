@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
-import { parseRedLightArgs } from "../../../../models/tool_args.js";
+import { applyInjection } from "../../../../models/apply_injection.js";
 import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -26,26 +26,8 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string indicating success or error details.
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseRedLightArgs(rawArgs);
-    if ("error" in parsed) return JSON.stringify({ error: parsed.error });
-
-    const { ttl_seconds, reward } = parsed;
-
-    const from = ctx.beliefs.agents.getCurrentPosition();
-    if (!from) return JSON.stringify({ error: "Agent position not yet known" });
-
-    const tiles = ctx.beliefs.map.allOddRowTiles(from);
-    if (tiles.length === 0) return JSON.stringify({ error: "No odd-row tile reachable" });
-
-    const expiresAt = Date.now() + ttl_seconds * 1_000;
-    for (const tile of tiles) {
-        ctx.addInjectedIntention({
-            desire: { type: "HOLD_TILE", target: tile, sourceId: ctx.sourceId, reward },
-            expiresAt,
-            sourceId: ctx.sourceId,
-        });
-    }
-
-    await communicate(ctx, "request_red_light", parsed as unknown as Record<string, unknown>);
-    return JSON.stringify({ ok: true, candidateCount: tiles.length });
+    const r = applyInjection("request_red_light", rawArgs, ctx);
+    if ("error" in r) return JSON.stringify(r);
+    await communicate(ctx, "request_red_light", rawArgs as Record<string, unknown>);
+    return JSON.stringify({ ok: true });
 }

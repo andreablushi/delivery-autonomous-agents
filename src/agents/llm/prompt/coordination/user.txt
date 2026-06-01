@@ -1,0 +1,10 @@
+--- Team roster ---
+{{roster}}
+
+--- Map geometry ---
+{{geometry}}
+
+--- Your current state ---
+{{context}}
+
+Assign positions to all agents now.

@@ -1,8 +1,3 @@
-/**
- * Configuration types for the delivery autonomous agents system.
- * This file defines the structure of the configuration settings used in the system.
- */
-
 export type GameSettings = {
     title: string;                         // Title of the game
     description: string;                   // Description of the game

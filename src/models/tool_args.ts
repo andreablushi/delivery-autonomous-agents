@@ -180,8 +180,41 @@ export function parseRendezvousPositionArgs(json: unknown): RendezvousPositionAr
 }
 
 
+/** Arguments for `assign_goto` — addressed navigation goal for a specific agent. */
+export type AssignGotoArgs = {
+    agent_id: string;
+    target_x: number;
+    target_y: number;
+    reward: number;
+    ttl_seconds: number;
+};
+
+/**
+ * Parse and validate raw arguments for `assign_goto`.
+ *
+ * @param json Raw (unknown) input, expected to be an object.
+ * @returns The typed `AssignGotoArgs`, or `{ error }` describing the first validation failure.
+ */
+export function parseAssignGotoArgs(json: unknown): AssignGotoArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    const agent_id = obj.agent_id;
+    if (typeof agent_id !== "string" || agent_id.trim() === "") return { error: "agent_id must be a non-empty string" };
+    const target_x    = coerceNum(obj.target_x);
+    const target_y    = coerceNum(obj.target_y);
+    const reward      = coerceNum(obj.reward);
+    const ttl_seconds = coerceNum(obj.ttl_seconds);
+    if (typeof target_x   !== "number" || !Number.isInteger(target_x))   return { error: "target_x must be an integer" };
+    if (typeof target_y   !== "number" || !Number.isInteger(target_y))   return { error: "target_y must be an integer" };
+    if (typeof reward     !== "number" || reward <= 0)     return { error: "reward must be a positive number" };
+    if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
+        return { error: "ttl_seconds must be an integer in [5, 120]" };
+    return { agent_id, target_x, target_y, reward, ttl_seconds };
+}
+
+
 /** Arguments for `register_traversal_penalty`. */
-export type TraversalPenaltyArgs = { 
+export type TraversalPenaltyArgs = {
     id: string;
     target_x: number;
     target_y: number;

@@ -1,0 +1,61 @@
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+import type { Beliefs } from "../../../bdi/belief/beliefs.js";
+import type { RuleStore } from "../../../bdi/belief/rule_store.js";
+import type { BeliefsReport } from "../../../../models/team.js";
+import type { TeamGeometry } from "../../coordination/geometry.js";
+import { render } from "../shared.js";
+
+const DIR = dirname(fileURLToPath(import.meta.url));
+
+/** Build the system and user prompts for a team coordination pass. */
+export function buildCoordinationPrompt(
+    reports: Map<string, BeliefsReport>,
+    geometry: TeamGeometry,
+    beliefs: Readonly<Beliefs>,
+    ruleStore: RuleStore,
+): { system: string; user: string } {
+    const me = beliefs.agents.getCurrentMe();
+    const myId = me?.id ?? "unknown";
+    const myPos = beliefs.agents.getCurrentPosition();
+    const carried = me ? beliefs.parcels.getCarriedByAgent(me.id).length : 0;
+
+    // Roster
+    const rosterLines: string[] = [];
+    const myPosStr = myPos ? `(${myPos.x},${myPos.y})` : "unknown";
+    rosterLines.push(`You (id: ${myId}): pos=${myPosStr}, carrying=${carried}`);
+    for (const [id, report] of reports) {
+        const posStr = report.pos ? `(${report.pos.x},${report.pos.y})` : "unknown";
+        const enemiesStr = report.enemies.length > 0
+            ? ` enemies=[${report.enemies.map(e => `(${e.x},${e.y})`).join(",")}]` : "";
+        const hotStr = report.hotTiles.length > 0
+            ? ` hotTiles=[${report.hotTiles.map(t => `(${t.x},${t.y},h=${t.heat.toFixed(2)})`).join(",")}]` : "";
+        rosterLines.push(`Teammate ${id}: pos=${posStr}, carrying=${report.carrying}${enemiesStr}${hotStr}`);
+    }
+
+    // Geometry
+    const geoLines: string[] = [];
+    geoLines.push(`Spawn clusters (${geometry.spawnClusters.length}):`);
+    geometry.spawnClusters.forEach((c, i) =>
+        geoLines.push(`  Cluster ${i + 1}: centroid=(${c.centroid.x},${c.centroid.y}), ${c.tileCount} tiles`)
+    );
+    geoLines.push(`Delivery zones (${geometry.deliveryClusters.length}):`);
+    geometry.deliveryClusters.forEach((c, i) =>
+        geoLines.push(`  Zone ${i + 1}: centroid=(${c.centroid.x},${c.centroid.y}), ${c.tileCount} tiles`)
+    );
+    const midStr = geometry.midpoints.length > 0
+        ? geometry.midpoints.map(m => `(${m.x},${m.y})`).join(" ") : "none";
+    geoLines.push(`Midpoints (spawn→delivery): ${midStr}`);
+    if (geometry.hotZones.length > 0) {
+        geoLines.push(`Hot zones: ${geometry.hotZones.map(z => `(${z.x},${z.y}) heat=${z.heat.toFixed(2)}`).join(" ")}`);
+    }
+
+    const roster = rosterLines.join("\n");
+    const geometryStr = geoLines.join("\n");
+    const context = [beliefs.summarize(), ruleStore.format()].filter(Boolean).join("\n");
+
+    return {
+        system: render(DIR, "system", {}),
+        user: render(DIR, "user", { roster, geometry: geometryStr, context }),
+    };
+}

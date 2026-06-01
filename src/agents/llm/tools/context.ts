@@ -11,4 +11,6 @@ export interface ToolContext {
     messenger: Messenger;
     sourceId: string;
     ruleStore: RuleStore;
+    /** Trigger an immediate team coordination round (no-op if no coordinator is active). */
+    requestTeamStatus?: () => void;
 }

@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
-import { TILE_TYPE } from "../../../../models/tile_type.js";
-import { parseGotoArgs } from "../../../../models/tool_args.js";
+import { applyInjection } from "../../../../models/apply_injection.js";
 import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -29,24 +28,8 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string containing { ok: true } if the intention was successfully added, or { error: string } if there was a problem with the input arguments or the target tile
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const parsed = parseGotoArgs(rawArgs);
-    if ("error" in parsed) return JSON.stringify({ error: parsed.error });
-
-    const { target_x, target_y, reward, ttl_seconds } = parsed;
-    const map = ctx.beliefs.map.getMap();
-    if (!map) return JSON.stringify({ error: "Map not yet loaded" });
-    if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
-    if (map.tiles[target_y][target_x] === TILE_TYPE.WALL)
-        return JSON.stringify({ error: "Target tile is a wall" });
-    if (ctx.beliefs.map.isBlocked({ x: target_x, y: target_y }))
-        return JSON.stringify({ error: "Target tile is currently blocked" });
-
-    const expiresAt = Date.now() + ttl_seconds * 1_000;
-    ctx.addInjectedIntention({
-        desire: { type: "REACH_TILE", target: { x: target_x, y: target_y }, sourceId: ctx.sourceId, expiresAt, reward },
-        expiresAt,
-        sourceId: ctx.sourceId,
-    });
-    await communicate(ctx, "request_goto", parsed as unknown as Record<string, unknown>);
+    const r = applyInjection("request_goto", rawArgs, ctx);
+    if ("error" in r) return JSON.stringify(r);
+    await communicate(ctx, "request_goto", rawArgs as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }

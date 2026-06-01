@@ -38,6 +38,34 @@ export class RuleStore {
     }
 
     /**
+     * Format all active scoring rules into a human/LLM-readable string.
+     * Returns an empty string when no rules are active (safe to filter out).
+     */
+    format(): string {
+        const rules = this.list();
+        if (rules.length === 0) return "";
+        const ruleLines = rules.map(r => {
+            const eff = `mult=${r.effect.multiplier ?? 1} add=${r.effect.additive ?? 0}`;
+            if (r.conditioned_axis === "stack_count") {
+                const pred = [
+                    r.predicate.equals !== undefined ? `equals=${r.predicate.equals}` : null,
+                    r.predicate.min    !== undefined ? `min=${r.predicate.min}`       : null,
+                    r.predicate.max    !== undefined ? `max=${r.predicate.max}`       : null,
+                ].filter(Boolean).join(",");
+                return `  [${r.id}] stack_count(${pred}) → ${eff}`;
+            }
+            if (r.conditioned_axis === "delivery_tile")
+                return `  [${r.id}] delivery_tile(${r.tile.x},${r.tile.y}) → ${eff}`;
+            const pred = [
+                r.predicate.minReward !== undefined ? `min=${r.predicate.minReward}` : null,
+                r.predicate.maxReward !== undefined ? `max=${r.predicate.maxReward}` : null,
+            ].filter(Boolean).join(",");
+            return `  [${r.id}] parcel_value(${pred}) → ${eff}`;
+        });
+        return `Active scoring rules:\n${ruleLines.join("\n")}`;
+    }
+
+    /**
      * Returns true if any stack_count rule would increase reward (multiplier > 1 or additive > 0).
      */
     hasPositiveStackRule(): boolean {

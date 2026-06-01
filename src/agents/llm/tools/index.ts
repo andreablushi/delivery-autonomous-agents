@@ -9,6 +9,8 @@ import * as requestRedLight from "./handlers/request_red_light.js";
 import * as requestGreenLight from "./handlers/request_green_light.js";
 import * as reply from "./handlers/reply.js";
 import * as calculate from "./handlers/calculate.js";
+import * as assignGoto from "./handlers/assign_goto.js";
+import * as requestTeamStatus from "./handlers/request_team_status.js";
 
 export type { ToolContext };
 
@@ -27,6 +29,8 @@ const modules: Record<string, ToolModule> = {
     request_green_light: requestGreenLight,
     reply,
     calculate,
+    assign_goto: assignGoto,
+    request_team_status: requestTeamStatus,
 };
 
 export const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = Object.values(modules).map(m => m.definition);

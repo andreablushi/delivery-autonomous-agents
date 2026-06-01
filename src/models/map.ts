@@ -1,8 +1,3 @@
-/**
- * Map model types for the delivery autonomous agents system.
- * These types represent the internal belief state about the game world's layout.
-*/
-
 import { TileType } from "./tile_type.js";
 
 export type Tile = {

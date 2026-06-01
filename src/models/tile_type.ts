@@ -1,7 +1,3 @@
-/**
- * Shared tile codes used by both internal models and raw socket IO models.
- */
-
 export const TILE_TYPE = {
     WALL: '0',              // Not walkable
     SPAWN_POINT: '1',       // Parcel spawn location

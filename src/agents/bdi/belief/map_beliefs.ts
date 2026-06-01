@@ -7,6 +7,7 @@ import { Tracker } from "./utils/tracker.js";
 import { computeSafeTiles } from "./utils/reachability.js";
 import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
+import { config } from "../../../config.js";
 
 /**
  * Beliefs about the static map layout and dynamic crate positions.
@@ -38,7 +39,6 @@ export class MapBeliefs {
     updateMap(width: number, height: number, tiles: IOTile[]): void {
         // Normalize tile types to strings — the server may send numeric values (e.g. 1) instead of strings ('1')
         const normalizedTiles = tiles.map(t => ({ ...t, type: String(t.type) as TileType }));
-
         // Pre-fill with WALL so any tile absent from the server payload is treated as unwalkable
         const matrix = Array.from({ length: height }, () =>
             Array<TileType>(width).fill(TILE_TYPE.WALL)
@@ -47,15 +47,15 @@ export class MapBeliefs {
             matrix[t.y][t.x] = t.type;
         }
 
-        // Seal off conveyor sinks and dead zones: only tiles in SCCs that contain BOTH a
-        // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
-        // is treated as a wall for pathfinding purposes.
         const deliveryPositions = normalizedTiles
             .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
             .map(t => ({ x: t.x, y: t.y }));
         const spawnPositions = normalizedTiles
             .filter(t => t.type === TILE_TYPE.SPAWN_POINT)
             .map(t => ({ x: t.x, y: t.y }));
+        // Seal off conveyor sinks and dead zones: only tiles in SCCs that contain BOTH a
+        // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
+        // is treated as a wall for pathfinding purposes.
         const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions, MapBeliefs.isStaticWalkable);
         
         // Any tile which is not safe can be treated as a wall
@@ -363,7 +363,7 @@ export class MapBeliefs {
      * @param pos The position to mark as blocked
      * @param ttl How long to keep the tile blocked in milliseconds (default 1000ms)
      */
-    markBlocked(pos: Position, ttl = 1_000): void {
+    markBlocked(pos: Position, ttl: number = config.map.defaultBlockedTtlMs): void {
         this.temporaryBlocked.set(posKey(pos), Date.now() + ttl);
     }
 
