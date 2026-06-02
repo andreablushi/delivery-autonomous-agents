@@ -1,47 +1,69 @@
 \section{LLM-Based Agent Layer}
 \label{sec:llm}
+The LLM layer functions as a thin wrapper around the underlying BDI agent. 
+It interprets high-level textual commands from a mission controller, utilizing tools exposed by the BDI core to inject new desires, 
+adjust scoring rules, or initiate team coordination.
 
-\subsection{Architecture and Request Handling}
-
-The LLM layer is implemented as a thin wrapper around the BDI agent. \texttt{LLMAgent} instantiates a \texttt{BDIAgent} and an \texttt{LLMClient}, wiring the latter with callbacks into the BDI core: \texttt{addInjectedIntention}, \texttt{removeIntentionsByType}, a shared \texttt{Messenger}, and a shared \texttt{RuleStore}.
-
-Incoming messages arrive via the \texttt{msg} socket event. The handler applies two filters in sequence: (i) coordination messages with a \texttt{beliefs\_report} envelope are forwarded to the \texttt{Coordinator} regardless of sender; (ii) all other messages are accepted only from the sender specified by the environment variable \texttt{MISSION\_AGENT\_NAME}, acting as the mission controller. Valid messages are passed to \texttt{LLMClient.processMessage}.
-
-Tool execution follows a multi-hop loop. Each invocation calls the OpenAI-compatible API with \texttt{tool\_choice: "auto"} and \texttt{temperature: 0.1} for up to $\texttt{maxHops} = 5$ rounds. Tool results are appended as \texttt{role: "tool"} messages and the next hop proceeds. The loop continues automatically only for the \texttt{calculate} tool (arithmetic evaluation), whose result is typically consumed in a follow-up reasoning step; all other tool calls terminate the loop after execution.
-
-\subsection{Adaptive Behaviour}
-
-The LLM is exposed to eleven tools that allow it to modify the agent's behaviour at runtime without stopping execution:
-
+\subsection{Runtime Tools}
+The LLM is equipped with a suite of tools that allow it to modify the agent's behavior dynamically, without interrupting execution:
 \begin{itemize}[noitemsep]
-  \item \textbf{request\_goto} / \textbf{assign\_goto}: inject a \texttt{REACH\_TILE} desire with a configurable reward and expiry time; \texttt{assign\_goto} addresses a specific agent by id, sending the instruction peer-to-peer when targeting a teammate.
-  \item \textbf{request\_putdown\_at}: inject a \texttt{DELIVER\_PARCEL} desire targeting a specific tile, with an LLM-specified bonus reward to bias delivery scoring.
-  \item \textbf{register\_scoring\_rule}: upsert a scoring rule (stack-count, delivery-tile, or parcel-value axis) into the shared \texttt{RuleStore}, directly modifying the desire ranking formulas described in Section~\ref{sec:desires}.
-  \item \textbf{register\_traversal\_penalty}: register a soft cost $\delta(p)$ on a tile, affecting both A* routing and penalized distance scoring (Equation~\eqref{eq:pendist}).
-  \item \textbf{request\_rendezvous}: inject a \texttt{HOLD\_TILE} desire with a release zone around the target; both agents independently converge to the joint-optimal holding tile and auto-release once the zone condition is satisfied.
-  \item \textbf{request\_red\_light} / \textbf{request\_green\_light}: inject an indefinite \texttt{HOLD\_TILE} on the nearest odd-row tile (red light), or clear all \texttt{HOLD\_TILE} desires (green light), halting and resuming the full team.
-  \item \textbf{request\_team\_status}: trigger an immediate coordination round (Section~\ref{sec:coordination}).
-  \item \textbf{reply}: send a text message back to the mission controller via the socket.
-  \item \textbf{calculate}: evaluate a sandboxed arithmetic expression (the only auto-continuing tool).
+  \item \textbf{request\_goto}: Injects a \texttt{REACH\_TILE} desire featuring a configurable reward and expiration timer.
+  \item \textbf{request\_putdown\_at}: Injects a \texttt{DELIVER\_PARCEL} desire directed at a specific tile, complete with an optional bonus reward.
+  \item \textbf{register\_scoring\_rule}: Inserts or updates a rule within the shared \texttt{RuleStore}, directly altering the scoring formulas detailed in Section~\ref{sec:scoring_rules}.
+  \item \textbf{register\_traversal\_penalty}: Applies a soft tile penalty that influences both A* routing and penalized-distance scoring.
+  \item \textbf{request\_rendezvous}: Directs all agents to converge on a joint-optimal holding tile near a target destination, automatically releasing them once the entire team enters the specified zone.
+  \item \textbf{request\_red\_light} / \textbf{request\_green\_light}: Suspends all agents on their nearest odd-row tile, or resumes normal operations.
+  \item \textbf{request\_team\_status}: Forces an immediate coordination round.
+  \item \textbf{reply}: Transmits a textual response back to the mission controller.
+  \item \textbf{calculate}: Evaluates a sandboxed arithmetic expression (this is the only tool that automatically advances the execution loop).
 \end{itemize}
+Any tool that alters agent behavior shares a common injection pathway with the peer-message dispatcher. Consequently, LLM-issued and peer-forwarded commands are subject to identical validation and execution logic.
 
-All tools that affect agent behaviour share a common injection path (\texttt{applyInjection}) with the peer-message dispatcher, ensuring that LLM-issued commands and peer-forwarded commands follow identical validation and application logic.
+\subsection{Adaptive Scoring via Rule Injection}
+\label{sec:scoring_rules}
+The \texttt{RuleStore} maintains a persistent registry of LLM-defined scoring rules.
+Each rule encodes a state condition alongside a linear effect: a multiplier $m$ and an additive offset $a$.
 
-\section{Coordination Strategies}
+During each deliberation cycle, any matching rules are applied to the baseline scores from Section~\ref{sec:desires} as a linear combination. 
+This scales or shifts the priorities without overwriting the foundational scoring logic.
+
+These rules evaluate three primary state variables: the individual parcel reward, the current carry count, and the target delivery tile. 
+Their effects compose directly onto the reward aggregates utilized in the desire formulas.
+
+\paragraph{ReachParcel:}
+The baseline score (Section~\ref{sec:desires}) is linearly adjusted according to the \emph{estimated stack count} post-pickup: the hypothetical carry count $|C|+1$.
+This allows a rule to incentivize picking up a specific parcel only if it achieves a desired total stack size, leaving all other pickup valuations unchanged.
+
+\paragraph{DeliverParcel:}
+The delivery score is linearly modified based on the current carry count $|C|$ and, optionally, the specific target tile.
+A stack rule keyed to $|C|$ dynamically alters the attractiveness of delivery depending on the agent's current payload, while a tile-specific rule can shepherd the agent toward a preferred drop-off location.
+An independent bonus can also be applied directly via the \texttt{request\_putdown\_at} tool, biasing delivery toward a specific tile regardless of any active rules.
+
+\paragraph{Explore:} 
+In the absence of an active stack rule, \texttt{Explore} maintains its default priority of 0 and functions as outlined in Section~\ref{sec:desires}.
+
+However, when a positive stack rule is triggered, \texttt{Explore} is elevated to priority 1, forcing it to compete directly against active parcel and delivery goals.
+Its score is subsequently scaled by the anticipated reward of completing the stack, incentivizing the agent to actively search for missing parcels rather than settling for a premature delivery.
+This behavior emerges naturally from the linear weighting system: the LLM is not required to issue an explicit exploration command, as simply registering a stack rule is sufficient to trigger the shift.
+
+\subsection{Coordination}
 \label{sec:coordination}
 
-\paragraph{Peer communication.}
-The \texttt{Messenger} wraps the socket's \texttt{emitSay} and \texttt{emitShout} primitives with a friend-gating filter: only messages from agents on the same team are dispatched. Outgoing tool invocations are encoded as peer-injection envelopes (format \texttt{\{v:1, kind:"peer\_injection", tool, args\}}) and broadcast to all friends via \texttt{communicate}. Upon receipt, each teammate decodes and applies the same injection locally, so a single LLM tool call propagates atomically to the whole team. Point-to-point delivery via \texttt{communicateTo} is used when a command targets a specific agent.
+\paragraph{Peer Communication.}
+The \texttt{Messenger} module encapsulates the socket's \texttt{emitSay} and \texttt{emitShout} primitives behind a friendly-agent filter.
+Outgoing tool invocations are packaged as peer-injection envelopes and broadcast to all teammates, ensuring that a single LLM tool call propagates atomically across the entire squad.
+For commands targeting a specific agent, point-to-point delivery is achieved via \texttt{communicateTo}.
 
-\paragraph{Rendezvous.}
-When the LLM issues \texttt{request\_rendezvous(x, y, max\_distance)}, all candidate tiles within Manhattan distance \texttt{max\_distance} of the target are injected as \texttt{HOLD\_TILE} desires with a release zone centred on $(x, y)$. Both agents independently score these tiles using the bottleneck rendezvous formula (Section~\ref{sec:desires}), selecting the same joint-optimal tile without explicit negotiation. The hold intention is automatically pruned once all agents are inside the release zone.
-
-\paragraph{Red-light / green-light.}
-The red-light mechanism injects an indefinite \texttt{HOLD\_TILE} desire on the nearest odd-row tile for each agent. Because HOLD\_TILE holds priority 1, it immediately supersedes all delivery and parcel desires. A safety expiry TTL is attached to prevent agents from being stranded if the green-light signal is lost. The green-light command clears all \texttt{HOLD\_TILE} desires on both agents, resuming normal operation. Both commands are broadcast to teammates, so the entire team stops and resumes together.
+\paragraph{Rendezvous and Traffic Control.}
+Upon receiving a \texttt{request\_rendezvous} command, all candidate tiles within the designated Manhattan distance of the target are injected as \texttt{HOLD\_TILE} desires.
+Each agent independently evaluates these tiles utilizing the rendezvous formula (Section~\ref{sec:desires}), naturally converging on the same joint-optimal holding tile without requiring explicit negotiation.
+Similarly, the \texttt{request\_red\_light} and \texttt{request\_green\_light} commands atomic inject or clear an indefinite \texttt{HOLD\_TILE} directive on the nearest odd-row tile, effectively halting or resuming team movement.
 
 \paragraph{Coordinator.}
-\label{par:coordinator}
-A periodic \texttt{Coordinator} runs a team assignment round every $10\,000\,\text{ms}$ (with a $5\,000\,\text{ms}$ cooldown to prevent re-entrancy). Each round: (i) broadcasts a \texttt{request\_beliefs} envelope to all friends; (ii) waits $750\,\text{ms}$ for belief reports to arrive; (iii) filters reports to those fresher than the request timestamp; (iv) builds a geometric summary of the team state (\emph{hot zones}, agent positions, carried parcels); (v) passes this summary to \texttt{LLMClient.coordinate}, which issues \texttt{assign\_goto} calls to direct each agent towards a high-value zone. The \texttt{request\_team\_status} tool allows the mission controller to trigger this round on demand.
+A centralized \texttt{Coordinator} periodically executes a team assignment round every $10{,}000 \text{ ms}$.
+During each round, a \texttt{request\_beliefs} envelope is broadcast to all teammates. After a $750 \text{ ms}$ collection window, the coordinator constructs a geometric summary of the team's state (including agent positions, payloads, and high-value zones) and feeds it to \texttt{LLMClient.coordinate}. This triggers \texttt{assign\_goto} commands to optimally distribute the agents.
+The mission controller can also trigger this process on demand via the \texttt{request\_team\_status} tool.
 
-\paragraph{Cooperative vs.\ competitive behaviour.}
-The friend/enemy distinction is determined solely by team membership. Communication, peer injection, and coordination are restricted to friends. Enemy agents contribute to three belief-level mechanisms: (i) the race factor $\gamma$ in REACH\_PARCEL scoring, which discounts parcels reachable earlier by a competitor; (ii) the enemy heat field $H$ (Equation~\eqref{eq:heat}), which suppresses exploration towards contested zones; (iii) trajectory prediction and path blocking, which prevents the agent from planning moves into tiles likely occupied by an enemy. No messages or injections are ever accepted from or sent to enemy agents.
+\paragraph{Cooperative vs.\ Competitive Behavior.}
+All communication, peer injections, and coordination logic are strictly isolated to allied teammates.
+While enemy agents influence the environment by contributing to the race factor $\gamma$, the enemy heat field $H$, and trajectory-based path blocking, no direct messages or command injections are ever exchanged with them.
