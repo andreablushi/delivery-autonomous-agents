@@ -1,21 +1,24 @@
 \section{PDDL-Based Crate Navigation}
 \label{sec:pddl}
-
-Some maps in the Deliveroo.js environment contain movable crates that can block navigable paths. An agent may push a crate one tile in any cardinal direction, subject to the constraints described in Section~\ref{sec:planning}. We model crate manipulation using PDDL (Planning Domain Definition Language), invoked as a fallback when A* alone cannot find a route.
+Some maps in the Deliveroo.js environment contain movable crates that can obstruct navigable paths. 
+An agent may push a crate one tile in any cardinal direction, subject to the constraints outlined in Section~\ref{sec:planning}. 
+We model this crate manipulation problem using PDDL (Planning Domain Definition Language), invoking it as a fallback mechanism when the standard A* planner fails to find an unobstructed route.
 
 \subsection{Domain Overview}
-
-The domain \texttt{deliveroo-crates} is specified in STRIPS with typing (\texttt{:strips :typing}) over two object types: \texttt{tile} and \texttt{crate}. The predicate set captures the complete state required for crate-aware navigation:
-
+The \texttt{deliveroo-crates} domain is specified in STRIPS, utilizing two core object types: \texttt{tile} and \texttt{crate}. The predicate set captures the complete state required for crate-aware navigation:
 \begin{itemize}[noitemsep]
-  \item \texttt{(at ?t)} --- agent occupies tile $t$;
-  \item \texttt{(adj-up/down/left/right ?from ?to)} --- directed adjacency between tiles;
-  \item \texttt{(crate-at ?c ?t)} --- crate $c$ is positioned on tile $t$;
-  \item \texttt{(crate-free ?t)} --- tile $t$ contains no crate (available for entry or push landing);
-  \item \texttt{(crate-space ?t)} --- tile $t$ is structurally valid for crate occupation (not a wall or conveyor).
+  \item \texttt{(at ?t)}: the agent occupies tile $t$;
+  \item \texttt{(adj-up/down/left/right ?from ?to)}: defines the directed spatial relationship between adjacent tiles, specifying valid movement or pushing directions;
+  \item \texttt{(crate-at ?c ?t)}: crate $c$ is positioned on tile $t$;
+  \item \texttt{(crate-free ?t)}: tile $t$ currently contains no crate, meaning it is available for agent entry or as a push destination;
+  \item \texttt{(crate-space ?t)}: tile $t$ is structurally capable of supporting a crate (e.g., it is not a wall or a conveyor belt).
 \end{itemize}
-
-Eight actions are defined. Four \emph{move} actions allow the agent to step into an adjacent crate-free tile. Four \emph{push} actions allow the agent to displace a crate one tile in the push direction, with preconditions: (i) the agent is adjacent to the crate from the opposite side; (ii) the destination is a valid crate space and is currently crate-free. The push effect simultaneously relocates the agent onto the crate's former tile and the crate to its new tile, updating \texttt{crate-free} facts accordingly.
+The domain defines eight parameterized actions: four directional \emph{move} actions and four directional \emph{push} actions. 
+A move action allows the agent to step into an adjacent \texttt{crate-free} tile. 
+A push action allows the agent to displace a crate one tile in the specified direction, requiring two preconditions: 
+(i) the agent is positioned adjacent to the crate on the opposite side of the push direction, and
+(ii) the target destination is a valid \texttt{crate-space} and is currently \texttt{crate-free}. 
+The execution of a push action simultaneously relocates the crate to the target tile and moves the agent onto the crate's former tile, updating the \texttt{crate-free} state of the involved tiles accordingly.
 
 \subsection{Planning With PDDL}
 
