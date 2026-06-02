@@ -26,24 +26,40 @@ The domain defines eight parameterized actions: four directional \emph{move} act
 \end{itemize}
 
 \subsection{Planning With PDDL}
-PDDL planning is triggered exclusively when A* fails and the belief system confirms that crates obstruct the route (Section~\ref{sec:planning}).
-A first A* search looks for a path from the agent's current position to the final goal, treating all tiles occupied by crates as impassable. If this search fails, 
-a second A* search, considering only the static map layout and ignoring crate positions, identifies a potential path that is structurally valid but may be blocked by crates.
+PDDL planning is invoked exclusively when standard A* pathfinding fails and the agent's belief system indicates that crates obstruct the route (Section~\ref{sec:planning}).
+This detection occurs in two phases. First, an A* search is executed, treating all crate-occupied tiles as impassable. 
+If this search fails, a second A* search is performed that entirely ignores crate positions, yielding a structurally valid but potentially obstructed path. 
+Any crates from the agent's current beliefs that intersect this path are collected; their presence confirms that the route is blocked by movable obstacles rather than static map geometry.
 
-The problem instance is built from the agent's current beliefs: adjacency facts are built for every non-wall tile pair, 
-\texttt{crate-at} and \texttt{crate-free} facts for each believed crate position, 
-and \texttt{crate-space} facts for all structurally valid positions. 
-The goal is a single ground atom \texttt{(at target)}.
+A PDDL problem instance is subsequently constructed from the agent's current beliefs.
+The \texttt{:init} state is populated with the following:
+\begin{itemize}[noitemsep]
+    \item \texttt{(at t\_X\_Y)}, where $(X, Y)$ is the agent's current position;
+    \item adjacency facts for every pair of connected non-wall tiles, covering all four cardinal directions;
+    \item \texttt{(crate-at ?c ?t)} and \texttt{(crate-free ?t)} facts for each believed crate position;
+    \item \texttt{(crate-space ?t)} facts for all structurally valid positions (non-wall, non-conveyor tiles).
+\end{itemize}
+The \texttt{:goal} section comprises a single ground atom, \texttt{(at t\_TX\_TY)}, where $(TX, TY)$ represents the target position.
+Consequently, the solver is tasked with generating a \textit{complete} sequence of \texttt{move} and \texttt{push} actions from the agent's 
+current location to the final destination, clearing any obstructing crates along the way.
+The resulting plan is translated back into the agent's internal action representation, stored in the plan buffer, and executed step-by-step until completion or failure.
 
-The original approach used PDDL to compute a complete path from the agent's current position to the final goal, which was then directly translated into a sequence of \texttt{move} and \texttt{push} steps for execution.
+However, this formulation suffers from a fundamental performance bottleneck: the PDDL solver is slow for the interactive demands of the environment.
+An initial optimization involved transitioning to a local solver, which eliminated the overhead of remote API requests and constant problem serialization. 
+A more structural optimization, caching solved plans, is unfortunately undermined by the formulation itself. 
+Because the cache key must incorporate both the start and goal tiles, even a trivial change in the agent's position alters the key and triggers a cache miss, 
+despite the crate-clearing maneuver remaining identical regardless of where the agent initiated the request.
 
-\subsection{A Smart Solution --- Problem Restatement \& Caching}
-Since the PDDL planner introduced overhead that was not acceptable for the reactive nature of the environment, we implemented a problem restatement to enable plan caching.
+\subsection{A Smart Solution: Problem Restatement \& Caching}
+The root cause of this inefficiency is that PDDL is only strictly necessary for navigating the crate cluster itself; 
+the initial and final segments can be efficiently handled by standard A* navigation.
 
-Instead of invoking the planner for a global solution from the agent's current position to the final goal, the plan is decomposed into three steps:
+To resolve this, the problem is reformulated so that the PDDL solver is only responsible for the segment of the journey that requires crate manipulation.
+The overall plan is decomposed into three distinct segments:
 \begin{itemize}[noitemsep]
     \item Move from the current position to the cluster entry tile (A*);
-    \item Navigate through the crate cluster (PDDL);
+    \item Navigate through the crate cluster, from entry to exit (PDDL);
     \item Move from the cluster exit tile to the final goal (A*).
 \end{itemize}
-The PDDL planner is therefore restricted to the second step alone. Computed maneuvers are stored in a FIFO cache of size 32, keyed by the tuple $(\text{entry},\, \text{exit},\, \{\text{crate positions}\})$. The cache key is independent of the agent's absolute position: it depends only on the relative crate arrangement and the cluster's entry and exit tiles. Consequently, the exact same maneuver plan is reused whenever the agent encounters a structurally identical sub-problem --- including cases where the agent approaches the same cluster from a different direction --- drastically reducing planner invocations and keeping the agent reactive.
+Under this paradigm, the PDDL problem is anchored to the cluster's entry tile rather than the agent's live position.
+Computed maneuvers are stored in a FIFO cache, utilizing the tuple $(\text{entry},\, \text{exit},\, \{\text{crate positions}\})$ as the key.
