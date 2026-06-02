@@ -1,0 +1,11 @@
+\section{Problem Statement}
+
+The \texttt{Deliveroo.js} environment is a grid-based delivery simulation where autonomous agents collect and deliver scattered parcels to designated tiles to maximise their accumulated score. 
+The environment introduces various challenges: agents only perceive tiles within a limited sensor radius at any given time step. 
+Parcel rewards decay at a fixed server-configured interval, creating time pressure that incentivises early collection.
+Multiple agent types may share the map; agents belonging to the same team cooperate to jointly maximise reward, whereas agents from different teams compete for the same parcels. 
+Additionally, movable crates often obstruct navigable paths, meaning agents must actively push them to clear blocked routes.
+
+We implement a BDI (Belief-Desire-Intention) agent augmented with an optional Large Language Model (LLM) based control layer. 
+The BDI core handles reactive parcel collection, exploration, and crate-clearing autonomously; the LLM layer intercepts high-level instructions, 
+adapts agent behaviour through a set of structured tools, and coordinates multi-agent strategy via periodic team assignments.

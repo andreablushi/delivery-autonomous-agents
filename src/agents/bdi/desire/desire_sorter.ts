@@ -145,43 +145,48 @@ function scoreReachDesire(
     enemyDists: Map<string, number>[],
     ruleStore: RuleStore,
 ): number {
-    const parcel = beliefs.parcels.getAvailableParcels().find(
+    // Retrieve the Parcel object corresponding to this desire's target position. 
+    // If no parcel is currently believed to be at this position, return 0 so the desire is ignored. 
+    const desireParcel = beliefs.parcels.getAvailableParcels().find(
         p => p.lastPosition &&
             p.lastPosition.x === desire.target.x &&
             p.lastPosition.y === desire.target.y
     );
-    if (!parcel) return 0;
+    if (!desireParcel) return 0;
 
-    const parcelKey = posKey(desire.target);
-    const dPickup = meDist.get(parcelKey);
-    if (dPickup === undefined) return 0; // unreachable
-    if (dPickup === 0) return Infinity;
+    const parcelPositionKey = posKey(desire.target);
+    const distancePickup = meDist.get(parcelPositionKey);
+    // If the parcel is unreachable, the score is 0 so the agent ignores this desire
+    if (distancePickup === undefined) return 0; // unreachable
+    // If we're already on the parcel, this desire should be our top priority so return Infinity to break all ties in favor of pickup
+    if (distancePickup === 0) return Infinity;
 
     const me = beliefs.agents.getCurrentMe();
     const carried = me ? beliefs.parcels.getCarriedByAgent(me.id) : [];
 
     // Sum per-parcel effective reward after parcel_value rules applied on raw values
-    const hypotheticalCount = carried.length + 1;
-    const newEffect = ruleStore.parcelValueEffect(parcel.reward);
-    const base = parcel.reward * newEffect.multiplier + newEffect.additive
+    const parcelValueEffect = ruleStore.parcelValueEffect(desireParcel.reward);
+    const baseScore = desireParcel.reward * parcelValueEffect.multiplier + parcelValueEffect.additive
+        // We sum also the effects of currently carried parcels to make it comparable with the DeliverDesire scoring
         + carried.reduce((sum, p) => {
-            const { multiplier, additive } = ruleStore.parcelValueEffect(p.reward);
-            return sum + p.reward * multiplier + additive;
+            const parcelValueEffect = ruleStore.parcelValueEffect(p.reward);
+            return sum + p.reward * parcelValueEffect.multiplier + parcelValueEffect.additive;
         }, 0);
 
     // Apply stack and delivery-tile rules
-    const stack = ruleStore.stackCountEffect(hypotheticalCount);
-    const effective = base * stack.multiplier + stack.additive;
-    if (effective <= 0) return 0;
+    const hypotheticalCount = carried.length + 1;
+    const stackEffect = ruleStore.stackCountEffect(hypotheticalCount);
+    const effectiveScore = baseScore * stackEffect.multiplier + stackEffect.additive;
+    if (effectiveScore <= 0) return 0;
 
     // Race factor: discount when an enemy can reach this parcel faster than we can
     let raceFactor = 1;
     if (enemyDists.length > 0) {
-        const closestEnemyDist = Math.min(...enemyDists.map(d => d.get(parcelKey) ?? Infinity));
-        raceFactor = Math.min(1, closestEnemyDist / dPickup);
+        const closestEnemyDist = Math.min(...enemyDists.map(d => d.get(parcelPositionKey) ?? Infinity));
+        raceFactor = Math.min(1, closestEnemyDist / distancePickup);
     }
 
-    return (effective / penalizedDistance(dPickup, desire.target, beliefs)) * raceFactor;
+    return (effectiveScore / penalizedDistance(distancePickup, desire.target, beliefs)) * raceFactor;
 }
 
 /**
@@ -197,28 +202,29 @@ function scoreDeliverDesire(
     const me = beliefs.agents.getCurrentMe();
     if (!me) return 0;
 
-    const carried = beliefs.parcels.getCarriedByAgent(me.id);
-    if (carried.length === 0) return 0;
+    // If the agent is not currently carrying any parcels, the score is 0 so the agent ignores this desire
+    const carriedParcels = beliefs.parcels.getCarriedByAgent(me.id);
+    if (carriedParcels.length === 0) return 0;
 
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
+    if (distance === 0) return Infinity;
 
     // Per-parcel value after parcel_value rules applied on raw values
     // It consider the fact that delivering a parcel with score higher than a value returns 0
-    const base = carried.reduce((sum, p) => {
-        const { multiplier, additive } = ruleStore.parcelValueEffect(p.reward);
-        return sum + p.reward * multiplier + additive;
+    const baseScore = carriedParcels.reduce((sum, p) => {
+        const parcelValueEffect =  ruleStore.parcelValueEffect(p.reward);
+        return sum + p.reward * parcelValueEffect.multiplier + parcelValueEffect.additive;
     }, 0);
 
-    const stack = ruleStore.stackCountEffect(carried.length);
-    const tile = ruleStore.deliveryTileEffect(desire.target);
-
-    const effective = base * stack.multiplier * tile.multiplier
-        + stack.additive + tile.additive
+    const stackEffect = ruleStore.stackCountEffect(carriedParcels.length);
+    const tileEffect = ruleStore.deliveryTileEffect(desire.target);
+    const effectiveScore = baseScore * stackEffect.multiplier * tileEffect.multiplier
+        + stackEffect.additive + tileEffect.additive
         + (desire.bonus ?? 0);
-    if (effective <= 0) return 0;
+    if (effectiveScore <= 0) return 0;
 
-    return effective / (penalizedDistance(distance, desire.target, beliefs) + 1);
+    return effectiveScore / penalizedDistance(distance, desire.target, beliefs);
 }
 
 /**

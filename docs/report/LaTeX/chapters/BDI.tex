@@ -1,8 +1,149 @@
-\section{BDI}
+\section{BDI Agent}
+The agent operates on a continuous cycle driven by the \texttt{sensing} socket event emitted by the server. 
+Rather than relying on a static script, the agent dynamically reacts to the environment through a strict, four-stage pipeline. 
+Upon receiving a \texttt{sensing} event, the following sequence executes:
+\begin{enumerate}
+    \item \textbf{Perception (\texttt{perceive()}):} The agent integrates the new sensory data into its belief state trough a Belief Revision process (detailed in Section~\ref{sec:belief}).
+    The actions we perform that modify the belief state automatically updates the beliefs, without having to wait for the next sensing event.
+    
+    \item \textbf{Deliberation (\texttt{deliberate()}):} Using its updated beliefs, the agent generates potential goals (desires) and calculates a score for each. 
+    It then rebuilds its intention queue, prioritizing the most valuable task (detailed in Section~\ref{sec:desires}).
+    
+    \item \textbf{Planning (\texttt{Planner.plan()}):} The planner extracts the highest-ranked intention from the queue and translates it into a concrete sequence of 
+    executable, typed steps (detailed in Section~\ref{sec:planning}).
+    
+    \item \textbf{Execution (\texttt{Executor}):} Finally, the planned actions are asynchronously emitted to the server via socket events. 
+    To maintain responsiveness, the executor triggers an action at each server clock tick, instead of waiting for a perception update or an acknowledgment from the server.
+\end{enumerate}
 
 \subsection{Belief Revision}
+\label{sec:belief}
+The agent's belief state relies on two foundational utility data structures to manage temporal observations, 
+which in turn feed into three specialized sub-systems: \texttt{AgentBeliefs}, \texttt{MapBeliefs}, \texttt{ParcelBeliefs}.
 
-\subsection{Intention Revision}
+\paragraph{Tracker} \texttt{Tracker} stores a single latest observation $\langle v, t_{seen} \rangle$ per entity \texttt{e}. 
+On each sensing report, \texttt{update(e, v)} overwrites the existing entry. 
+The confidence of a tracked observation decays exponentially over time:
+\begin{equation}
+c(t) = \exp \left(-\frac{t - t_{seen}}{\tau}\right)
+\label{eq:confidence}
+\end{equation}
+where $\tau$ is the exponential time constant (the duration after which confidence drops significantly).
 
-\subsection{Game Strategy}
-Some maps of the Deliveroo.js environment present
+When the current sensing window covers an entity's last-known position, but the entity is absent from the report, 
+\texttt{invalidateAtSensedPositions} nullifies that position without removing the record entirely.
+
+\paragraph{Memory}
+While the tracker maintains only the latest state, \texttt{Memory} is a supplementary store that maintains a bounded temporal history of observations per entity, automatically evicting entries older than a defined time threshold.
+
+\subsubsection{Agent beliefs}
+\texttt{AgentBeliefs} stores the latest state of every observed agent via \texttt{Tracker}, and a bounded position history for each enemy via \texttt{Memory}.
+It also maintains a spatial heat field over the map, aggregating enemy presence across all tracked observations.
+
+\subsubsection{Map beliefs}
+\texttt{MapBeliefs} stores the static tile layout, a set of transient blocked tiles each with a configurable TTL.
+Upon map receipt, it performs connectivity analysis to seal \emph{sink tiles}, walkable tiles unreachable from any delivery point, reclassifying them as walls.
+
+
+\subsubsection{Parcel beliefs}
+This component tracks the availability and value of delivery targets. 
+Parcels within the current sensing window receive their authoritative reward from the server. 
+Once out of sight, parcel rewards decay linearly at $-1$ per server-defined interval $\Delta_t$.
+Each parcel maintains an independent decay clock to prevent drift accumulation. 
+Given a parcel last observed at time $t_0$ with reward $r_0$, its estimated reward at time $t$ is:
+\begin{equation}
+r(t) = r_0 - \left\lfloor\frac{t - t_0}{\Delta_t}\right\rfloor.
+\label{eq:decay}
+\end{equation}
+When $r(t) \leq 0$, the parcel is considered expired and is deleted from the agent's beliefs.
+
+\subsection{Desires and Intention Selection}
+\label{sec:desires}
+For the BDI layer, we define a fixed set of 3 core desire types, each parameterized by a target tile:
+\begin{itemize}
+    \item \textbf{ReachParcel}: navigate to and collect a visible parcel;
+    \item \textbf{DeliverParcel}: navigate to a delivery tile while carrying parcels;
+    \item \textbf{Explore}: navigate to an unobserved spawn tile when idle (i.e., no reachable parcels or deliveries).
+\end{itemize}
+
+\subsubsection{Queue reconstruction}
+At each deliberation step, the intention queue is fully reconstructed from the current belief state.
+The queue is sorted by priority first, then by descending score within each desire type.
+Both \texttt{ReachParcel} and \texttt{DeliverParcel} desires have a priority of 1, while \texttt{Explore} has a lower priority of 0.
+This ensures that the agent always prefers tangible parcel-related goals over exploration when any are available.
+
+\subsubsection{Dynamic Scoring}
+The agent computes a dynamic score for each desire to guide intention selection.
+The score is a real-valued estimate of the desire's expected utility, incorporating factors such as the parcel's reward, the distance to the target, and the presence of competitors.
+
+\paragraph{Distance Penalty}
+Each desire's score is inversely proportional to the estimated distance to its target, calculated using the agent's current beliefs.
+The agent computes the shortest path distance $d$ from its current position to all other tiles using a Breadth-First Search (BFS).
+We will refer to this distance as $d$ throughout the rest of the section. (Note: when $d = 0$, we assign an infinite score).
+
+\paragraph{ReachParcel}
+Let $r_p$ denote the current estimated reward of a target parcel $p$, and $C$ the set of parcels the agent is currently carrying.
+The score $S$ for a \texttt{ReachParcel} desire targeting parcel $p$ is calculated as:
+\begin{equation*}
+  S = \frac{r_p + \sum_{c \in C} r_c}{d} \cdot \gamma
+\end{equation*}
+Where $\gamma$ is a race factor that de-prioritizes parcels likely to be collected by competitors. It is computed as:
+\[ \gamma = \min\left(1, \frac{d_{\text{enemy}}}{d}\right) \]
+where $d_{\text{enemy}}$ is the distance from the nearest tracked enemy to the parcel.
+
+Incorporating the total reward of currently carried parcels ($\sum_{c \in C} r_c$) into the score allows the agent to evaluate the utility of 
+picking up a new parcel against the potential value of delivering existing ones. This effectively balances the agent's acquisition and delivery goals.
+
+\paragraph{DeliverParcel}
+For a \texttt{DeliverParcel} desire, the objective is to secure the rewards of the parcels currently held by the agent. The score $S$ is computed as the total estimated reward of all carried parcels $C$, inversely scaled by the shortest path distance $d$ to the delivery tile:
+\begin{equation*}
+  S = \frac{\sum_{c \in C} r_c}{d}
+\end{equation*}
+
+\paragraph{Explore}
+The \texttt{Explore} desire serves as a fallback to locate newly spawned parcels. We first define the normalized observation age $\tau$:
+\begin{equation*}
+  \tau = \min\left(1, \frac{\Delta t}{T_{\text{spawn}}}\right)
+\end{equation*}
+where $\Delta t$ is the time since the target spawn tile $x$ was last observed, and $T_{\text{spawn}}$ is the environment's spawn interval.
+
+The cluster weight $w$ quantifies the structural density of the target's surrounding spawn area. It is computed as the sum of inverse distances to all neighbor spawn tiles within the observation range $R_{\text{obs}}$:
+\begin{equation*}
+  w = \sum_{y \in OST} \frac{1}{\delta(x, y) + 1}
+\end{equation*}
+where $OST$ is the set of spawn tiles such that their Manhattan distance $\delta(x, y) \le R_{\text{obs}}$.
+
+The enemy heat $h$ actively steers the agent away from sectors currently crowded by competitors. 
+It is accumulated from the history of tracked enemy observations $E$, combining spatial and temporal decay:
+\begin{equation*}
+  h = \sum_{e \in E} \exp\left(-\frac{d_e^2}{2\sigma^2}\right) \exp\left(-\frac{\Delta t_e}{\tau_h}\right)
+\end{equation*}
+where $d_e$ is the spatial distance to the past enemy observation, $\Delta t_e$ is the observation's age, $\sigma$ controls the spatial spread, and $\tau_h$ is the temporal decay rate.
+
+Finally, the score for an \texttt{Explore} desire is computed as:
+\begin{equation*}
+  S = \frac{w \cdot \tau}{d \cdot (1 + h)}
+\end{equation*}
+
+\subsection{Planning: A* Navigation and Collision Handling}
+\label{sec:planning}
+
+For pathfinding, the agent employs a standard A* search algorithm with a Manhattan distance heuristic, which is admissible in our grid-based environment. 
+The planner incorporates dynamic walkability checks based on the agent's current beliefs, treating temporarily blocked tiles as impassable.
+Statically, walls and out-of-bounds tiles are always rejected; conveyor tiles are additionally direction-sensitive, blocking movement against their flow.
+
+Plans generated by the A* algorithm are defined as sequences of typed actions: directional \texttt{move} steps followed by a terminal \texttt{pickup} or \texttt{putdown} step. 
+An existing plan is reused across deliberation steps as long as the active desire type and target remain unchanged, and all remaining steps successfully pass walkability re-validation.
+
+\paragraph{Collision Handling}
+Prior to executing a move step, the agent verifies the availability of the target tile. A tile is considered occupied, and thus temporarily blocked, under two conditions: 
+either an enemy is currently observed on it, or an enemy's predicted next position matches it with sufficient confidence.
+
+When the next planned tile is occupied, the collision manager applies a three-stage escalation:
+\begin{enumerate}[noitemsep]
+  \item \textbf{Detour}: replan with the blocked tile treated as a wall. 
+  This is accepted only if the detour adds at most a predefined threshold of $\Delta_\text{th}$ steps over the remaining plan.
+  \item \textbf{Wait}: if no acceptable detour exists, pause execution for a random duration drawn from a predefined uniform distribution.
+  \item \textbf{Block and replan}: after the wait expires, or after a specified limit $L$ of repeated invalidations, 
+  mark the tile as temporarily blocked for a randomized time-to-live (TTL) duration and completely replan toward the same goal.
+\end{enumerate}

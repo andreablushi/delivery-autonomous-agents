@@ -250,7 +250,7 @@ export class MapBeliefs {
 
     /**
      * Compute and cache a distance-weighted cluster weight for every spawn tile.
-     * Weight = Σ (observationDistance - dist(tile, neighbor) + 1) for each neighbor within range.
+     * Weight = Σ 1/(dist(tile, neighbor) + 1) for each neighbor within range.
      * Must be called once after observationDistance is known from the config event.
      * @param observationDistance The maximum distance at which the agent can sense tiles, used to determine which spawn tiles are in the same cluster.
      * @returns void
@@ -259,7 +259,9 @@ export class MapBeliefs {
         for (const tile of this.spawnTiles) {
             const weight = this.spawnTiles.reduce((sum, neighbor) => {
                 const distance = manhattanDistance(tile, neighbor);
-                return distance <= observationDistance ? sum + (observationDistance - distance + 1) : sum;
+                return distance <= observationDistance 
+                ? sum + 1 / (distance + 1) 
+                : sum;
             }, 0);
             this.spawnTilesClusterWeights.set(posKey(tile), weight);
         }
