@@ -5,26 +5,30 @@ An agent may push a crate one tile in any cardinal direction, subject to the con
 We model this crate manipulation problem using PDDL (Planning Domain Definition Language), invoking it as a fallback mechanism when the standard A* planner fails to find an unobstructed route.
 
 \subsection{Domain Overview}
-The \texttt{deliveroo-crates} domain is specified in STRIPS, utilizing two core object types: \texttt{tile} and \texttt{crate}. The predicate set captures the complete state required for crate-aware navigation:
+The \texttt{deliveroo-crates} domain is formulated in STRIPS and relies on two primary object types: \texttt{tile} and \texttt{crate}. The complete state required for crate-aware navigation is captured by the following predicate set:
 \begin{itemize}[noitemsep]
-  \item \texttt{(at ?t)}: the agent occupies tile $t$;
-  \item \texttt{(adj-up/down/left/right ?from ?to)}: defines the directed spatial relationship between adjacent tiles, specifying valid movement or pushing directions;
-  \item \texttt{(crate-at ?c ?t)}: crate $c$ is positioned on tile $t$;
-  \item \texttt{(crate-free ?t)}: tile $t$ currently contains no crate, meaning it is available for agent entry or as a push destination;
-  \item \texttt{(crate-space ?t)}: tile $t$ is structurally capable of supporting a crate (e.g., it is not a wall or a conveyor belt).
+  \item \texttt{(at ?t)}: The agent is located on tile $t$.
+  \item \texttt{(adj-up/down/left/right ?from ?to)}: Defines the valid directed spatial relationships between adjacent tiles for movement or pushing.
+  \item \texttt{(crate-at ?c ?t)}: Crate $c$ occupies tile $t$.
+  \item \texttt{(crate-free ?t)}: Tile $t$ contains no crate, making it available for entry or as a push destination.
+  \item \texttt{(crate-space ?t)}: Tile $t$ can structurally support a crate (e.g., it is not a wall or a conveyor belt).
 \end{itemize}
-The domain defines eight parameterized actions: four directional \emph{move} actions and four directional \emph{push} actions. 
-A move action allows the agent to step into an adjacent \texttt{crate-free} tile. 
-A push action allows the agent to displace a crate one tile in the specified direction, requiring two preconditions: 
-(i) the agent is positioned adjacent to the crate on the opposite side of the push direction, and
-(ii) the target destination is a valid \texttt{crate-space} and is currently \texttt{crate-free}. 
-The execution of a push action simultaneously relocates the crate to the target tile and moves the agent onto the crate's former tile, updating the \texttt{crate-free} state of the involved tiles accordingly.
+
+The domain defines eight parameterized actions: four directional \emph{move} actions and four directional \emph{push} actions.
+\begin{itemize}
+    \item A move action allows the agent to step into an adjacent \texttt{crate-free} tile. 
+    \item A push action allows the agent to displace a crate one tile in the specified direction, requiring two preconditions:
+    \begin{enumerate}[label=(\roman*)]
+        \item the agent is positioned adjacent to the crate on the opposite side of the push direction, and
+        \item the target destination is a valid \texttt{crate-space} and is currently \texttt{crate-free}. 
+    \end{enumerate}
+    The execution of a push action simultaneously relocates the crate to the target tile and moves the agent onto the crate's former tile, updating the \texttt{crate-free} state of the involved tiles accordingly.
+\end{itemize}
 
 \subsection{Planning With PDDL}
-\begin{comment}
-#TODO: maybe add more about how we know when to invoke the planner
-\end{comment}
 PDDL planning is triggered exclusively when A* fails and the belief system confirms that crates obstruct the route (Section~\ref{sec:planning}).
+A first A* search looks for a path from the agent's current position to the final goal, treating all tiles occupied by crates as impassable. If this search fails, 
+a second A* search, considering only the static map layout and ignoring crate positions, identifies a potential path that is structurally valid but may be blocked by crates.
 
 The problem instance is built from the agent's current beliefs: adjacency facts are built for every non-wall tile pair, 
 \texttt{crate-at} and \texttt{crate-free} facts for each believed crate position, 
