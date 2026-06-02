@@ -41,8 +41,16 @@ While the tracker maintains only the latest state, \texttt{Memory} is a suppleme
 It also maintains a spatial heat field over the map, aggregating enemy presence across all tracked observations.
 
 \subsubsection{Map beliefs}
-\texttt{MapBeliefs} stores the static tile layout, a set of transient blocked tiles each with a configurable TTL.
-Upon map receipt, it performs connectivity analysis to seal \emph{sink tiles}, walkable tiles unreachable from any delivery point, reclassifying them as walls.
+\texttt{MapBeliefs} stores the static tile layout, a set of transient blocked tiles each with a configurable TTL, and soft traversal penalties on individual tiles.
+
+Upon map receipt, it identifies and permanently seals \emph{sink tiles}: tiles that an agent can enter but from which no valid pickup-and-deliver loop exists.
+This situation arises on maps where directional conveyor tiles create one-way corridors: an agent may be carried into a region 
+from which it can never return to a spawn tile, or from which no delivery tile is reachable.
+
+To detect these dead zones, the map is modelled as a directed walkability graph where conveyors enforce one-way edges.
+Tarjan's algorithm is then applied to find all Strongly Connected Components (SCCs).
+An SCC is considered \emph{safe} only if it contains at least one spawn tile \emph{and} at least one delivery tile — i.e.\ it supports the full pickup-and-deliver cycle.
+All walkable tiles outside a safe SCC are reclassified as walls, preventing the planner from ever routing the agent into an unrecoverable region.
 
 
 \subsubsection{Parcel beliefs}
