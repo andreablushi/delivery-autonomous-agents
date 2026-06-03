@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { applyInjection } from "../../../../models/apply_injection.js";
-import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -30,6 +29,6 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const r = applyInjection("request_putdown_at", rawArgs, ctx);
     if ("error" in r) return JSON.stringify(r);
-    await communicate(ctx, "request_putdown_at", rawArgs as Record<string, unknown>);
+    await ctx.comm.broadcast("request_putdown_at", rawArgs as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }

@@ -13,15 +13,17 @@ import { config as appConfig } from "../../../config.js";
 /** Central repository for all beliefs held by the BDI agent */
 export class Beliefs {
     // Belief sub-systems
-    readonly agents  = new AgentBeliefs();   // Tracks me, friends, and enemies
-    readonly map: MapBeliefs;                // Tracks map layout and crates
-    readonly parcels = new ParcelBeliefs();  // Tracks parcels and their statuses
+    readonly agents: AgentBeliefs;      // Tracks me, friends, and enemies
+    readonly map: MapBeliefs;           // Tracks map layout and crates
+    readonly parcels: ParcelBeliefs;    // Tracks parcels and their statuses
 
     // Centralized game settings distributed to sub-systems on arrival
     settings: GameSettings | null = null;
 
-    constructor(agentId?: string) {
+    constructor(agentId?: string, teammateIds?: string[]) {
+        this.agents = new AgentBeliefs(new Set(teammateIds ?? []));
         this.map = new MapBeliefs(agentId);
+        this.parcels = new ParcelBeliefs();
     }
 
     /** Build a compact belief snapshot for sending to the LLM coordinator. */

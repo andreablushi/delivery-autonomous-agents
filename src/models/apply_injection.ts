@@ -131,8 +131,8 @@ export function applyInjection(
             if ("error" in p) return p;
             const from = beliefs.agents.getCurrentPosition();
             if (!from) return { error: "Agent position not yet known" };
-            const tiles = beliefs.map.allOddRowTiles(from);
-            if (tiles.length === 0) return { error: "No odd-row tile reachable" };
+            const tiles = beliefs.map.allLineTiles(from, p.axis, p.parity);
+            if (tiles.length === 0) return { error: "No matching tile reachable" };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             for (const tile of tiles) {
                 addInjectedIntention({

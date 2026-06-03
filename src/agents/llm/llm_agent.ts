@@ -12,37 +12,34 @@ export class LLMAgent {
     private coordinator!: Coordinator;
     private readonly log: Logger;
 
-    constructor(socket: any, agentId?: string) {
+    constructor(socket: any, agentId?: string, teammateIds?: string[]) {
         this.log = createLogger("llm", agentId);
-        this.bdi = new BDIAgent(socket, agentId);
+        this.bdi = new BDIAgent(socket, agentId, teammateIds);
+        const comm = this.bdi.getCommunication();
         this.client = new LLMClient(
             entry => this.bdi.addInjectedIntention(entry),
             type => this.bdi.removeIntentionsByType(type),
-            this.bdi.getMessenger(),
+            comm,
             this.bdi.getRuleStore(),
             rawArgs => this.coordinator.proposeRendezvous(rawArgs),
             agentId
         );
         this.coordinator = new Coordinator(
             this.bdi.getBeliefs(),
-            this.bdi.getMessenger(),
+            comm,
             this.client,
             entry => this.bdi.addInjectedIntention(entry),
         );
         this.coordinator.start();
 
-        // Listen for incoming messages.
-        // Always route to the coordinator first so beliefs_report messages are captured
-        // regardless of the MISSION_EMITTER filter that gates LLM processing.
-        socket.on("msg", (senderId: string, senderName: string, content: unknown) => {
-            this.coordinator.handleInbound(senderId, content);
-
+        // Route coordination messages (beliefs_report, rendezvous_vote) to the coordinator,
+        // and mission messages (raw chat from admin) to the LLM client.
+        comm.onCoordination((senderId, msg) => this.coordinator.handleInbound(senderId, msg));
+        comm.onMission((senderId, senderName, content) => {
             if (!this.isValidMessage(senderId, senderName, content)) return;
-
-            this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
-
+            this.log.debug(`mission msg from ${senderName} (${senderId}): "${content}"`);
             this.client
-                .processMessage(senderId, senderName, content as string, this.bdi.getBeliefs())
+                .processMessage(senderId, senderName, content, this.bdi.getBeliefs())
                 .catch((err: unknown) => this.log.error("LLM call failed:", err));
         });
     }
@@ -55,8 +52,8 @@ export class LLMAgent {
      * @param content The message content, expected to be a non-empty string
      * @returns true if the message is valid and should be processed, false otherwise
      */
-    private isValidMessage(senderId: string, senderName: string, content: unknown): content is string {
-        if (typeof content !== "string" || content.trim() === "") return false;
+    private isValidMessage(senderId: string, senderName: string, content: string): boolean {
+        if (content.trim() === "") return false;
 
         // If MISSION_EMITTER_NAME or MISSION_EMITTER_ID are set, only process messages from that sender. Otherwise, process all messages.
         const expectedName = process.env.MISSION_EMITTER_NAME;

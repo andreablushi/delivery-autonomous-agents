@@ -401,12 +401,15 @@ export class MapBeliefs {
     }
 
     /**
-     * Return all reachable tiles (by BFS travel distance from `from`) that are on odd-numbered rows (y % 2 === 1).
-     * Used for rendezvous points in the "odd row" strategy, which spaces agents out vertically to reduce congestion.
-      * @param from The position from which to calculate reachable tiles.
-      * @returns An array of positions of reachable tiles on odd-numbered rows, sorted by ascending travel distance.
+     * Return all reachable tiles (by BFS travel distance from `from`) that lie on lines matching the given
+     * axis and parity. For example, axis="row" parity="odd" returns tiles where y % 2 === 1, which staggers
+     * agents vertically to reduce congestion; axis="column" parity="even" staggers horizontally on even columns.
+     * @param from The position from which to calculate reachable tiles.
+     * @param axis Whether to filter by row (y coordinate) or column (x coordinate).
+     * @param parity Whether to keep tiles on odd or even lines.
+     * @returns An array of matching reachable tile positions, sorted by ascending travel distance.
      */
-    allOddRowTiles(from: Position): Position[] {
+    allLineTiles(from: Position, axis: "row" | "column", parity: "odd" | "even"): Position[] {
         if (!this.map) return [];
         const { tiles, width, height } = this.map;
         const walkable = (a: Position, b: Position) => MapBeliefs.isStaticWalkable(tiles, width, height, a, b);
@@ -414,7 +417,8 @@ export class MapBeliefs {
         const results: { pos: Position; d: number }[] = [];
         for (const [key, d] of dists) {
             const [x, y] = key.split(",").map(Number);
-            if (y % 2 !== 1) continue;
+            const coord = axis === "row" ? y : x;
+            if ((coord % 2 === 1) !== (parity === "odd")) continue;
             results.push({ pos: { x, y }, d });
         }
         return results.sort((a, b) => a.d - b.d).map(r => r.pos);

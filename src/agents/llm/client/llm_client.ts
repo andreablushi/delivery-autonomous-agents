@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
-import type { Messenger } from "../../bdi/communication/messenger.js";
+import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/belief/rule_store.js";
 import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
@@ -33,14 +33,14 @@ export class LLMClient {
     private readonly promptLog: Logger;
     private readonly addInjectedIntention: (entry: InjectedIntention) => void;
     private readonly removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
-    private readonly messenger: Messenger;
+    private readonly comm: Communication;
     private readonly ruleStore: RuleStore;
     private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
 
     constructor(
         addInjectedIntention: (entry: InjectedIntention) => void,
         removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
-        messenger: Messenger,
+        comm: Communication,
         ruleStore: RuleStore,
         proposeRendezvous: (rawArgs: unknown) => Promise<string>,
         agentId?: string,
@@ -55,7 +55,7 @@ export class LLMClient {
         this.promptLog = createLogger("llm-prompt", agentId);
         this.addInjectedIntention = addInjectedIntention;
         this.removeIntentionsByType = removeIntentionsByType;
-        this.messenger = messenger;
+        this.comm = comm;
         this.ruleStore = ruleStore;
         this.proposeRendezvous = proposeRendezvous;
     }
@@ -140,7 +140,7 @@ export class LLMClient {
             beliefs: beliefs as Beliefs,
             addInjectedIntention: this.addInjectedIntention,
             removeIntentionsByType: this.removeIntentionsByType,
-            messenger: this.messenger,
+            comm: this.comm,
             sourceId: senderId,
             ruleStore: this.ruleStore,
             proposeRendezvous: this.proposeRendezvous,
@@ -168,7 +168,7 @@ export class LLMClient {
             beliefs: beliefs as Beliefs,
             addInjectedIntention: this.addInjectedIntention,
             removeIntentionsByType: this.removeIntentionsByType,
-            messenger: this.messenger,
+            comm: this.comm,
             sourceId: "coordinator",
             ruleStore: this.ruleStore,
             requestTeamStatus,

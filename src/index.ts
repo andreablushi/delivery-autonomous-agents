@@ -19,8 +19,10 @@ async function main() {
             connect(process.env.LLM_TOKEN),
             connect(process.env.BDI_TOKEN),
         ]);
-        new LLMAgent(llmSocket, "llm");
-        new BDIAgent(bdiSocket, "bdi");
+        const bdiId = process.env.BDI_ID;
+        const llmId = process.env.LLM_ID;
+        new LLMAgent(llmSocket, "llm", bdiId ? [bdiId] : []);
+        new BDIAgent(bdiSocket, "bdi", llmId ? [llmId] : []);
 
     } else if (mode === "competitive") {
         const tokens: string[] = [];

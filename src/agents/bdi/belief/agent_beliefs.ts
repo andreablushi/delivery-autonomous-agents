@@ -12,20 +12,27 @@ import { config } from "../../../config.js";
  * Beliefs about the agent itself and other observed agents.
  */
 export class AgentBeliefs {
+
     // Current self-belief about this agent, updated directly from observations
-    private me: Agent | null = null;            
+    private me: Agent | null = null;
     // Trackers of friend agents, keyed by agent ID, without memory
     private friends = new Tracker<Agent>();
     // Trackers of enemy agents, keyed by agent ID, keeping only the last known position
     private enemies = new Tracker<Agent>(true);
     // Memory of enemy agents, keyed by agent ID, with TTL eviction and size limit
     private enemiesMemory = new Memory<Agent>(
-        config.beliefs.enemy.memoryTtlMs, 
+        config.beliefs.enemy.memoryTtlMs,
         config.beliefs.enemy.memorySizeEntries
     );
+
     private playerSettings: PlayerSettings | null = null;
+    private readonly teammateIds: ReadonlySet<string>;
     private lastEvict = 0;
 
+    constructor(teammateIds: ReadonlySet<string> = new Set()) {
+        this.teammateIds = teammateIds;
+    }
+    
     /**
      * Update player settings belief with the latest config info.
      * @param settings 
@@ -82,7 +89,7 @@ export class AgentBeliefs {
                 penalty: agent.penalty ?? 0,
                 lastPosition: (agent.x != null && agent.y != null) ? { x: agent.x, y: agent.y } : null,
             };
-            if (agent.teamName && agent.teamName === this.me?.teamName) {
+            if (this.teammateIds.has(agent.id)) {
                 this.friends.update(agent.id, data);
             } else {
                 this.enemies.update(agent.id, data);
@@ -121,6 +128,14 @@ export class AgentBeliefs {
      */
     getObservationDistance(): number | null {
         return this.playerSettings?.observation_distance ?? null;
+    }
+
+    /**
+     * Get the set of statically-configured teammate IDs (set at construction time).
+     * @returns Readonly set of teammate agent IDs.
+     */
+    getTeammateIds(): ReadonlySet<string> {
+        return this.teammateIds;
     }
 
     /**
@@ -246,15 +261,16 @@ export class AgentBeliefs {
 
     /**
      * Update a single agent's position from a position beacon.
-     * Classifies the agent as friend or enemy based on teamName.
-     * Only updates friends (same team) — enemy beacons are ignored to avoid
-     * trusting unsolicited position claims from adversaries.
+     * Only updates known teammates (by ID) — beacons from unrecognised agents are
+     * ignored to avoid trusting unsolicited position claims from adversaries.
+     * teamName is preserved from the existing record (the beacon no longer carries it).
      */
-    updateAgentFromBeacon(id: string, name: string, teamName: string, pos: { x: number; y: number } | null): void {
-        if (!this.me || teamName !== this.me.teamName) return;
+    updateAgentFromBeacon(id: string, name: string, pos: { x: number; y: number } | null): void {
+        if (!this.teammateIds.has(id)) return;
         const existing = this.friends.getCurrentAll().find(f => f.id === id);
         const data: Agent = {
-            id, name, teamName,
+            id, name,
+            teamName: existing?.teamName ?? "",
             score: existing?.score ?? 0,
             penalty: existing?.penalty ?? 0,
             lastPosition: pos,

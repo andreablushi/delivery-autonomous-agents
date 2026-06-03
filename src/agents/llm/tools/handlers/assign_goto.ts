@@ -13,7 +13,6 @@ function parseAssignGotoArgs(json: unknown): AssignGotoArgs | { error: string } 
     if ("error" in rest) return rest;
     return { agent_id: obj.agent_id, ...rest };
 }
-import { communicateTo } from "../../communication/communicate.js";
 import { applyInjection } from "../../../../models/apply_injection.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -57,9 +56,8 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         if (!map) return JSON.stringify({ error: "Map not yet loaded" });
         if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         if (map.tiles[target_y][target_x] === TILE_TYPE.WALL) return JSON.stringify({ error: "Target tile is a wall" });
-        const friend = ctx.beliefs.agents.getCurrentFriends().find(f => f.id === agent_id);
-        if (!friend) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
-        await communicateTo(ctx.messenger, agent_id, "request_goto", { target_x, target_y, reward, ttl_seconds });
+        if (!ctx.beliefs.agents.getTeammateIds().has(agent_id)) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
+        await ctx.comm.send(agent_id, "request_goto", { target_x, target_y, reward, ttl_seconds });
     }
 
     return JSON.stringify({ ok: true, agent_id, target: { x: target_x, y: target_y } });

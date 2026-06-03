@@ -1,7 +1,6 @@
-import { tryDecode, encode } from "../../../models/message_injection.js";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { Messenger } from "../../bdi/communication/messenger.js";
-import type { BeliefsReport } from "../../../models/message_injection.js";
+import type { Communication } from "../../communication/communication.js";
+import type { BeliefsReport, PeerInjectionMessage } from "../../../models/message_injection.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { LLMClient } from "../client/llm_client.js";
 import { parseRendezvousArgs } from "../../../models/injection_args.js";
@@ -27,7 +26,7 @@ export class Coordinator {
 
     constructor(
         private readonly beliefs: Readonly<Beliefs>,
-        private readonly messenger: Messenger,
+        private readonly comm: Communication,
         private readonly client: LLMClient,
         private readonly addInjectedIntention: (entry: InjectedIntention) => void,
     ) {
@@ -35,18 +34,15 @@ export class Coordinator {
     }
 
     /**
-     * Route an inbound message to the coordinator.
-     * Should be called for every `msg` event so that `beliefs_report` messages
-     * are captured regardless of the MISSION_EMITTER filter.
+     * Handle an already-decoded coordination message (beliefs_report or rendezvous_vote).
+     * Called by the Communication inbound router via the coordination hook.
      */
-    handleInbound(senderId: string, content: unknown): void {
-        const message = tryDecode(content);
-        if (!message) return;
-        if (message.tool === "beliefs_report") {
+    handleInbound(senderId: string, msg: PeerInjectionMessage): void {
+        if (msg.tool === "beliefs_report") {
             this.log.debug(`Received beliefs_report from ${senderId}`);
-            this.reports.set(senderId, { report: message.args, at: Date.now() });
-        } else if (message.tool === "rendezvous_vote") {
-            const args = message.args as Record<string, unknown>;
+            this.reports.set(senderId, { report: msg.args, at: Date.now() });
+        } else if (msg.tool === "rendezvous_vote") {
+            const args = msg.args as Record<string, unknown>;
             if (typeof args.rid === "string" && typeof args.accept === "boolean") {
                 this.log.debug(`Received rendezvous_vote from ${senderId}: accept=${args.accept} rid=${args.rid}`);
                 this.votes.set(senderId, { rid: args.rid, accept: args.accept, at: Date.now() });
@@ -73,51 +69,43 @@ export class Coordinator {
         const selfTiles = this.beliefs.map.allRendezvousTiles(from, p.x, p.y, p.max_distance);
         if (selfTiles.length === 0) return JSON.stringify({ error: "No reachable tile within rendezvous zone for self" });
 
-        const friends = this.beliefs.agents.getCurrentFriends();
+        const teammateIds = [...this.beliefs.agents.getTeammateIds()];
         const rid = `rdv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-        if (friends.length === 0) {
+        if (teammateIds.length === 0) {
             // No peers — self-commit immediately (a rendezvous with oneself)
             this.injectCommittedHold(p, rid, selfTiles);
             return JSON.stringify({ ok: true });
         }
 
         // Phase 1: broadcast propose
-        const proposeMsg = encode({
-            v: 1, kind: "peer_injection", tool: "rendezvous_propose",
-            args: { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward },
-        });
-        const expectedIds = friends.map(f => f.id);
+        const proposeArgs = { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward };
         const sentAt = Date.now();
-        for (const friend of friends) {
-            await this.messenger.say(friend.id, proposeMsg);
+        for (const id of teammateIds) {
+            await this.comm.send(id, "rendezvous_propose", proposeArgs);
         }
 
         // Wait for votes
         await new Promise<void>(r => setTimeout(r, config.rendezvous.commitWindowMs));
 
         // Phase 2: evaluate votes — every expected peer must have voted yes for this rid after sentAt
-        const allAccepted = expectedIds.every(id => {
+        const allAccepted = teammateIds.every(id => {
             const vote = this.votes.get(id);
             return vote && vote.rid === rid && vote.accept && vote.at >= sentAt;
         });
 
         if (allAccepted) {
             this.log.debug(`Rendezvous ${rid}: all peers accepted — committing`);
-            const commitMsg = encode({
-                v: 1, kind: "peer_injection", tool: "rendezvous_commit",
-                args: { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward },
-            });
-            for (const friend of friends) {
-                await this.messenger.say(friend.id, commitMsg);
+            const commitArgs = { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward };
+            for (const id of teammateIds) {
+                await this.comm.send(id, "rendezvous_commit", commitArgs);
             }
             this.injectCommittedHold(p, rid, selfTiles);
             return JSON.stringify({ ok: true });
         } else {
             this.log.debug(`Rendezvous ${rid}: not all peers accepted — aborting`);
-            const abortMsg = encode({ v: 1, kind: "peer_injection", tool: "rendezvous_abort", args: { rid } });
-            for (const friend of friends) {
-                await this.messenger.say(friend.id, abortMsg);
+            for (const id of teammateIds) {
+                await this.comm.send(id, "rendezvous_abort", { rid });
             }
             return JSON.stringify({ ok: false, reason: "Rendezvous rejected: not all peers accepted" });
         }
@@ -144,14 +132,9 @@ export class Coordinator {
         }
     }
 
-    /** Broadcast a `request_beliefs` message to all currently-sensed friends. */
+    /** Broadcast a `request_beliefs` message to all configured teammates. */
     private async requestBeliefs(): Promise<void> {
-        const friends = this.beliefs.agents.getCurrentFriends();
-        if (friends.length === 0) return;
-        const msg = encode({ v: 1, kind: "peer_injection", tool: "request_beliefs", args: {} });
-        for (const friend of friends) {
-            await this.messenger.say(friend.id, msg);
-        }
+        await this.comm.broadcast("request_beliefs", {});
     }
 
     /**
@@ -169,9 +152,8 @@ export class Coordinator {
             this.log.debug("Coordination round skipped (already running or in cooldown)");
             return;
         }
-        const friends = this.beliefs.agents.getCurrentFriends();
-        if (friends.length === 0) {
-            this.log.debug("Coordination round skipped (no friends sensed)");
+        if (this.beliefs.agents.getTeammateIds().size === 0) {
+            this.log.debug("Coordination round skipped (no teammates configured)");
             return;
         }
 

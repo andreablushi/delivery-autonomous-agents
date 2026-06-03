@@ -165,6 +165,8 @@ export function parseRendezvousVoteArgs(json: unknown): RendezvousVoteArgs | { e
 export type RedLightArgs = {
     ttl_seconds: number;
     reward: number;
+    axis: "row" | "column";
+    parity: "odd" | "even";
 };
 
 export function parseRedLightArgs(json: unknown): RedLightArgs | { error: string } {
@@ -175,7 +177,11 @@ export function parseRedLightArgs(json: unknown): RedLightArgs | { error: string
     if (typeof reward !== "number" || reward <= 0) return { error: "reward must be a positive number" };
     if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
         return { error: "ttl_seconds must be an integer in [5, 120]" };
-    return { ttl_seconds, reward };
+    const axis   = obj.axis   ?? "row";
+    const parity = obj.parity ?? "odd";
+    if (axis !== "row" && axis !== "column") return { error: "axis must be 'row' or 'column'" };
+    if (parity !== "odd" && parity !== "even") return { error: "parity must be 'odd' or 'even'" };
+    return { ttl_seconds, reward, axis, parity };
 }
 
 

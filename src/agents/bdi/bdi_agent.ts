@@ -6,10 +6,8 @@ import { RuleStore } from "./belief/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
-import { Messenger } from "./communication/messenger.js";
-import { encode } from "../../models/message_injection.js";
+import { Communication } from "../communication/communication.js";
 import { createLogger } from "../../utils/logger.js";
-import { config } from "../../config.js";
 
 /**
  * BDI Agent — orchestrates the perceive → deliberate → execute cycle.
@@ -24,26 +22,26 @@ export class BDIAgent {
     private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
-    private messenger: Messenger;
+    private comm: Communication;
     private perceiveLog;
     private deliberateLog;
 
-    constructor(socket: any, agentId?: string) {
+    constructor(socket: any, agentId?: string, teammateIds?: string[]) {
         this.socket = socket;
         this.perceiveLog = createLogger("perceive", agentId);
         this.deliberateLog = createLogger("deliberate", agentId);
-        this.beliefs = new Beliefs(agentId);
+        this.beliefs = new Beliefs(agentId, teammateIds);
         this.ruleStore = new RuleStore();
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
-        this.messenger = new Messenger(socket, agentId);
-        this.messenger.receive(
-            this.beliefs,
-            this.ruleStore,
-            entry => this.addInjectedIntention(entry),
-            type => this.removeIntentionsByType(type),
-        );
+        this.comm = new Communication(socket, this.beliefs, agentId);
+        this.comm.start({
+            beliefs: this.beliefs,
+            ruleStore: this.ruleStore,
+            addInjectedIntention: entry => this.addInjectedIntention(entry),
+            removeIntentionsByType: type => this.removeIntentionsByType(type),
+        });
 
         this.socket.once('controller', (status: string, agent: { id: string; name: string; teamId: string; teamName: string; score: number }) => {
             if (status === 'connected') this.beliefs.agents.updateOtherAgents([agent as IOAgent], []);
@@ -56,7 +54,6 @@ export class BDIAgent {
         });
 
         this.perceive();
-        this.startPositionBeacon();
     }
 
     /**
@@ -94,27 +91,11 @@ export class BDIAgent {
     }
 
     /**
-     * Expose the messenger for external use (e.g. by LLM tool handlers that need to send messages).
-     * @returns The agent's Messenger instance.
+     * Expose the communication module for external use (e.g. by LLMAgent to register hooks).
+     * @returns The agent's Communication instance.
      */
-    getMessenger(): Messenger {
-        return this.messenger;
-    }
-
-
-    /** Broadcast position to all agents on a fixed interval so teammates outside sensing range
-     *  can keep their friend tracker fresh without relying solely on the sensing event. */
-    private startPositionBeacon(): void {
-        setInterval(() => {
-            const pos = this.beliefs.agents.getCurrentPosition();
-            const me = this.beliefs.agents.getCurrentMe();
-            if (!pos || !me) return;
-            const msg = encode({
-                v: 1, kind: "peer_injection", tool: "position_beacon",
-                args: { pos, teamName: me.teamName },
-            });
-            void this.messenger.shout(msg);
-        }, config.beliefs.positionBeaconIntervalMs);
+    getCommunication(): Communication {
+        return this.comm;
     }
 
     /**
