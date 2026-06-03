@@ -23,6 +23,10 @@ A project focused on the development and analysis of autonomous software agents,
   </tr>
 </table>
 
+<p align="center">
+<img width="600" height="338" alt="Image" src="https://github.com/user-attachments/assets/990ac01f-7788-4e38-980b-6435b28f980d" />
+</p>
+
 **Course:** Autonomous Software Agents  
 **Professors:** Prof. Paolo Giorgini, Prof. Marco Robol  
 **Authors:** Davide Donà (davide.dona-1@studenti.unitn.it), Andrea Blushi (andrea.blushi@studenti.unitn.it)
