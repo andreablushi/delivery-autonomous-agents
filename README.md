@@ -119,7 +119,7 @@ Set the matching tokens in `.env` before starting. Production scripts suppress a
 
 ### LLM agent
 
-Set `MISSION_AGENT_NAME` in `.env` to the in-game name of the human operator. The LLM agent filters incoming chat messages and only processes those from that sender.
+Set `MISSION_EMITTER_NAME` or `MISSION_EMITTER_ID` in `.env` to the in-game name or socket ID of the human operator. The LLM agent forwards only chat messages from that sender to the LLM; if neither is set, all chat messages are processed.
 
 Required `.env` keys for LLM / cooperative modes:
 
@@ -155,7 +155,7 @@ Available namespaces:
 | `llm` | Incoming chat messages handled by the LLM agent |
 | `llm-client` | Tool calls and tool results per hop |
 | `llm-prompt` | User message + belief context sent to the model |
-| `comm` | Outgoing chat messages (messenger) |
+| `communication` | Outbound sends and inbound routing in the Communication module |
 
 Production scripts (`npm start`, `npm run start:*`) always suppress debug output regardless of `.env`.  
 Dev scripts (`npm run dev`, `npm run dev:*`) respect the `_DEBUG` value in `.env`.
@@ -168,18 +168,25 @@ src/
 ├── index.ts                        # Entry point; fans out into single or multi-agent mode
 ├── config.ts                       # All tunable numeric constants (timeouts, thresholds, …)
 ├── agents/
+│   ├── communication/              # Single Communication module (inbound router, outbound sends, position beacon)
 │   ├── bdi/                        # BDI agent
 │   │   ├── bdi_agent.ts            # Main BDI agent class (perceive → deliberate → execute loop)
-│   │   ├── belief/                 # Belief management (map, parcels, agents, rules)
-│   │   ├── communication/          # Peer-injection dispatch and Messenger
-│   │   ├── desire/                 # Desire generation and scoring
+│   │   ├── belief/
+│   │   │   ├── beliefs.ts          # Aggregate: composes AgentBeliefs, MapBeliefs, CrateBeliefs, ParcelBeliefs
+│   │   │   └── modules/            # Individual belief sub-systems
+│   │   │       ├── agent_beliefs.ts    # Self, friends, enemies
+│   │   │       ├── map_beliefs.ts      # Static map layout, traversal penalties, tile queries
+│   │   │       ├── crate_beliefs.ts    # Dynamic crate positions
+│   │   │       ├── parcel_beliefs.ts   # Parcel tracking and reward decay
+│   │   │       └── utils/              # Tracker, Memory, Reachability, EnemyPredictor, CrateBlock
+│   │   ├── desire/                 # Desire generation, scoring, and RuleStore
+│   │   │   └── rule_store.ts       # LLM-injected scoring rules (reweights desire scoring each cycle)
 │   │   ├── intention/              # Intention queue management
 │   │   ├── plan/                   # Planning (A*, PDDL fallback, collision avoidance)
 │   │   └── execution/              # Socket action loop (move / pickup / putdown)
 │   └── llm/                        # LLM agent (wraps BDI)
 │       ├── llm_agent.ts            # Main LLM agent class
 │       ├── client/                 # LLM API client and tool-call loop
-│       ├── communication/          # Peer-injection broadcast helpers
 │       ├── coordination/           # Periodic team coordinator
 │       ├── prompt/                 # Prompt builders (main + coordination)
 │       └── tools/                  # Tool definitions and handlers

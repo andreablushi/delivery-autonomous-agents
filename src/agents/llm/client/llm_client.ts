@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { Communication } from "../../communication/communication.js";
-import type { RuleStore } from "../../bdi/belief/rule_store.js";
+import type { RuleStore } from "../../bdi/desire/rule_store.js";
 import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
 import { buildCoordinationPrompt } from "../prompt/coordination/index.js";

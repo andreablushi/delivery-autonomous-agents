@@ -1,5 +1,5 @@
 import type { Beliefs } from "../agents/bdi/belief/beliefs.js";
-import type { RuleStore } from "../agents/bdi/belief/rule_store.js";
+import type { RuleStore } from "../agents/bdi/desire/rule_store.js";
 import type { InjectedIntention } from "./intentions.js";
 import type { DesireType } from "./desires.js";
 import type { ScoringRule } from "./rules.js";

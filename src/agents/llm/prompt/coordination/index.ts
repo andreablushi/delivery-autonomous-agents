@@ -1,7 +1,7 @@
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import type { Beliefs } from "../../../bdi/belief/beliefs.js";
-import type { RuleStore } from "../../../bdi/belief/rule_store.js";
+import type { RuleStore } from "../../../bdi/desire/rule_store.js";
 import type { BeliefsReport } from "../../../../models/message_injection.js";
 import type { TeamGeometry } from "../../coordination/geometry.js";
 import { render } from "../shared.js";

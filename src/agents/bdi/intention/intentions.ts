@@ -1,5 +1,5 @@
 import type { Beliefs } from "../belief/beliefs.js";
-import type { RuleStore } from "../belief/rule_store.js";
+import type { RuleStore } from "../desire/rule_store.js";
 import type { DesireType, HoldTileDesire } from "../../../models/desires.js";
 import { manhattanDistance } from "../../../utils/metrics.js";
 import type { IntentionQueue, InjectedIntention } from "../../../models/intentions.js";

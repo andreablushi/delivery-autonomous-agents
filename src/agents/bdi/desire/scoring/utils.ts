@@ -1,6 +1,6 @@
 import type { Position } from "../../../../models/position.js";
 import type { Beliefs } from "../../belief/beliefs.js";
-import type { RuleStore } from "../../belief/rule_store.js";
+import type { RuleStore } from "../rule_store.js";
 
 /** Adds the tile penalty at `target` to `distance`, making penalized targets look farther away. */
 export function penalizedDistance(distance: number, target: Position, beliefs: Beliefs): number {

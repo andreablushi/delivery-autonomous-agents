@@ -52,7 +52,7 @@ export function buildProblem(target: Position, beliefs: Beliefs, from?: Position
     }
 
     // Generate predicates for agent position, tile adjacencies, crate positions, and crate-free tiles
-    const crates = beliefs.map.getCurrentCrates().filter(c => c.lastPosition !== null);
+    const crates = beliefs.crates.getCurrentCrates().filter(c => c.lastPosition !== null);
     const cratePositions = new Set(crates.map(c => parseTileId(c.lastPosition!.x, c.lastPosition!.y)));
     const crateSpaces = new Set(beliefs.map.getCrateSpaceTiles().map(t => parseTileId(t.x, t.y)));
 
@@ -64,7 +64,7 @@ export function buildProblem(target: Position, beliefs: Beliefs, from?: Position
         for (const { dx, dy, pred } of ADJACENCY_DIRS) {
             const neighborPos = { x: x + dx, y: y + dy };
             // Only add adjacency for tiles where the neighbor is walkable or has a crate
-            if (beliefs.map.isWalkable({ x, y }, neighborPos) || beliefs.map.isCrateAt(neighborPos)) {
+            if (beliefs.map.isWalkable({ x, y }, neighborPos) || beliefs.crates.isCrateAt(neighborPos)) {
                 init.push(`(${pred} ${parseTileId(x, y)} ${parseTileId(x + dx, y + dy)})`);
             }
         }

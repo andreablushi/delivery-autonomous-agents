@@ -1,5 +1,5 @@
 import type { Beliefs } from "../../belief/beliefs.js";
-import type { RuleStore } from "../../belief/rule_store.js";
+import type { RuleStore } from "../rule_store.js";
 import type { ExploreDesire } from "../../../../models/desires.js";
 import { penalizedDistance } from "./utils.js";
 import { posKey } from "../../../../utils/metrics.js";

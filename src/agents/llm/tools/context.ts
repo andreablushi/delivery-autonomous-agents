@@ -2,7 +2,7 @@ import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { DesireType } from "../../../models/desires.js";
 import type { Communication } from "../../communication/communication.js";
-import type { RuleStore } from "../../bdi/belief/rule_store.js";
+import type { RuleStore } from "../../bdi/desire/rule_store.js";
 
 export interface ToolContext {
     beliefs: Beliefs;

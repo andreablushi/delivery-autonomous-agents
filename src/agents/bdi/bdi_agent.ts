@@ -2,7 +2,7 @@ import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
 import type { InjectedIntention } from "../../models/intentions.js";
 import type { DesireType } from "../../models/desires.js";
 import { Beliefs } from "./belief/beliefs.js";
-import { RuleStore } from "./belief/rule_store.js";
+import { RuleStore } from "./desire/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
@@ -122,7 +122,7 @@ export class BDIAgent {
         this.socket.on('sensing', async (sensing: IOSensing) => {
             this.beliefs.agents.updateOtherAgents(sensing.agents, sensing.positions);
             this.beliefs.parcels.updateParcels(sensing.parcels, sensing.positions);
-            this.beliefs.map.updateCrates(sensing.crates, sensing.positions);
+            this.beliefs.crates.updateCrates(sensing.crates, sensing.positions);
             this.beliefs.map.updateSpawnTilesSensingTimes(sensing.positions, Date.now());
 
             this.perceiveLog.debug("Sensing update — agents:", sensing.agents.length,
@@ -131,7 +131,7 @@ export class BDIAgent {
             this.perceiveLog.debug("  - Friends:", this.beliefs.agents.getCurrentFriends().length, "agents");
             this.perceiveLog.debug("  - Enemies:", this.beliefs.agents.getCurrentEnemies().length, "agents");
             this.perceiveLog.debug("  - Parcels:", this.beliefs.parcels.getCurrentParcels().length, "parcels");
-            this.perceiveLog.debug("  - Crates:", this.beliefs.map.getCurrentCrates().length, "crates");
+            this.perceiveLog.debug("  - Crates:", this.beliefs.crates.getCurrentCrates().length, "crates");
 
             this.deliberate();
             this.executor.kick();

@@ -1,5 +1,5 @@
 import type { Beliefs } from "../belief/beliefs.js";
-import type { RuleStore } from "../belief/rule_store.js";
+import type { RuleStore } from "./rule_store.js";
 import type {
     DesireType,
     ExploreDesire,
@@ -11,7 +11,7 @@ import type {
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
 import { bfsDistancesFrom } from "../../../utils/metrics.js";
-import { MapBeliefs } from "../belief/map_beliefs.js";
+import { MapBeliefs } from "../belief/modules/map_beliefs.js";
 import type { IntentionQueue } from "../../../models/intentions.js";
 import { carriedEffectiveValue } from "./scoring/utils.js";
 import { scoreReachDesire } from "./scoring/reach_parcel.js";

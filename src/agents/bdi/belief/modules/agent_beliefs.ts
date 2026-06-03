@@ -1,12 +1,12 @@
-import type { Agent } from "../../../models/agent.js";
-import type { PlayerSettings } from "../../../models/game_configs.js";
-import type { IOAgent } from "../../../models/djs.js";
-import { Position } from "../../../models/position.js";
-import { isHalfPosition } from "../../../utils/metrics.js";
+import type { Agent } from "../../../../models/agent.js";
+import type { PlayerSettings } from "../../../../models/game_configs.js";
+import type { IOAgent } from "../../../../models/djs.js";
+import { Position } from "../../../../models/position.js";
+import { isHalfPosition } from "../../../../utils/metrics.js";
 import { Memory } from "./utils/memory.js";
 import { Tracker } from "./utils/tracker.js";
 import { predictAgentNextPosition } from "./utils/enemy_predictor.js";
-import { config } from "../../../config.js";
+import { config } from "../../../../config.js";
 
 /**
  * Beliefs about the agent itself and other observed agents.

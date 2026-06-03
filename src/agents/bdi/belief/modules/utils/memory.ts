@@ -1,16 +1,16 @@
-import { Observation } from "../../../../models/memory.js";
-import { isHalfPosition } from "../../../../utils/metrics.js";
+import { Observation } from "../../../../../models/memory.js";
+import { isHalfPosition } from "../../../../../utils/metrics.js";
 
 /**
  * Generic memory store with TTL-based soft expiry.
- * Allows the agent to maintain a history of observations for each id, 
+ * Allows the agent to maintain a history of observations for each id,
  * while automatically evicting stale entries based on a specified time-to-live (TTL).
  */
 export class Memory<T> {
     // Internal mapping from ids to arrays of timestamped entries (history).
     private memoryMap = new Map<string, Observation<T>[]>();
 
-    /** 
+    /**
      * @param ttl - Time-to-live for entries in milliseconds.
      * @param historySize - Maximum number of historical entries to keep per id.
      */
@@ -28,10 +28,10 @@ export class Memory<T> {
         if (pos && isHalfPosition(pos)) return;
 
         // Initialize history array for new ids
-        if (!this.memoryMap.has(key)){ 
-            this.memoryMap.set(key, []);  
+        if (!this.memoryMap.has(key)){
+            this.memoryMap.set(key, []);
         }
-        
+
         // Append the new observation with the current timestamp
         const entries = this.memoryMap.get(key)!;
         entries.push({ value, seenAt: Date.now() });

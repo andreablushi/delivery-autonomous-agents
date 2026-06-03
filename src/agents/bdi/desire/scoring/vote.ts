@@ -1,9 +1,9 @@
 import type { Beliefs } from "../../belief/beliefs.js";
-import type { RuleStore } from "../../belief/rule_store.js";
+import type { RuleStore } from "../rule_store.js";
 import type { HoldTileDesire, ReachParcelDesire, DeliverParcelDesire } from "../../../../models/desires.js";
 import type { Position } from "../../../../models/position.js";
 import { bfsDistancesFrom } from "../../../../utils/metrics.js";
-import { MapBeliefs } from "../../belief/map_beliefs.js";
+import { MapBeliefs } from "../../belief/modules/map_beliefs.js";
 import { carriedEffectiveValue } from "./utils.js";
 import { scoreReachDesire } from "./reach_parcel.js";
 import { scoreDeliverDesire } from "./deliver_parcel.js";

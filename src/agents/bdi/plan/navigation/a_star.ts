@@ -110,12 +110,12 @@ export function pathThroughPushableCrates(
         from, to,
         (f, t) => {
             if (beliefs.map.isWalkable(f, t)) return true;
-            if (!beliefs.map.isCrateAt(t)) return false;
+            if (!beliefs.crates.isCrateAt(t)) return false;
             // Crate at `t` entered from direction (t-f): push destination is one tile further
             const beyond = { x: t.x + (t.x - f.x), y: t.y + (t.y - f.y) };
-            return crateSpaces.has(posKey(beyond)) && !beliefs.map.isCrateAt(beyond);
+            return crateSpaces.has(posKey(beyond)) && !beliefs.crates.isCrateAt(beyond);
         },
-        (_, t) => 1 + (beliefs.map.isCrateAt(t) ? config.navigation.cratePushPenalty : 0),
+        (_, t) => 1 + (beliefs.crates.isCrateAt(t) ? config.navigation.cratePushPenalty : 0),
     );
 }
 

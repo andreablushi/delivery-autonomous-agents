@@ -1,6 +1,6 @@
-import type { Position } from "../../../../models/position.js";
-import { TILE_TYPE, type TileType } from "../../../../models/tile_type.js";
-import { posKey, NEIGHBOURS } from "../../../../utils/metrics.js";
+import type { Position } from "../../../../../models/position.js";
+import { TILE_TYPE, type TileType } from "../../../../../models/tile_type.js";
+import { posKey, NEIGHBOURS } from "../../../../../utils/metrics.js";
 
 type TileWalkable = (matrix: TileType[][], width: number, height: number, from: Position, to: Position) => boolean;
 

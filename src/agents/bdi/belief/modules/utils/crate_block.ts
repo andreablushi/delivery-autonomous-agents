@@ -1,10 +1,10 @@
-import { pathIgnoring, pathThroughPushableCrates } from "../../plan/navigation/a_star.js";
-import { posKey } from "../../../../utils/metrics.js";
-import type { Beliefs } from "../beliefs.js";
-import type { Position } from "../../../../models/position.js";
-import type { DesireType } from "../../../../models/desires.js";
-import type { LocatedCrate } from "../../../../models/crate.js";
-import type { CrateSegment } from "../../../../models/plan.js";
+import { pathIgnoring, pathThroughPushableCrates } from "../../../plan/navigation/a_star.js";
+import { posKey } from "../../../../../utils/metrics.js";
+import type { Beliefs } from "../../beliefs.js";
+import type { Position } from "../../../../../models/position.js";
+import type { DesireType } from "../../../../../models/desires.js";
+import type { LocatedCrate } from "../../../../../models/crate.js";
+import type { CrateSegment } from "../../../../../models/plan.js";
 
 /**
  * Check whether any currently believed crate blocks the direct path from `from` to `desire.target`.
@@ -19,7 +19,7 @@ export function detectCrateBlock(
     from: Position,
     desire: DesireType,
 ): string[] | null {
-    const crates = beliefs.map.getCurrentCrates().flatMap(c =>
+    const crates = beliefs.crates.getCurrentCrates().flatMap(c =>
         c.lastPosition ? [{ id: c.id, position: c.lastPosition }] : [],
     );
     if (crates.length === 0) return null;
@@ -50,7 +50,7 @@ export function findCrateSegment(
     target: Position,
 ): CrateSegment | null {
     // Get all currently believed crates with known positions
-    const crates: LocatedCrate[] = beliefs.map.getCurrentCrates().flatMap(c =>
+    const crates: LocatedCrate[] = beliefs.crates.getCurrentCrates().flatMap(c =>
         c.lastPosition ? [{ id: c.id, position: c.lastPosition }] : [],
     );
     if (crates.length === 0) return null;
@@ -64,7 +64,7 @@ export function findCrateSegment(
     let firstIdx = -1;
     let lastIdx = -1;
     for (let i = 0; i < path.length; i++) {
-        if (beliefs.map.isCrateAt(path[i])) {
+        if (beliefs.crates.isCrateAt(path[i])) {
             if (firstIdx === -1) firstIdx = i;
             lastIdx = i;
         }
@@ -79,7 +79,7 @@ export function findCrateSegment(
     // Cluster cache key: all crates within the bounding box of entry+exit+on-path crate tiles, padded by 1
     const keyTiles: Position[] = [entry, exit];
     for (let i = firstIdx; i <= lastIdx; i++) {
-        if (beliefs.map.isCrateAt(path[i])) keyTiles.push(path[i]);
+        if (beliefs.crates.isCrateAt(path[i])) keyTiles.push(path[i]);
     }
     const size = beliefs.map.getMapSize();
     const minX = Math.max(0, Math.min(...keyTiles.map(p => p.x)) - 1);
@@ -108,7 +108,7 @@ export function hasCrateOnPath(
     from: Position,
     target: Position,
 ): boolean {
-    const crates = beliefs.map.getCurrentCrates().flatMap(c =>
+    const crates = beliefs.crates.getCurrentCrates().flatMap(c =>
         c.lastPosition ? [{ position: c.lastPosition }] : [],
     );
     if (crates.length === 0) return false;

@@ -1,8 +1,8 @@
-import type { Agent } from "../../../../models/agent.js";
-import type { Observation } from "../../../../models/memory.js";
-import type { Position, PositionPrediction } from "../../../../models/position.js";
-import { posKey } from "../../../../utils/metrics.js";
-import { config } from "../../../../config.js";
+import type { Agent } from "../../../../../models/agent.js";
+import type { Observation } from "../../../../../models/memory.js";
+import type { Position, PositionPrediction } from "../../../../../models/position.js";
+import { posKey } from "../../../../../utils/metrics.js";
+import { config } from "../../../../../config.js";
 
 /**
  * Predict the next tile an observed agent will step onto, based on either its current

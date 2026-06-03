@@ -1,6 +1,6 @@
-import { Observation } from "../../../../models/memory.js";
-import { Position } from "../../../../models/position.js";
-import { isHalfPosition } from "../../../../utils/metrics.js";
+import { Observation } from "../../../../../models/memory.js";
+import { Position } from "../../../../../models/position.js";
+import { isHalfPosition } from "../../../../../utils/metrics.js";
 
 type Positionable = { id: string; lastPosition: Position | null };
 
@@ -44,7 +44,7 @@ export class Tracker<T extends Positionable> {
         // Get previous entry to preserve timestamp; if it doesn't exist, do nothing
         const existing = this.store.get(key);
         if (!existing) return;
-        
+
         // Avoid memorizing intermediate positions
         const pos = value.lastPosition;
         if (pos && isHalfPosition(pos) && !this.keepHalfPosition) return;
@@ -81,7 +81,7 @@ export class Tracker<T extends Positionable> {
     /**
      * Invalidate lastPosition for tracked objects whose last known position is within the visible area but were not sensed there.
      * If an object's last known position is visible but the object was not sensed at that position, it has moved to an unknown location.
-     * 
+     *
      * NOTE: this doesn't remove the object from the tracker, it just sets its lastPosition to null to indicate that we no longer have a valid location for it.
      * @param sensedItems Items observed in the current sensing window (used to exclude already-sensed objects)
      * @param sensedPositions Positions currently within the agent's visible range

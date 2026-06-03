@@ -1,7 +1,7 @@
 import type { Position } from "../../../models/position.js";
 import type { Parcel } from "../../../models/parcel.js";
 import type { Beliefs } from "../belief/beliefs.js";
-import type { RuleStore } from "../belief/rule_store.js";
+import type { RuleStore } from "../desire/rule_store.js";
 import type { Planner } from "../plan/planner.js";
 import type { Intentions } from "../intention/intentions.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";

@@ -2,9 +2,10 @@ import type { IOConfig } from "../../../models/djs.js";
 import { parseTimeInterval } from "../../../utils/time.js";
 import type { GameSettings } from "../../../models/game_configs.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
-import { AgentBeliefs } from "./agent_beliefs.js";
-import { MapBeliefs } from "./map_beliefs.js";
-import { ParcelBeliefs } from "./parcel_beliefs.js";
+import { AgentBeliefs } from "./modules/agent_beliefs.js";
+import { MapBeliefs } from "./modules/map_beliefs.js";
+import { ParcelBeliefs } from "./modules/parcel_beliefs.js";
+import { CrateBeliefs } from "./modules/crate_beliefs.js";
 import { TILE_TYPE } from "../../../models/tile_type.js";
 import { manhattanDistance } from "../../../utils/metrics.js";
 import { config as appConfig } from "../../../config.js";
@@ -14,7 +15,8 @@ import { config as appConfig } from "../../../config.js";
 export class Beliefs {
     // Belief sub-systems
     readonly agents: AgentBeliefs;      // Tracks me, friends, and enemies
-    readonly map: MapBeliefs;           // Tracks map layout and crates
+    readonly map: MapBeliefs;           // Tracks static map layout and tile metadata
+    readonly crates: CrateBeliefs;      // Tracks dynamic crate positions
     readonly parcels: ParcelBeliefs;    // Tracks parcels and their statuses
 
     // Centralized game settings distributed to sub-systems on arrival
@@ -22,7 +24,8 @@ export class Beliefs {
 
     constructor(agentId?: string, teammateIds?: string[]) {
         this.agents = new AgentBeliefs(new Set(teammateIds ?? []));
-        this.map = new MapBeliefs(agentId);
+        this.crates = new CrateBeliefs();
+        this.map = new MapBeliefs(this.crates, agentId);
         this.parcels = new ParcelBeliefs();
     }
 

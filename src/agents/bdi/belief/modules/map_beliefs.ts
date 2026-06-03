@@ -1,31 +1,29 @@
-import type { GameMap, Tile } from "../../../models/map.js";
-import type { Crate } from "../../../models/crate.js";
-import type { Position } from "../../../models/position.js";
-import type { IOTile, IOCrate } from "../../../models/djs.js";
-import { TILE_TYPE, staticBlocksEntry, type TileType } from "../../../models/tile_type.js";
-import { Tracker } from "./utils/tracker.js";
+import type { GameMap, Tile } from "../../../../models/map.js";
+import type { Position } from "../../../../models/position.js";
+import type { IOTile } from "../../../../models/djs.js";
+import { TILE_TYPE, staticBlocksEntry, type TileType } from "../../../../models/tile_type.js";
 import { computeSafeTiles } from "./utils/reachability.js";
-import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
-import { createLogger, type Logger } from "../../../utils/logger.js";
-import { config } from "../../../config.js";
+import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../../utils/metrics.js";
+import { createLogger, type Logger } from "../../../../utils/logger.js";
+import { config } from "../../../../config.js";
+import type { CrateBeliefs } from "./crate_beliefs.js";
 
 /**
- * Beliefs about the static map layout and dynamic crate positions.
+ * Beliefs about the static map layout.
+ * Dynamic crate positions are owned by CrateBeliefs (injected via constructor).
  */
 export class MapBeliefs {
     private map: GameMap | null = null;              // Static map layout, set once at the start of the game
     private spawnTiles: Tile[] = [];                 // Precomputed on updateMap; map is static so this never changes
     private deliveryTiles: Tile[] = [];              // Precomputed on updateMap; map is static so this never changes
     private crateSpaceTiles: Tile[] = [];            // Precomputed list of all tiles that can hold crates, used for PDDL problem generation
-    
-    private crates = new Tracker<Crate>();                           // Latest-only store; eviction is handled by MapBeliefs.evict()
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
     private llmTilePenalties = new Map<string, { id: string; tile: Position; cost: number }>();  // LLM-managed soft traversal costs, keyed by posKey; distinct from temporaryBlocked which is for collision avoidance
     private readonly log: Logger;
 
-    constructor(agentId?: string) {
+    constructor(private readonly crateBeliefs: CrateBeliefs, agentId?: string) {
         this.log = createLogger("map", agentId);
     }
 
@@ -57,7 +55,7 @@ export class MapBeliefs {
         // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
         // is treated as a wall for pathfinding purposes.
         const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions, MapBeliefs.isStaticWalkable);
-        
+
         // Any tile which is not safe can be treated as a wall
         let sealed = 0;
         for (let y = 0; y < height; y++) {
@@ -165,7 +163,7 @@ export class MapBeliefs {
         if (tile === null) return false;
 
         // If a crate is currently at this position, it's not walkable
-        if (this.isCrateAt(to)) return false;
+        if (this.crateBeliefs.isCrateAt(to)) return false;
 
         // If it's temporary blocked (e.g. occupied by another agent), it's not walkable
         if (this.isBlocked(to)) return false;
@@ -232,8 +230,8 @@ export class MapBeliefs {
         for (const tile of this.spawnTiles) {
             const weight = this.spawnTiles.reduce((sum, neighbor) => {
                 const distance = manhattanDistance(tile, neighbor);
-                return distance <= observationDistance 
-                ? sum + 1 / (distance + 1) 
+                return distance <= observationDistance
+                ? sum + 1 / (distance + 1)
                 : sum;
             }, 0);
             this.spawnTilesClusterWeights.set(posKey(tile), weight);
@@ -266,29 +264,6 @@ export class MapBeliefs {
      */
     getCrateSpaceTiles(): Tile[] {
         return this.crateSpaceTiles;
-    }
-
-    /**
-     * Update crate beliefs with the latest observed crates.
-     * @param crates Array of crates from the server, converted to internal Crates type and stored in memory.
-     * @param sensedPositions Array of positions that are currently sensed.
-     * @returns void
-     */
-    updateCrates(sensedCrates: IOCrate[], sensedPositions: Position[]): void {
-        sensedCrates.forEach(crate => {
-            this.crates.update(crate.id, { id: crate.id, lastPosition: { x: crate.x, y: crate.y } });
-        });
-
-        // Invalidate lastPosition for crates not currently visible but whose last known position is in view
-        this.crates.invalidateAtSensedPositions(sensedCrates, sensedPositions);
-    }
-
-    /**
-     * Get the current believed positions of all crates.
-     * @returns An array of all crates with their current believed state
-     */
-    getCurrentCrates(): Crate[] {
-        return this.crates.getCurrentAll();
     }
 
     /**
@@ -343,7 +318,7 @@ export class MapBeliefs {
     }
 
     /**
-     * Check if a tile is currently marked as temporarily blocked     
+     * Check if a tile is currently marked as temporarily blocked
      * @param pos The position to check
      * @returns True if the tile is currently blocked, false otherwise
      */
@@ -365,17 +340,6 @@ export class MapBeliefs {
         if (this.map.tiles[y][x] === TILE_TYPE.WALL) return "Target tile is a wall";
         if (this.isBlocked({ x, y })) return "Target tile is currently blocked";
         return null;
-    }
-
-    /**
-     * Check if any known crate is currently believed to be at the given position.
-     * @param pos The position to check for crate presence.
-     * @returns True if a crate is believed to be at the position, false otherwise.
-     */
-    isCrateAt(pos: Position): boolean {
-        return this.crates.getCurrentAll().some(
-            c => c.lastPosition?.x === pos.x && c.lastPosition?.y === pos.y
-        );
     }
 
     /**

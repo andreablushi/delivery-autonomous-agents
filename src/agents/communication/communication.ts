@@ -2,7 +2,7 @@ import { encode, tryDecode, type PeerInjectionMessage, type PeerInjectionKind } 
 import { applyInjection, type InjectionDeps } from "../../models/apply_injection.js";
 import { evaluateRendezvousVote } from "../bdi/desire/scoring/vote.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
-import type { RuleStore } from "../bdi/belief/rule_store.js";
+import type { RuleStore } from "../bdi/desire/rule_store.js";
 import type { InjectedIntention } from "../../models/intentions.js";
 import type { DesireType } from "../../models/desires.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
