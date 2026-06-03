@@ -1,4 +1,5 @@
 import { dispatch } from "./dispatch.js";
+import { tryDecode } from "../../../models/message_injection.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../belief/rule_store.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
@@ -56,6 +57,23 @@ export class Messenger {
     ): Promise<void> {
         this.socket.on("msg", async (senderId: string, senderName: string, content: unknown) => {
             this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
+
+            // Position beacons arrive before the friend filter so agents can discover
+            // teammates outside sensing range. The beacon payload carries teamName so
+            // the receiver can classify the sender without prior sensing.
+            const message = tryDecode(content);
+            if (message?.tool === "position_beacon") {
+                const args = message.args as Record<string, unknown>;
+                if (typeof args.teamName === "string") {
+                    const rawPos = args.pos as Record<string, unknown> | null;
+                    const pos = (rawPos && typeof rawPos.x === "number" && typeof rawPos.y === "number")
+                        ? { x: rawPos.x, y: rawPos.y }
+                        : null;
+                    beliefs.agents.updateAgentFromBeacon(senderId, senderName, args.teamName, pos);
+                }
+                return;
+            }
+
             if (!beliefs.agents.getCurrentFriends().some(f => f.id === senderId)) return;
 
             // Route the message content to the dispatcher, which will decode and handle it appropriately based on the tool name. The dispatcher may mutate beliefs, rules, and intentions as needed.

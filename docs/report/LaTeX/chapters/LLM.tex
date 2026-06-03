@@ -45,26 +45,24 @@ This behavior emerges naturally from the linear weighting system: the LLM is not
 \paragraph{Traversal Penalties:}
 Traversal penalties operate at the planning layer rather than the deliberation layer.
 Unlike scoring rules, which modulate desire priority during deliberation, a traversal penalty injects an additive cost onto the A* edge leading onto a specific tile.
-When the planner evaluates candidate paths, it adds this cost to any step landing on a penalized tile, causing the agent to prefer a detour whenever the detour length is shorter than the penalty.
-The tile is never made impassable: if no alternative path exists, the agent will still cross it.
-Each penalty is keyed by an opaque identifier, enabling idempotent updates—re-registering the same identifier replaces the previous entry.
-Like scoring rules and navigation goals, traversal penalties are propagated to all teammates upon registration.
+When the planner evaluates candidate paths, it adds this cost to any step landing on a penalized tile, causing the agent to prefer a detour whenever the detour length is shorter than the penalty,
+without completely forbidding the option of traversing the tile if it becomes necessary.
 
 \subsection{Coordination and Communication}
 \label{sec:coordination}
 
-\paragraph{Peer Communication.}
-The \texttt{Messenger} module encapsulates the socket's \texttt{emitSay} and \texttt{emitShout} primitives behind a friendly-agent filter.
-All squad-level tool calls---navigation goals, scoring rules, traversal penalties, and traffic-control commands---follow a uniform two-step pattern: the injection is applied to the LLM agent locally first, then packaged as a peer-injection envelope and broadcast to all currently sensed teammates.
-This ensures that a single LLM command propagates atomically across the entire squad without requiring the mission controller to address each agent individually.
-The sole exception is \texttt{assign\_goto}, which is either a local self-injection or a point-to-point message to a named agent via \texttt{communicateTo}, never a broadcast.
+\paragraph{Peer Communication:}
+All team-level commands previously mentioned follow a uniform two-step pattern: the injection is applied to the LLM agent locally first, 
+then packaged as a peer-injection message and broadcasted to all teammates.
+This ensures that a single LLM command propagates atomically across the entire team.
 
-\paragraph{Rendezvous and Traffic Control.}
+\paragraph{Rendezvous and Traffic Control:}
 Upon receiving a \texttt{request\_rendezvous} command, all candidate tiles within the designated Manhattan distance of the target are injected as \texttt{HOLD\_TILE} desires.
 Each agent independently evaluates these tiles utilizing the rendezvous formula (Section~\ref{sec:desires}), naturally converging on the same joint-optimal holding tile without requiring explicit negotiation.
+
 Similarly, the \texttt{request\_red\_light} and \texttt{request\_green\_light} commands atomically inject or clear an indefinite \texttt{HOLD\_TILE} directive on the nearest odd-row tile, effectively halting or resuming team movement.
 
-\paragraph{Coordinator.}
+\paragraph{Coordinator:}
 A centralized \texttt{Coordinator} periodically executes a team assignment round every $10{,}000 \text{ ms}$.
 During each round, a \texttt{request\_beliefs} envelope is broadcast to all teammates. After a $750 \text{ ms}$ collection window, the coordinator constructs a geometric summary of the team's state (including agent positions, payloads, and high-value zones) and feeds it to \texttt{LLMClient.coordinate}. This triggers \texttt{assign\_goto} commands to optimally distribute the agents.
 The mission controller can also trigger this process on demand via the \texttt{request\_team\_status} tool.

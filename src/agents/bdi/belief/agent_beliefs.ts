@@ -244,6 +244,24 @@ export class AgentBeliefs {
         );
     }
 
+    /**
+     * Update a single agent's position from a position beacon.
+     * Classifies the agent as friend or enemy based on teamName.
+     * Only updates friends (same team) — enemy beacons are ignored to avoid
+     * trusting unsolicited position claims from adversaries.
+     */
+    updateAgentFromBeacon(id: string, name: string, teamName: string, pos: { x: number; y: number } | null): void {
+        if (!this.me || teamName !== this.me.teamName) return;
+        const existing = this.friends.getCurrentAll().find(f => f.id === id);
+        const data: Agent = {
+            id, name, teamName,
+            score: existing?.score ?? 0,
+            penalty: existing?.penalty ?? 0,
+            lastPosition: pos,
+        };
+        this.friends.update(id, data);
+    }
+
     /** Evict stale beliefs that haven't been updated recently to prevent memory bloat. */
     private evict(): void {
         const now = Date.now();

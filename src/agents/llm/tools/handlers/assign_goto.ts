@@ -20,7 +20,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
     function: {
         name: "assign_goto",
-        description: "Send a specific agent (yourself or a known teammate) to a target tile. Use agent_id to address the target agent. For yourself, injects a REACH_TILE goal directly; for a teammate, sends a request_goto envelope.",
+        description: "Send a specific agent (yourself or a known teammate) to a target tile. Use agent_id to address the target agent. For yourself, injects a REACH_TILE goal directly; for a teammate, sends a request_goto message.",
         parameters: {
             type: "object",
             properties: {
@@ -38,7 +38,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
 /**
  * Assign a navigation goal to a specific agent (self or teammate).
  * If agent_id matches this agent's own id, the REACH_TILE desire is injected locally.
- * Otherwise a request_goto envelope is sent directly to that teammate.
+ * Otherwise a request_goto message is sent directly to that teammate.
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const parsed = parseAssignGotoArgs(rawArgs);

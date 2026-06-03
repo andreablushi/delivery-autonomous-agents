@@ -6,7 +6,10 @@ import { createLogger, type Logger } from "../../utils/logger.js";
 export class LLMAgent {
     private readonly bdi: BDIAgent;
     private readonly client: LLMClient;
-    private readonly coordinator: Coordinator;
+    // coordinator is assigned immediately after client in the constructor; the lazy closure
+    // `rawArgs => this.coordinator.proposeRendezvous(rawArgs)` passed to client is only
+    // invoked at tool-call time, well after construction completes.
+    private coordinator!: Coordinator;
     private readonly log: Logger;
 
     constructor(socket: any, agentId?: string) {
@@ -17,13 +20,19 @@ export class LLMAgent {
             type => this.bdi.removeIntentionsByType(type),
             this.bdi.getMessenger(),
             this.bdi.getRuleStore(),
+            rawArgs => this.coordinator.proposeRendezvous(rawArgs),
             agentId
         );
-        this.coordinator = new Coordinator(this.bdi.getBeliefs(), this.bdi.getMessenger(), this.client);
+        this.coordinator = new Coordinator(
+            this.bdi.getBeliefs(),
+            this.bdi.getMessenger(),
+            this.client,
+            entry => this.bdi.addInjectedIntention(entry),
+        );
         this.coordinator.start();
 
         // Listen for incoming messages.
-        // Always route to the coordinator first so beliefs_report envelopes are captured
+        // Always route to the coordinator first so beliefs_report messages are captured
         // regardless of the MISSION_EMITTER filter that gates LLM processing.
         socket.on("msg", (senderId: string, senderName: string, content: unknown) => {
             this.coordinator.handleInbound(senderId, content);

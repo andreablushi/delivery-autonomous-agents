@@ -6,11 +6,15 @@ const PEER_INJECTION_KINDS = [
     "request_putdown_at",
     "register_scoring_rule",
     "register_traversal_penalty",
-    "request_rendezvous",
+    "rendezvous_propose",
+    "rendezvous_vote",
+    "rendezvous_commit",
+    "rendezvous_abort",
     "request_red_light",
     "request_resume",
     "request_beliefs",
     "beliefs_report",
+    "position_beacon",
 ] as const;
 /** Type representing the valid peer-injection message kinds. */
 export type PeerInjectionKind = typeof PEER_INJECTION_KINDS[number];
@@ -31,14 +35,14 @@ export type PeerInjectionMessage =
     | { v: 1; kind: "peer_injection"; tool: "beliefs_report"; args: BeliefsReport }
     | { v: 1; kind: "peer_injection"; tool: Exclude<PeerInjectionKind, "beliefs_report">; args: Record<string, unknown> };
 
-/** Serialise an envelope to a JSON string ready for `emitSay`. */
-export function encode(envelope: PeerInjectionMessage): string {
-    return JSON.stringify(envelope);
+/** Serialise a message to a JSON string ready for `emitSay`. */
+export function encode(message: PeerInjectionMessage): string {
+    return JSON.stringify(message);
 }
 
 /**
  * Attempt to parse `raw` as a `PeerInjectionMessage`.
- * Returns `null` if the value is not a valid JSON envelope.
+ * Returns `null` if the value is not a valid JSON message.
  */
 export function tryDecode(raw: unknown): PeerInjectionMessage | null {
     if (typeof raw !== "string") return null;

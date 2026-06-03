@@ -35,12 +35,14 @@ export class LLMClient {
     private readonly removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
     private readonly messenger: Messenger;
     private readonly ruleStore: RuleStore;
+    private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
 
     constructor(
         addInjectedIntention: (entry: InjectedIntention) => void,
         removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
         messenger: Messenger,
         ruleStore: RuleStore,
+        proposeRendezvous: (rawArgs: unknown) => Promise<string>,
         agentId?: string,
     ) {
         this.client = new OpenAI({
@@ -55,6 +57,7 @@ export class LLMClient {
         this.removeIntentionsByType = removeIntentionsByType;
         this.messenger = messenger;
         this.ruleStore = ruleStore;
+        this.proposeRendezvous = proposeRendezvous;
     }
 
     /**
@@ -140,6 +143,7 @@ export class LLMClient {
             messenger: this.messenger,
             sourceId: senderId,
             ruleStore: this.ruleStore,
+            proposeRendezvous: this.proposeRendezvous,
         };
 
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [

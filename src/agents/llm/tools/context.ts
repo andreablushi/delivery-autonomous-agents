@@ -13,4 +13,6 @@ export interface ToolContext {
     ruleStore: RuleStore;
     /** Trigger an immediate team coordination round (no-op if no coordinator is active). */
     requestTeamStatus?: () => void;
+    /** Run the two-phase rendezvous commit protocol; returns a JSON result string. */
+    proposeRendezvous?: (rawArgs: unknown) => Promise<string>;
 }

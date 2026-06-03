@@ -7,7 +7,7 @@ import {
     parseGotoArgs,
     parseScoringRuleArgs,
     parseTraversalPenaltyArgs,
-    parseRendezvousArgs,
+    parseRendezvousProposeArgs,
     parseRedLightArgs,
 } from "./injection_args.js";
 
@@ -24,8 +24,8 @@ export type InjectionResult = { ok: true } | { error: string };
 /**
  * Parse, validate, and apply a peer-injection tool call to local BDI state.
  *
- * @param tool    The PeerInjectionKind envelope tool name.
- * @param rawArgs Raw arguments from the envelope or LLM tool call.
+ * @param tool    The PeerInjectionKind message tool name.
+ * @param rawArgs Raw arguments from the message or LLM tool call.
  * @param deps    Callbacks and references to the receiving agent's state.
  * @returns `{ ok: true }` on success, `{ error: string }` on any parse/validation failure.
  */
@@ -96,8 +96,8 @@ export function applyInjection(
             return { ok: true };
         }
 
-        case "request_rendezvous": {
-            const p = parseRendezvousArgs(rawArgs);
+        case "rendezvous_commit": {
+            const p = parseRendezvousProposeArgs(rawArgs);
             if ("error" in p) return p;
             if (!beliefs.map.checkMapBounds(p.x, p.y)) return { error: "Coordinates out of map bounds" };
             const from = beliefs.agents.getCurrentPosition();
@@ -112,10 +112,17 @@ export function applyInjection(
                         sourceId,
                         reward: p.reward,
                         releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
+                        rendezvousId: p.rid,
                     },
                     sourceId,
                 });
             }
+            return { ok: true };
+        }
+
+        case "rendezvous_abort": {
+            // No-op on the BDI side: at abort time no rendezvous_commit has been sent, so
+            // no HOLD_TILE intentions from this round have been injected on any peer.
             return { ok: true };
         }
 

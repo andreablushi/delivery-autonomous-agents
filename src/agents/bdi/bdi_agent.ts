@@ -7,7 +7,9 @@ import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
 import { Messenger } from "./communication/messenger.js";
+import { encode } from "../../models/message_injection.js";
 import { createLogger } from "../../utils/logger.js";
+import { config } from "../../config.js";
 
 /**
  * BDI Agent — orchestrates the perceive → deliberate → execute cycle.
@@ -54,6 +56,7 @@ export class BDIAgent {
         });
 
         this.perceive();
+        this.startPositionBeacon();
     }
 
     /**
@@ -98,6 +101,21 @@ export class BDIAgent {
         return this.messenger;
     }
 
+
+    /** Broadcast position to all agents on a fixed interval so teammates outside sensing range
+     *  can keep their friend tracker fresh without relying solely on the sensing event. */
+    private startPositionBeacon(): void {
+        setInterval(() => {
+            const pos = this.beliefs.agents.getCurrentPosition();
+            const me = this.beliefs.agents.getCurrentMe();
+            if (!pos || !me) return;
+            const msg = encode({
+                v: 1, kind: "peer_injection", tool: "position_beacon",
+                args: { pos, teamName: me.teamName },
+            });
+            void this.messenger.shout(msg);
+        }, config.beliefs.positionBeaconIntervalMs);
+    }
 
     /**
      * Register socket listeners that update beliefs and drive the deliberation cycle.

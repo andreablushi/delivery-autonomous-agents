@@ -37,6 +37,7 @@ export type HoldTileDesire = {
     // When set, the hold auto-releases once self + all known friends are within
     // maxDistance of center (used by rendezvous; absent for red-light holds).
     releaseZone?: { center: Position; maxDistance: number };
+    rendezvousId?: string;  // Unique id of the rendezvous round that produced this hold (for logging / future cleanup)
 };
 
 /** Union type for all possible desire types*/

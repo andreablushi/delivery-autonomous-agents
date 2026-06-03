@@ -7,6 +7,7 @@ export const config = {
     beliefs: {
         positionStaleThresholdMs: 2_000,    // Discard agent positions not refreshed within this window
         evictIntervalMs: 1_000,             // Minimum gap between stale-belief eviction passes
+        positionBeaconIntervalMs: 3_000,    // How often each agent broadcasts its own position to teammates
         enemy: {
             memoryTtlMs: 1_000,             // How long an enemy observation stays in memory
             memorySizeEntries: 20,          // Max observations kept per enemy
@@ -59,6 +60,10 @@ export const config = {
         collectWindowMs: 750,   // Time to wait for belief reports before running the LLM pass
         cooldownMs: 5_000,      // Minimum gap between coordination rounds
         hotZonesLimit: 5,       // Max hot zones kept when merging teammate reports
+    },
+
+    rendezvous: {
+        commitWindowMs: 750,    // Time to wait for peer votes before committing or aborting
     },
 
     report: {

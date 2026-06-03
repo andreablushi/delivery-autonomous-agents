@@ -1,7 +1,5 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
-import { applyInjection } from "../../../../models/apply_injection.js";
-import { communicate } from "../../communication/communicate.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -22,15 +20,11 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
 };
 
 /**
- * Handler for the `request_rendezvous` tool. Validates arguments, checks preconditions, injects a HOLD_TILE desire with a release zone, and communicates the request to the peer.
- * @param rawArgs The raw arguments passed to the tool (expected to be an object with x, y, max_distance, reward).
- * @param ctx The tool context, providing access to beliefs, intentions, and communication.
- * @returns A JSON string indicating success or error details.
+ * Handler for the `request_rendezvous` tool. Runs a two-phase commit protocol: the LLM agent
+ * proposes the rendezvous to all current peers, collects value-aware votes, then commits
+ * (injecting HOLD_TILE for all) or aborts (no holds injected) based on unanimity.
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const r = applyInjection("request_rendezvous", rawArgs, ctx);
-    if ("error" in r) return JSON.stringify(r);
-    // Peer independently enumerates its own candidate tiles via allRendezvousTiles.
-    await communicate(ctx, "request_rendezvous", rawArgs as Record<string, unknown>);
-    return JSON.stringify({ ok: true });
+    if (!ctx.proposeRendezvous) return JSON.stringify({ error: "rendezvous not available in this mode" });
+    return ctx.proposeRendezvous(rawArgs);
 }

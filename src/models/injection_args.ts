@@ -115,7 +115,7 @@ export function parseScoringRuleArgs(json: unknown): ScoringRuleArgs | { error: 
 }
 
 
-/** Arguments for `request_rendezvous`. */
+/** Arguments for the `request_rendezvous` LLM tool (validated on the proposing side). */
 export type RendezvousArgs = {
     x: number;
     y: number;
@@ -136,6 +136,28 @@ export function parseRendezvousArgs(json: unknown): RendezvousArgs | { error: st
         return { error: "max_distance must be an integer in [0, 10]" };
     if (typeof reward !== "number" || reward <= 0) return { error: "reward must be a positive number" };
     return { x, y, max_distance, reward };
+}
+
+/** Wire args for `rendezvous_propose` and `rendezvous_commit` (same shape, includes rid). */
+export type RendezvousProposeArgs = RendezvousArgs & { rid: string };
+
+export function parseRendezvousProposeArgs(json: unknown): RendezvousProposeArgs | { error: string } {
+    const base = parseRendezvousArgs(json);
+    if ("error" in base) return base;
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
+    return { ...base, rid: obj.rid };
+}
+
+/** Wire args for `rendezvous_vote`. */
+export type RendezvousVoteArgs = { rid: string; accept: boolean };
+
+export function parseRendezvousVoteArgs(json: unknown): RendezvousVoteArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
+    if (typeof obj.accept !== "boolean") return { error: "accept must be a boolean" };
+    return { rid: obj.rid, accept: obj.accept };
 }
 
 
