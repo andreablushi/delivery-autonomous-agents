@@ -25,7 +25,7 @@ A project focused on the development and analysis of autonomous software agents,
 
 **Course:** Autonomous Software Agents  
 **Professors:** Prof. Paolo Giorgini, Prof. Marco Robol  
-**Authors:** Davide Donà, Andrea Blushi
+**Authors:** Davide Donà (davide.dona-1@studenti.unitn.it), Andrea Blushi (andrea.blushi@studenti.unitn.it)
 
 ---
 
@@ -160,20 +160,28 @@ Dev scripts (`npm run dev`, `npm run dev:*`) respect the `_DEBUG` value in `.env
 ## Repository Structure
 
 ```
-autonomous-software-agents/
-├── src/                        # Source code of the project
-│   ├── index.ts                # Entry point of the application
-│   ├── agents/                 # Directory for different agent implementations
-│   │   ├── bdi/                # BDI agent implementation
-│   │   │   ├── bdi_agent.ts    # Main BDI agent class
-│   │   │   ├── belief/         # Belief management module
-│   │   │   ├── desire/         # Desire generation and filter module
-│   │   │   ├── intention/      # Intention selection and execution module
-│   │   │   └── navigation/     # Plan library and navigation module
-│   │   └── llm/                # LLM-based agent implementation
-│   │       ├── llm_agent.js    # Main LLM agent class
-│   │       └── prompts/        # Directory for prompt templates and management
-│   ├── models/                 # Data types definitions and interfaces
-│   └── utils/                  # Utility functions and modules
-├── docs/                       # Documentation and related materials
+src/
+├── index.ts                        # Entry point; fans out into single or multi-agent mode
+├── config.ts                       # All tunable numeric constants (timeouts, thresholds, …)
+├── agents/
+│   ├── bdi/                        # BDI agent
+│   │   ├── bdi_agent.ts            # Main BDI agent class (perceive → deliberate → execute loop)
+│   │   ├── belief/                 # Belief management (map, parcels, agents, rules)
+│   │   ├── communication/          # Peer-injection dispatch and Messenger
+│   │   ├── desire/                 # Desire generation and scoring
+│   │   ├── intention/              # Intention queue management
+│   │   ├── plan/                   # Planning (A*, PDDL fallback, collision avoidance)
+│   │   └── execution/              # Socket action loop (move / pickup / putdown)
+│   └── llm/                        # LLM agent (wraps BDI)
+│       ├── llm_agent.ts            # Main LLM agent class
+│       ├── client/                 # LLM API client and tool-call loop
+│       ├── communication/          # Peer-injection broadcast helpers
+│       ├── coordination/           # Periodic team coordinator
+│       ├── prompt/                 # Prompt builders (main + coordination)
+│       └── tools/                  # Tool definitions and handlers
+├── models/                         # Shared data types and injection logic
+└── utils/                          # Logger, metrics, API helpers
+docs/
+├── report/                         # Written report (LaTeX source + compiled PDF)
+└── presentation/                   # Slide deck (LaTeX/Beamer source + compiled PDF)
 ```
