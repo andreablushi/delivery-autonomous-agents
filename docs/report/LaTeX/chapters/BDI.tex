@@ -65,6 +65,11 @@ r(t) = r_0 - \left\lfloor\frac{t - t_0}{\Delta_t}\right\rfloor.
 \end{equation}
 When $r(t) \leq 0$, the parcel is considered expired and is deleted from the agent's beliefs.
 
+\subsubsection{Crate beliefs}
+\texttt{CrateBeliefs} uses the same \texttt{Tracker} utility described above to store the latest known position for each crate.
+On every sensing update, observed crate positions are registered and \texttt{invalidateAtSensedPositions} nullifies any entry whose tile falls within 
+the current sensing window but is absent from the report, reflecting that the crate has been pushed.
+
 \subsection{Desires and Intention Selection}
 \label{sec:desires}
 For the BDI layer, we define a fixed set of 3 core desire types, each parameterized by a target tile:

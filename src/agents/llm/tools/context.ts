@@ -15,4 +15,6 @@ export interface ToolContext {
     requestTeamStatus?: () => void;
     /** Run the two-phase rendezvous commit protocol; returns a JSON result string. */
     proposeRendezvous?: (rawArgs: unknown) => Promise<string>;
+    /** Run the two-phase red-light commit protocol; returns a JSON result string. */
+    proposeRedLight?: (rawArgs: unknown) => Promise<string>;
 }

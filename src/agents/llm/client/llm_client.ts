@@ -36,6 +36,7 @@ export class LLMClient {
     private readonly comm: Communication;
     private readonly ruleStore: RuleStore;
     private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
+    private readonly proposeRedLight: (rawArgs: unknown) => Promise<string>;
 
     constructor(
         addInjectedIntention: (entry: InjectedIntention) => void,
@@ -43,6 +44,7 @@ export class LLMClient {
         comm: Communication,
         ruleStore: RuleStore,
         proposeRendezvous: (rawArgs: unknown) => Promise<string>,
+        proposeRedLight: (rawArgs: unknown) => Promise<string>,
         agentId?: string,
     ) {
         this.client = new OpenAI({
@@ -58,6 +60,7 @@ export class LLMClient {
         this.comm = comm;
         this.ruleStore = ruleStore;
         this.proposeRendezvous = proposeRendezvous;
+        this.proposeRedLight = proposeRedLight;
     }
 
     /**
@@ -144,6 +147,7 @@ export class LLMClient {
             sourceId: senderId,
             ruleStore: this.ruleStore,
             proposeRendezvous: this.proposeRendezvous,
+            proposeRedLight: this.proposeRedLight,
         };
 
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [

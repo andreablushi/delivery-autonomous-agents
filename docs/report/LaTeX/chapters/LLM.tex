@@ -15,6 +15,15 @@ A \emph{deliver-at} request creates a \texttt{DELIVER\_PARCEL} desire targeting 
 
 All those requests have a limited duration to be executed. The generated desire are made persistent for the duration of the specified TTL, so that they can be continuously re-evaluated and pursued until completion or expiry.
 
+Both desire types use the same rate formula as their BDI counterparts (Section~\ref{sec:desires}).
+A \texttt{REACH\_TILE} desire is scored as:
+\begin{equation*}
+  S = \frac{r_{\text{inj}} + \sum_{c \in C} r_c}{d}
+\end{equation*}
+where $r_{\text{inj}}$ is the configurable reward supplied by the mission controller and $\sum_{c \in C} r_c$ is the total estimated value of currently carried parcels.
+This mirrors the \texttt{ReachParcel} formula, so a navigation goal with a reward equal to a typical parcel value competes on equal footing with parcel collection.
+A \texttt{DELIVER\_PARCEL} desire applies the same rule-adjusted scoring as the BDI delivery desire, with an optional additive bonus applied after the rule combination, allowing the mission controller to bias delivery toward a specific tile.
+
 \subsection{Adapting Strategy via Rule Injection}
 \label{sec:scoring_rules}
 The \texttt{RuleStore} maintains a persistent registry of LLM-defined scoring rules.
@@ -52,17 +61,32 @@ without completely forbidding the option of traversing the tile if it becomes ne
 \label{sec:coordination}
 
 \paragraph{Peer Communication:}
-All team-level commands previously mentioned follow a uniform two-step pattern: the injection is applied to the LLM agent locally first, 
-then packaged as a peer-injection message and broadcasted to all teammates.
-This ensures that a single LLM command propagates atomically across the entire team.
+Simple team-level commands (navigation goals, scoring rules, traversal penalties) follow a uniform two-step pattern: the injection is applied to the issuing agent locally, then packaged as a peer-injection message and broadcast to all teammates.
+Commands that carry stronger team-synchronisation requirements — rendezvous and traffic control — instead use a two-phase commit protocol described below.
+
+\paragraph{Beacon Communication:}
+To handle the critical need for up-to-date position information in coordination maneuvers, each agent continuously broadcasts its current position 
+to all configured teammates as a \texttt{position\_beacon} message at a fixed interval.
+This ensures that every team member maintains an up-to-date position estimate for its peers regardless of the game's sensing radius, 
+which only reveals agents within a limited Manhattan distance.
 
 \paragraph{Rendezvous and Traffic Control:}
-Upon receiving a \texttt{request\_rendezvous} command, all candidate tiles within the designated Manhattan distance of the target are injected as \texttt{HOLD\_TILE} desires.
-Each agent independently evaluates these tiles utilizing the rendezvous formula (Section~\ref{sec:desires}), naturally converging on the same joint-optimal holding tile without requiring explicit negotiation.
+Both \texttt{request\_rendezvous} and \texttt{request\_red\_light} employ a two-phase commit (2PC) protocol before any agent holds, ensuring the team only stops when it is collectively optimal to do so.
 
-Similarly, the \texttt{request\_red\_light} and \texttt{request\_green\_light} commands atomically inject or clear an indefinite \texttt{HOLD\_TILE} directive on the nearest odd-row tile, effectively halting or resuming team movement.
+In Phase~1, the proposing agent broadcasts a \emph{propose} message carrying a unique round identifier (\texttt{rid}) and the command parameters.
+Each receiving teammate independently evaluates whether accepting is beneficial: it computes the best hold-tile score achievable under the proposal and compares it against its current best \texttt{REACH\_PARCEL} or \texttt{DELIVER\_PARCEL} score.
+For rendezvous this uses the joint-bottleneck formula (Section~\ref{sec:desires}); for traffic control it uses the standard hold-tile rate score.
+The teammate replies with a \emph{vote} message containing the \texttt{rid} and its accept/reject decision.
+
+In Phase~2, after a fixed collection window of $750 \text{ ms}$, the proposer checks for unanimity.
+If every expected teammate voted \emph{accept} for the current \texttt{rid}, the proposer broadcasts a \emph{commit} message; each agent (including the proposer) then injects the \texttt{HOLD\_TILE} desires into its intention pool.
+If any vote is missing or negative, the proposer broadcasts \emph{abort} and no holds are injected on any agent.
+
+Upon commit, rendezvous holds carry a \texttt{releaseZone} that triggers automatic release once position beacons confirm all teammates are within the designated Manhattan radius — no green-light command is needed.
+Traffic-control holds have no release zone and persist until their TTL expires or \texttt{request\_green\_light} is issued, which clears all active \texttt{HOLD\_TILE} intentions on both agents immediately via a fire-and-forget broadcast.
+By default agents hold on the nearest odd-row tile, but the command accepts optional \texttt{axis} (\texttt{row}/\texttt{column}) and \texttt{parity} (\texttt{odd}/\texttt{even}) parameters to stagger agents across any row or column alignment, enabling flexible traffic separation strategies.
 
 \paragraph{Coordinator:}
-A centralized \texttt{Coordinator} periodically executes a team assignment round every $10{,}000 \text{ ms}$.
-During each round, a \texttt{request\_beliefs} envelope is broadcast to all teammates. After a $750 \text{ ms}$ collection window, the coordinator constructs a geometric summary of the team's state (including agent positions, payloads, and high-value zones) and feeds it to \texttt{LLMClient.coordinate}. This triggers \texttt{assign\_goto} commands to optimally distribute the agents.
+A centralized \texttt{Coordinator} periodically executes team assignment rounds.
+During each round, a \texttt{request\_beliefs} envelope is broadcast to all teammates. After a short collection window, the coordinator constructs a geometric summary of the team's state (including agent positions, payloads, and high-value zones) and feeds it to \texttt{LLMClient.coordinate}. This triggers \texttt{assign\_goto} commands to optimally distribute the agents.
 The mission controller can also trigger this process on demand via the \texttt{request\_team\_status} tool.

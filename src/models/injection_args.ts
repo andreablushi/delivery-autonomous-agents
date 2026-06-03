@@ -185,6 +185,18 @@ export function parseRedLightArgs(json: unknown): RedLightArgs | { error: string
 }
 
 
+/** Wire args for `red_light_propose` and `red_light_commit` (same shape as RedLightArgs, plus rid). */
+export type RedLightProposeArgs = RedLightArgs & { rid: string };
+
+export function parseRedLightProposeArgs(json: unknown): RedLightProposeArgs | { error: string } {
+    const base = parseRedLightArgs(json);
+    if ("error" in base) return base;
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
+    return { ...base, rid: obj.rid };
+}
+
+
 /** Arguments for `register_traversal_penalty`. */
 export type TraversalPenaltyArgs = {
     id: string;

@@ -1,9 +1,9 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { Communication } from "../../communication/communication.js";
-import type { BeliefsReport, PeerInjectionMessage } from "../../../models/message_injection.js";
+import { PeerKind, type BeliefsReport, type PeerInjectionMessage, type PeerInjectionKind } from "../../../models/message_injection.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { LLMClient } from "../client/llm_client.js";
-import { parseRendezvousArgs } from "../../../models/injection_args.js";
+import { parseRendezvousArgs, parseRedLightArgs } from "../../../models/injection_args.js";
 import { buildTeamGeometry } from "./geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
@@ -38,10 +38,10 @@ export class Coordinator {
      * Called by the Communication inbound router via the coordination hook.
      */
     handleInbound(senderId: string, msg: PeerInjectionMessage): void {
-        if (msg.tool === "beliefs_report") {
+        if (msg.tool === PeerKind.BeliefsReport) {
             this.log.debug(`Received beliefs_report from ${senderId}`);
             this.reports.set(senderId, { report: msg.args, at: Date.now() });
-        } else if (msg.tool === "rendezvous_vote") {
+        } else if (msg.tool === PeerKind.RendezvousVote || msg.tool === PeerKind.RedLightVote) {
             const args = msg.args as Record<string, unknown>;
             if (typeof args.rid === "string" && typeof args.accept === "boolean") {
                 this.log.debug(`Received rendezvous_vote from ${senderId}: accept=${args.accept} rid=${args.rid}`);
@@ -50,91 +50,114 @@ export class Coordinator {
         }
     }
 
-    /**
-     * Run the two-phase rendezvous commit protocol.
-     *
-     * Phase 1 — propose: broadcast the rendezvous parameters to all currently-sensed friends.
-     * Phase 2 — commit/abort: wait `rendezvous.commitWindowMs` for votes; if every expected peer
-     * voted yes and self can reach the zone, broadcast rendezvous_commit and inject the hold locally;
-     * otherwise broadcast rendezvous_abort (no-op on peers) and return failure.
-     */
     async proposeRendezvous(rawArgs: unknown): Promise<string> {
         const p = parseRendezvousArgs(rawArgs);
         if ("error" in p) return JSON.stringify(p);
         if (!this.beliefs.map.checkMapBounds(p.x, p.y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
-
         const from = this.beliefs.agents.getCurrentPosition();
         if (!from) return JSON.stringify({ error: "Agent position not yet known" });
-
         const selfTiles = this.beliefs.map.allRendezvousTiles(from, p.x, p.y, p.max_distance);
         if (selfTiles.length === 0) return JSON.stringify({ error: "No reachable tile within rendezvous zone for self" });
-
-        const teammateIds = [...this.beliefs.agents.getTeammateIds()];
         const rid = `rdv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        return this.runTwoPhaseCommit({
+            label: "Rendezvous", rid,
+            proposeKind: PeerKind.RendezvousPropose, commitKind: PeerKind.RendezvousCommit, abortKind: PeerKind.RendezvousAbort,
+            proposeArgs: { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward },
+            onCommit: () => {
+                for (const tile of selfTiles) {
+                    this.addInjectedIntention({
+                        desire: {
+                            type: "HOLD_TILE", target: tile, sourceId: "coordinator", reward: p.reward,
+                            releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
+                            rendezvousId: rid,
+                        },
+                        sourceId: "coordinator",
+                    });
+                }
+            },
+        });
+    }
+
+    async proposeRedLight(rawArgs: unknown): Promise<string> {
+        const p = parseRedLightArgs(rawArgs);
+        if ("error" in p) return JSON.stringify(p);
+        const from = this.beliefs.agents.getCurrentPosition();
+        if (!from) return JSON.stringify({ error: "Agent position not yet known" });
+        const selfTiles = this.beliefs.map.allLineTiles(from, p.axis, p.parity);
+        if (selfTiles.length === 0) return JSON.stringify({ error: "No matching tile reachable for self" });
+        const rid = `rl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        return this.runTwoPhaseCommit({
+            label: "Red light", rid,
+            proposeKind: PeerKind.RedLightPropose, commitKind: PeerKind.RedLightCommit, abortKind: PeerKind.RedLightAbort,
+            proposeArgs: { rid, reward: p.reward, ttl_seconds: p.ttl_seconds, axis: p.axis, parity: p.parity },
+            onCommit: () => {
+                const expiresAt = Date.now() + p.ttl_seconds * 1_000;
+                for (const tile of selfTiles) {
+                    this.addInjectedIntention({
+                        desire: { type: "HOLD_TILE", target: tile, sourceId: "coordinator", reward: p.reward },
+                        expiresAt,
+                        sourceId: "coordinator",
+                    });
+                }
+            },
+        });
+    }
+
+    /**
+     * Shared two-phase commit skeleton used by both proposeRendezvous and proposeRedLight.
+     *
+     * Phase 1 — send `proposeKind` to all teammates.
+     * Phase 2 — wait commitWindowMs; if every peer voted yes for this rid, broadcast
+     * `commitKind` and call `onCommit`; otherwise broadcast `abortKind`.
+     */
+    private async runTwoPhaseCommit(opts: {
+        label: string;
+        rid: string;
+        proposeKind: Exclude<PeerInjectionKind, "beliefs_report">;
+        commitKind: Exclude<PeerInjectionKind, "beliefs_report">;
+        abortKind: Exclude<PeerInjectionKind, "beliefs_report">;
+        proposeArgs: Record<string, unknown>;
+        onCommit: () => void;
+    }): Promise<string> {
+        const { label, rid, proposeKind, commitKind, abortKind, proposeArgs, onCommit } = opts;
+        const teammateIds = [...this.beliefs.agents.getTeammateIds()];
 
         if (teammateIds.length === 0) {
-            // No peers — self-commit immediately (a rendezvous with oneself)
-            this.injectCommittedHold(p, rid, selfTiles);
+            onCommit();
             return JSON.stringify({ ok: true });
         }
 
-        // Phase 1: broadcast propose
-        const proposeArgs = { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward };
         const sentAt = Date.now();
         for (const id of teammateIds) {
-            await this.comm.send(id, "rendezvous_propose", proposeArgs);
+            await this.comm.send(id, proposeKind, proposeArgs);
         }
 
-        // Wait for votes
         await new Promise<void>(r => setTimeout(r, config.rendezvous.commitWindowMs));
 
-        // Phase 2: evaluate votes — every expected peer must have voted yes for this rid after sentAt
         const allAccepted = teammateIds.every(id => {
             const vote = this.votes.get(id);
             return vote && vote.rid === rid && vote.accept && vote.at >= sentAt;
         });
 
         if (allAccepted) {
-            this.log.debug(`Rendezvous ${rid}: all peers accepted — committing`);
-            const commitArgs = { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward };
+            this.log.debug(`${label} ${rid}: all peers accepted — committing`);
             for (const id of teammateIds) {
-                await this.comm.send(id, "rendezvous_commit", commitArgs);
+                await this.comm.send(id, commitKind, proposeArgs);
             }
-            this.injectCommittedHold(p, rid, selfTiles);
+            onCommit();
             return JSON.stringify({ ok: true });
         } else {
-            this.log.debug(`Rendezvous ${rid}: not all peers accepted — aborting`);
+            this.log.debug(`${label} ${rid}: not all peers accepted — aborting`);
             for (const id of teammateIds) {
-                await this.comm.send(id, "rendezvous_abort", { rid });
+                await this.comm.send(id, abortKind, { rid });
             }
-            return JSON.stringify({ ok: false, reason: "Rendezvous rejected: not all peers accepted" });
-        }
-    }
-
-    /** Inject a committed HOLD_TILE for each candidate tile into the LLM agent's intention pool. */
-    private injectCommittedHold(
-        p: { x: number; y: number; max_distance: number; reward: number },
-        rid: string,
-        tiles: { x: number; y: number }[],
-    ): void {
-        for (const tile of tiles) {
-            this.addInjectedIntention({
-                desire: {
-                    type: "HOLD_TILE",
-                    target: tile,
-                    sourceId: "coordinator",
-                    reward: p.reward,
-                    releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
-                    rendezvousId: rid,
-                },
-                sourceId: "coordinator",
-            });
+            return JSON.stringify({ ok: false, reason: `${label} rejected: not all peers accepted` });
         }
     }
 
     /** Broadcast a `request_beliefs` message to all configured teammates. */
     private async requestBeliefs(): Promise<void> {
-        await this.comm.broadcast("request_beliefs", {});
+        await this.comm.broadcast(PeerKind.RequestBeliefs, {});
     }
 
     /**

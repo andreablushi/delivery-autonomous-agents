@@ -14,6 +14,7 @@ function parseAssignGotoArgs(json: unknown): AssignGotoArgs | { error: string } 
     return { agent_id: obj.agent_id, ...rest };
 }
 import { applyInjection } from "../../../../models/apply_injection.js";
+import { PeerKind } from "../../../../models/message_injection.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -48,7 +49,7 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     const me = ctx.beliefs.agents.getCurrentMe();
     if (agent_id === me?.id) {
         // Local injection — applyInjection handles all validation (map, bounds, wall, blocked).
-        const r = applyInjection("request_goto", { target_x, target_y, reward, ttl_seconds }, ctx);
+        const r = applyInjection(PeerKind.RequestGoto, { target_x, target_y, reward, ttl_seconds }, ctx);
         if ("error" in r) return JSON.stringify(r);
     } else {
         // Remote: validate early to give the LLM useful feedback before sending.
@@ -57,7 +58,7 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         if (map.tiles[target_y][target_x] === TILE_TYPE.WALL) return JSON.stringify({ error: "Target tile is a wall" });
         if (!ctx.beliefs.agents.getTeammateIds().has(agent_id)) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
-        await ctx.comm.send(agent_id, "request_goto", { target_x, target_y, reward, ttl_seconds });
+        await ctx.comm.send(agent_id, PeerKind.RequestGoto, { target_x, target_y, reward, ttl_seconds });
     }
 
     return JSON.stringify({ ok: true, agent_id, target: { x: target_x, y: target_y } });

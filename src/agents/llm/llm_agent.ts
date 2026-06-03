@@ -1,4 +1,5 @@
 import { BDIAgent } from "../bdi/bdi_agent.js";
+import { LLMCommunication } from "../communication/llm_communication.js";
 import { LLMClient } from "./client/llm_client.js";
 import { Coordinator } from "./coordination/coordinator.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
@@ -14,14 +15,16 @@ export class LLMAgent {
 
     constructor(socket: any, agentId?: string, teammateIds?: string[]) {
         this.log = createLogger("llm", agentId);
-        this.bdi = new BDIAgent(socket, agentId, teammateIds);
-        const comm = this.bdi.getCommunication();
+        let comm!: LLMCommunication;
+        this.bdi = new BDIAgent(socket, agentId, teammateIds,
+            (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; });
         this.client = new LLMClient(
             entry => this.bdi.addInjectedIntention(entry),
             type => this.bdi.removeIntentionsByType(type),
             comm,
             this.bdi.getRuleStore(),
             rawArgs => this.coordinator.proposeRendezvous(rawArgs),
+            rawArgs => this.coordinator.proposeRedLight(rawArgs),
             agentId
         );
         this.coordinator = new Coordinator(
@@ -32,9 +35,10 @@ export class LLMAgent {
         );
         this.coordinator.start();
 
-        // Route coordination messages (beliefs_report, rendezvous_vote) to the coordinator,
-        // and mission messages (raw chat from admin) to the LLM client.
+        // Handler for coordination messages from teammates. Forwarded to the coordinator for processing.
         comm.onCoordination((senderId, msg) => this.coordinator.handleInbound(senderId, msg));
+        
+        // Handler for mission chat messages from the mission emitter. Passed to the LLM client
         comm.onMission((senderId, senderName, content) => {
             if (!this.isValidMessage(senderId, senderName, content)) return;
             this.log.debug(`mission msg from ${senderName} (${senderId}): "${content}"`);

@@ -26,7 +26,12 @@ export class BDIAgent {
     private perceiveLog;
     private deliberateLog;
 
-    constructor(socket: any, agentId?: string, teammateIds?: string[]) {
+    constructor(
+        socket: any,
+        agentId?: string,
+        teammateIds?: string[],
+        commFactory?: (socket: any, beliefs: Beliefs, agentId?: string) => Communication,
+    ) {
         this.socket = socket;
         this.perceiveLog = createLogger("perceive", agentId);
         this.deliberateLog = createLogger("deliberate", agentId);
@@ -35,7 +40,9 @@ export class BDIAgent {
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
-        this.comm = new Communication(socket, this.beliefs, agentId);
+        this.comm = commFactory
+            ? commFactory(socket, this.beliefs, agentId)
+            : new Communication(socket, this.beliefs, agentId);
         this.comm.start({
             beliefs: this.beliefs,
             ruleStore: this.ruleStore,

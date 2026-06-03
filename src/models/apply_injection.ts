@@ -3,12 +3,13 @@ import type { RuleStore } from "../agents/bdi/desire/rule_store.js";
 import type { InjectedIntention } from "./intentions.js";
 import type { DesireType } from "./desires.js";
 import type { ScoringRule } from "./rules.js";
+import { PeerKind } from "./message_injection.js";
 import {
     parseGotoArgs,
     parseScoringRuleArgs,
     parseTraversalPenaltyArgs,
     parseRendezvousProposeArgs,
-    parseRedLightArgs,
+    parseRedLightProposeArgs,
 } from "./injection_args.js";
 
 export interface InjectionDeps {
@@ -38,7 +39,7 @@ export function applyInjection(
 
     switch (tool) {
 
-        case "request_goto": {
+        case PeerKind.RequestGoto: {
             const p = parseGotoArgs(rawArgs);
             if ("error" in p) return p;
             const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
@@ -52,7 +53,7 @@ export function applyInjection(
             return { ok: true };
         }
 
-        case "request_putdown_at": {
+        case PeerKind.RequestPutdownAt: {
             const p = parseGotoArgs(rawArgs);
             if ("error" in p) return p;
             const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
@@ -66,7 +67,7 @@ export function applyInjection(
             return { ok: true };
         }
 
-        case "register_scoring_rule": {
+        case PeerKind.RegisterScoringRule: {
             const p = parseScoringRuleArgs(rawArgs);
             if ("error" in p) return p;
             const effect = { multiplier: p.multiplier, additive: p.additive };
@@ -87,7 +88,7 @@ export function applyInjection(
             return { ok: true };
         }
 
-        case "register_traversal_penalty": {
+        case PeerKind.RegisterTraversalPenalty: {
             const p = parseTraversalPenaltyArgs(rawArgs);
             if ("error" in p) return p;
             if (!beliefs.map.getMap()) return { error: "Map not yet loaded" };
@@ -96,7 +97,7 @@ export function applyInjection(
             return { ok: true };
         }
 
-        case "rendezvous_commit": {
+        case PeerKind.RendezvousCommit: {
             const p = parseRendezvousProposeArgs(rawArgs);
             if ("error" in p) return p;
             if (!beliefs.map.checkMapBounds(p.x, p.y)) return { error: "Coordinates out of map bounds" };
@@ -120,14 +121,14 @@ export function applyInjection(
             return { ok: true };
         }
 
-        case "rendezvous_abort": {
+        case PeerKind.RendezvousAbort: {
             // No-op on the BDI side: at abort time no rendezvous_commit has been sent, so
             // no HOLD_TILE intentions from this round have been injected on any peer.
             return { ok: true };
         }
 
-        case "request_red_light": {
-            const p = parseRedLightArgs(rawArgs);
+        case PeerKind.RedLightCommit: {
+            const p = parseRedLightProposeArgs(rawArgs);
             if ("error" in p) return p;
             const from = beliefs.agents.getCurrentPosition();
             if (!from) return { error: "Agent position not yet known" };
@@ -144,7 +145,12 @@ export function applyInjection(
             return { ok: true };
         }
 
-        case "request_resume": {
+        case PeerKind.RedLightAbort: {
+            // No-op: no holds were injected pre-commit, so there is nothing to undo.
+            return { ok: true };
+        }
+
+        case PeerKind.RequestResume: {
             // No args to validate — request_resume carries no parameters.
             removeIntentionsByType("HOLD_TILE");
             return { ok: true };

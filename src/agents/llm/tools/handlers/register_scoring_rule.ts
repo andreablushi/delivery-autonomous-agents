@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { applyInjection } from "../../../../models/apply_injection.js";
+import { PeerKind } from "../../../../models/message_injection.js";
 
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -35,8 +36,8 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
  * @returns A JSON string containing { ok: true } if the rule was successfully registered, or { error: string } if there was a problem with the input arguments
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const r = applyInjection("register_scoring_rule", rawArgs, ctx);
+    const r = applyInjection(PeerKind.RegisterScoringRule, rawArgs, ctx);
     if ("error" in r) return JSON.stringify(r);
-    await ctx.comm.broadcast("register_scoring_rule", rawArgs as Record<string, unknown>);
+    await ctx.comm.broadcast(PeerKind.RegisterScoringRule, rawArgs as Record<string, unknown>);
     return JSON.stringify({ ok: true });
 }

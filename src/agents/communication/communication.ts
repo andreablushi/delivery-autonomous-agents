@@ -1,6 +1,6 @@
-import { encode, tryDecode, type PeerInjectionMessage, type PeerInjectionKind } from "../../models/message_injection.js";
+import { encode, tryDecode, PeerKind, type PeerInjectionMessage, type PeerInjectionKind } from "../../models/message_injection.js";
 import { applyInjection, type InjectionDeps } from "../../models/apply_injection.js";
-import { evaluateRendezvousVote } from "../bdi/desire/scoring/vote.js";
+import { evaluateRendezvousVote, evaluateRedLightVote } from "../bdi/desire/scoring/vote.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
 import type { RuleStore } from "../bdi/desire/rule_store.js";
 import type { InjectedIntention } from "../../models/intentions.js";
@@ -8,7 +8,8 @@ import type { DesireType } from "../../models/desires.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 
-type InboundDeps = {
+/** Dependencies for handling incoming peer-injection messages. */
+export type IncomingDeps = {
     beliefs: Beliefs;
     ruleStore: RuleStore;
     addInjectedIntention: (e: InjectedIntention) => void;
@@ -16,50 +17,33 @@ type InboundDeps = {
 };
 
 /**
- * Single communication hub for an agent.
+ * Peer communication for a BDI agent.
  *
- * Owns the socket's `msg` listener, all outbound peer-injection sends, the
- * 2-second position beacon, and optional hooks for LLM-side coordination and
- * mission messages from the admin.
+ * Handles all inbound peer-injection messages from configured teammates:
+ * position beacons, belief requests, handshake proposals, and goal injections.
+ * Outbound: send/broadcast peer-injection messages and the position beacon.
  *
- * Usage:
- *   const comm = new Communication(socket, beliefs, agentId);
- *   comm.start({ beliefs, ruleStore, addInjectedIntention, removeIntentionsByType });
- *   // optionally, in LLMAgent:
- *   comm.onCoordination((id, msg) => coordinator.handleInbound(id, msg));
- *   comm.onMission((id, name, text) => { ... });
+ * LLM-specific concerns (coordination votes, mission chat) are handled by
+ * LLMCommunication, which extends this class.
  */
 export class Communication {
-    private readonly log: Logger;
-    private coordinationHook: ((senderId: string, msg: PeerInjectionMessage) => void) | null = null;
-    private missionHook: ((senderId: string, senderName: string, content: string) => void) | null = null;
+    protected readonly log: Logger;
 
     constructor(
-        private readonly socket: any,
-        private readonly beliefs: Beliefs,
+        protected readonly socket: any,
+        protected readonly beliefs: Beliefs,
         agentId?: string,
     ) {
         this.log = createLogger("communication", agentId);
     }
 
-    /**
-     * Send a peer-injection message to a specific agent.
-     * @param toId Recipient agent ID.
-     * @param tool Peer-injection tool name (e.g. "request_goto").
-     * @param args Arguments for the tool.
-     */
+    /** Send a peer-injection message to a specific agent. */
     async send(toId: string, tool: Exclude<PeerInjectionKind, "beliefs_report">, args: Record<string, unknown>): Promise<void> {
         this.log.debug(`send to ${toId}: ${tool}`);
         await this.socket.emitSay(toId, encode({ v: 1, kind: "peer_injection", tool, args }));
     }
 
-    /**
-     * Send a peer-injection message to every configured teammate (by ID).
-     * Uses the static `teammateIds` set, so messages reach teammates even before
-     * they have been sensed. No-op when the teammate set is empty (bdi/competitive modes).
-     * @param tool Peer-injection tool name.
-     * @param args Arguments for the tool.
-     */
+    /** Broadcast a peer-injection message to all teammates. */
     async broadcast(tool: Exclude<PeerInjectionKind, "beliefs_report">, args: Record<string, unknown>): Promise<void> {
         const ids = this.beliefs.agents.getTeammateIds();
         if (ids.size === 0) return;
@@ -70,108 +54,112 @@ export class Communication {
         }
     }
 
-    /**
-     * Send a raw text message (e.g. a reply to the mission admin).
-     * @param toId Recipient agent ID.
-     * @param text Message text.
-     */
+    /** Send a text message to a specific agent. */
     async sayText(toId: string, text: string): Promise<void> {
         this.log.debug(`sayText to ${toId}`);
         await this.socket.emitSay(toId, text);
     }
 
     /**
-     * Register a hook for coordination messages (beliefs_report, rendezvous_vote).
-     * Called by LLMAgent so the Coordinator can capture these regardless of the
-     * MISSION_EMITTER filter.
+     *  Listen for incoming peer-injection messages and handle them appropriately:
+     *  - position_beacon: update beliefs about sender's position.
+     *  - beliefs_report, rendezvous_vote, red_light_vote: forward to onCoordination().
+     *  - request_beliefs: reply with beliefs_report.
+     *  - rendezvous_propose, red_light_propose: evaluate and reply with vote.
+     *  - other tools: treat as intention injection and apply via applyInjection().
+     * @param deps Dependencies needed to handle incoming messages, including beliefs, rule store, and intention management functions.
      */
-    onCoordination(fn: (senderId: string, msg: PeerInjectionMessage) => void): void {
-        this.coordinationHook = fn;
-    }
-
-    /**
-     * Register a hook for raw chat messages (e.g. from the mission admin).
-     * Called by LLMAgent to forward commands to LLMClient.
-     */
-    onMission(fn: (senderId: string, senderName: string, content: string) => void): void {
-        this.missionHook = fn;
-    }
-
-    /**
-     * Register the single inbound `msg` listener and start the 2-second position beacon.
-     * Call this once after constructing the agent.
-     */
-    start(deps: InboundDeps): void {
+    start(deps: IncomingDeps): void {
         this.socket.on("msg", async (senderId: string, senderName: string, content: unknown) => {
             this.log.debug(`msg from ${senderName} (${senderId}): "${content}"`);
+            
+            // Try to decode as PeerInjectionMessage. If it fails, treat as raw text.
             const msg = tryDecode(content);
 
             if (msg) {
-                // Position beacon — update friend tracker before teammate filter so agents
-                // outside sensing range can be discovered via broadcast.
-                if (msg.tool === "position_beacon") {
-                    const args = msg.args as Record<string, unknown>;
-                    const rawPos = args.pos as Record<string, unknown> | null;
-                    const pos = (rawPos && typeof rawPos.x === "number" && typeof rawPos.y === "number")
-                        ? { x: rawPos.x, y: rawPos.y }
-                        : null;
-                    deps.beliefs.agents.updateAgentFromBeacon(senderId, senderName, pos);
-                    return;
-                }
-
-                // Coordination messages — route to the coordinator hook (LLM side only).
-                if (msg.tool === "beliefs_report" || msg.tool === "rendezvous_vote") {
-                    this.coordinationHook?.(senderId, msg);
-                    return;
-                }
-
-                // Belief request — reply immediately with a snapshot.
-                if (msg.tool === "request_beliefs") {
-                    const report = deps.beliefs.buildReport();
-                    this.log.debug(`reply beliefs_report to ${senderId}`);
-                    await this.socket.emitSay(senderId, encode({ v: 1, kind: "peer_injection", tool: "beliefs_report", args: report }));
-                    return;
-                }
-
-                // Rendezvous proposal — vote and reply.
-                if (msg.tool === "rendezvous_propose") {
-                    const accept = evaluateRendezvousVote(deps.beliefs, deps.ruleStore, msg.args);
-                    const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
-                        ? (msg.args as Record<string, unknown>).rid as string
-                        : "";
-                    this.log.debug(`rendezvous_propose from ${senderName}: accept=${accept} (rid=${rid})`);
-                    await this.send(senderId, "rendezvous_vote", { rid, accept });
-                    return;
-                }
-
-                // All other peer-injectable tools — only accept from known teammates.
+                // Check that the sender is a known teammate before processing any peer-injection messages.
                 if (!deps.beliefs.agents.getTeammateIds().has(senderId)) {
                     this.log.debug(`ignoring ${msg.tool} from non-teammate ${senderId}`);
                     return;
                 }
-                const injDeps: InjectionDeps = {
-                    beliefs: deps.beliefs,
-                    ruleStore: deps.ruleStore,
-                    addInjectedIntention: deps.addInjectedIntention,
-                    removeIntentionsByType: deps.removeIntentionsByType,
-                    sourceId: senderId,
-                };
-                const result = applyInjection(msg.tool, msg.args, injDeps);
-                if ("error" in result) this.log.warn(`injection error (${msg.tool}):`, result.error);
-                return;
-            }
+                
+                switch (msg.tool) {
 
-            // Not a peer-injection — forward raw chat to the mission hook (if registered).
+                    case PeerKind.PositionBeacon: {
+                        const args = msg.args as Record<string, unknown>;
+                        const rawPos = args.pos as Record<string, unknown> | null;
+                        const pos = (rawPos && typeof rawPos.x === "number" && typeof rawPos.y === "number")
+                            ? { x: rawPos.x, y: rawPos.y }
+                            : null;
+                        deps.beliefs.agents.updateAgentFromBeacon(senderId, senderName, pos);
+                        return;
+                    }
+
+                    case PeerKind.BeliefsReport:
+                    case PeerKind.RendezvousVote:
+                    case PeerKind.RedLightVote:
+                        this.handleCoordinationMessage(senderId, msg);
+                        return;
+
+                    case PeerKind.RequestBeliefs: {
+                        const report = deps.beliefs.buildReport();
+                        this.log.debug(`reply beliefs_report to ${senderId}`);
+                        await this.socket.emitSay(senderId, encode({ v: 1, kind: "peer_injection", tool: PeerKind.BeliefsReport, args: report }));
+                        return;
+                    }
+
+                    case PeerKind.RendezvousPropose: {
+                        const accept = evaluateRendezvousVote(deps.beliefs, deps.ruleStore, msg.args);
+                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
+                            ? (msg.args as Record<string, unknown>).rid as string
+                            : "";
+                        this.log.debug(`rendezvous_propose from ${senderName}: accept=${accept} (rid=${rid})`);
+                        await this.send(senderId, PeerKind.RendezvousVote, { rid, accept });
+                        return;
+                    }
+
+                    case PeerKind.RedLightPropose: {
+                        const accept = evaluateRedLightVote(deps.beliefs, deps.ruleStore, msg.args);
+                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
+                            ? (msg.args as Record<string, unknown>).rid as string
+                            : "";
+                        this.log.debug(`red_light_propose from ${senderName}: accept=${accept} (rid=${rid})`);
+                        await this.send(senderId, PeerKind.RedLightVote, { rid, accept });
+                        return;
+                    }
+
+                    default: {
+                        const injDeps: InjectionDeps = {
+                            beliefs: deps.beliefs,
+                            ruleStore: deps.ruleStore,
+                            addInjectedIntention: deps.addInjectedIntention,
+                            removeIntentionsByType: deps.removeIntentionsByType,
+                            sourceId: senderId,
+                        };
+                        const result = applyInjection(msg.tool, msg.args, injDeps);
+                        if ("error" in result) this.log.warn(`injection error (${msg.tool}):`, result.error);
+                        return;
+                    }
+
+                }
+            }
+            
+            // If the decode fails, treat as raw text message and use the raw message handler (e.g. for mission chat).
+            // BDI agents will ignore raw messages, but LLMCommunication overrides the handler to forward to the LLM client.
             if (typeof content === "string" && content.trim() !== "") {
-                this.missionHook?.(senderId, senderName, content);
+                this.handleRawMessage(senderId, senderName, content);
             }
         });
 
-        // Position beacon — broadcast own position directly to each configured teammate.
         setInterval(() => {
             const pos = this.beliefs.agents.getCurrentPosition();
             if (!pos) return;
-            void this.broadcast("position_beacon", { pos });
+            void this.broadcast(PeerKind.PositionBeacon, { pos });
         }, config.beliefs.positionBeaconIntervalMs);
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    protected handleCoordinationMessage(_senderId: string, _msg: PeerInjectionMessage): void {}
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    protected handleRawMessage(_senderId: string, _senderName: string, _content: string): void {}
 }

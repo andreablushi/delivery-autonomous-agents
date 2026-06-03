@@ -1,25 +1,28 @@
 import type { Position } from "./position.js";
 
-/** Types of peer-injection messages. Lists all the possible message types to be sent between peers */
-const PEER_INJECTION_KINDS = [
-    "request_goto",
-    "request_putdown_at",
-    "register_scoring_rule",
-    "register_traversal_penalty",
-    "rendezvous_propose",
-    "rendezvous_vote",
-    "rendezvous_commit",
-    "rendezvous_abort",
-    "request_red_light",
-    "request_resume",
-    "request_beliefs",
-    "beliefs_report",
-    "position_beacon",
-] as const;
+/** Named constants for all peer-injection message kinds. Use these instead of raw string literals. */
+export const PeerKind = {
+    RequestGoto:              "request_goto",
+    RequestPutdownAt:         "request_putdown_at",
+    RegisterScoringRule:      "register_scoring_rule",
+    RegisterTraversalPenalty: "register_traversal_penalty",
+    RendezvousPropose:        "rendezvous_propose",
+    RendezvousVote:           "rendezvous_vote",
+    RendezvousCommit:         "rendezvous_commit",
+    RendezvousAbort:          "rendezvous_abort",
+    RedLightPropose:          "red_light_propose",
+    RedLightVote:             "red_light_vote",
+    RedLightCommit:           "red_light_commit",
+    RedLightAbort:            "red_light_abort",
+    RequestResume:            "request_resume",
+    RequestBeliefs:           "request_beliefs",
+    BeliefsReport:            "beliefs_report",
+    PositionBeacon:           "position_beacon",
+} as const;
 /** Type representing the valid peer-injection message kinds. */
-export type PeerInjectionKind = typeof PEER_INJECTION_KINDS[number];
+export type PeerInjectionKind = typeof PeerKind[keyof typeof PeerKind];
 /** Set of valid peer-injection message kinds, for quick lookup. */
-const VALID_TOOLS: ReadonlySet<string> = new Set(PEER_INJECTION_KINDS);
+const VALID_TOOLS: ReadonlySet<string> = new Set(Object.values(PeerKind));
 
 /** Compact belief snapshot sent by a BDI teammate in response to a request_beliefs message. */
 export type BeliefsReport = {
