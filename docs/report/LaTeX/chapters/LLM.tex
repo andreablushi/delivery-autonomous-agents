@@ -60,15 +60,15 @@ without completely forbidding the option of traversing the tile if it becomes ne
 \subsection{Coordination and Communication}
 \label{sec:coordination}
 
-\paragraph{Peer Communication:}
-Simple team-level commands (navigation goals, scoring rules, traversal penalties) follow a uniform two-step pattern: the injection is applied to the issuing agent locally, then packaged as a peer-injection message and broadcast to all teammates.
-Commands that carry stronger team-synchronisation requirements — rendezvous and traffic control — instead use a two-phase commit protocol described below.
-
 \paragraph{Beacon Communication:}
 To handle the critical need for up-to-date position information in coordination maneuvers, each agent continuously broadcasts its current position 
 to all configured teammates as a \texttt{position\_beacon} message at a fixed interval.
 This ensures that every team member maintains an up-to-date position estimate for its peers regardless of the game's sensing radius, 
 which only reveals agents within a limited Manhattan distance.
+
+\paragraph{Peer Communication:}
+Simple team-level commands (navigation goals, scoring rules, traversal penalties) follow a uniform two-step pattern: the injection is applied to the issuing agent locally, then packaged as a peer-injection message and broadcast to all teammates.
+Commands that carry stronger team-synchronisation requirements — rendezvous and traffic control — instead use a two-phase commit protocol described below.
 
 \paragraph{Rendezvous and Traffic Control:}
 Both \texttt{request\_rendezvous} and \texttt{request\_red\_light} employ a two-phase commit (2PC) protocol before any agent holds, ensuring the team only stops when it is collectively optimal to do so.

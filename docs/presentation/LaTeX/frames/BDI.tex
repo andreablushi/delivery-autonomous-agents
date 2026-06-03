@@ -1,0 +1,121 @@
+\section{BDI Agent}
+
+% ----- Execution Pipeline --------------------------------------
+\begin{frame}{Execution Pipeline}
+  \begin{columns}
+    \column{0.55\textwidth}
+      \begin{itemize}
+        \item One cycle per \texttt{sensing} socket event
+        \item \textbf{Perceive} $\to$ \textbf{Deliberate} $\to$ \textbf{Plan} $\to$ \textbf{Execute}
+        \item One action emitted per server clock tick
+        \item Re-deliberates after each successful move
+      \end{itemize}
+    \column{0.42\textwidth}
+      % TODO: populate media/pipeline/ with frame images, then uncomment:
+      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/pipeline/frame-}{0}{47}
+      \begin{block}{}
+        \centering\textit{[agent loop]}
+      \end{block}
+  \end{columns}
+\end{frame}
+
+% ----- Beliefs: Tracker & Memory -------------------------------
+\begin{frame}{Beliefs: Tracker \& Memory}
+  \begin{itemize}
+    \item \textbf{Tracker} — latest observation $\langle v,\, t_{seen} \rangle$ per entity
+    \item Confidence decays: $c(t) = e^{-(t - t_{seen})/\tau}$
+    \item \textbf{Memory} — bounded temporal history per entity
+    \item Observations invalidated when visible-but-absent
+  \end{itemize}
+\end{frame}
+
+% ----- Beliefs: Map --------------------------------------------
+\begin{frame}{Beliefs: Map}
+  \begin{itemize}
+    \item Static tile layout, transient blocked tiles, traversal penalties
+    \item \emph{Sink tiles}: agent can enter but never complete a loop
+    \item Modelled as directed walkability graph (conveyors = one-way edges)
+    \item Tarjan SCC — only tiles in safe SCCs remain walkable
+  \end{itemize}
+\end{frame}
+
+% ----- Beliefs: Parcels & Crates -------------------------------
+\begin{frame}{Beliefs: Parcels \& Crates}
+  \begin{itemize}
+    \item Parcel reward decays linearly ($-1$ per server tick) when out of sight
+    \item $r(t) = r_0 - \lfloor (t - t_0) / \Delta_t \rfloor$
+    \item Parcel removed when $r(t) \leq 0$
+    \item Crate positions tracked; invalidated once pushed out of view
+  \end{itemize}
+\end{frame}
+
+% ----- Desires -------------------------------------------------
+\begin{frame}{Desires}
+  \begin{itemize}
+    \item \textbf{ReachParcel} — navigate to and collect a visible parcel
+    \item \textbf{DeliverParcel} — bring carried parcels to delivery tile
+    \item \textbf{Explore} — seek unvisited spawn tile when idle
+    \item Parcel goals (priority 1) always beat Explore (priority 0)
+    \item Intention queue fully rebuilt each deliberation cycle
+  \end{itemize}
+\end{frame}
+
+% ----- Scoring: Parcels ----------------------------------------
+\begin{frame}{Scoring: Parcels}
+  \begin{block}{ReachParcel}
+    \[ S = \frac{r_p + r_{carried}}{d} \cdot \gamma, \qquad
+       \gamma = \min\!\left(1,\, \frac{d_{enemy}}{d}\right) \]
+    Race factor $\gamma$ de-prioritises parcels contested by enemies.
+  \end{block}
+  \begin{block}{DeliverParcel}
+    \[ S = \frac{r_{carried}}{d} \]
+  \end{block}
+\end{frame}
+
+% ----- Scoring: Explore ----------------------------------------
+\begin{frame}{Scoring: Explore}
+  \begin{itemize}
+    \item $w$ — spawn-cluster density (nearby spawn tiles)
+    \item $\tau$ — freshness (time since tile was last observed)
+    \item $h$ — enemy heat (spatial $+$ temporal Gaussian decay)
+    \item $\displaystyle S = \frac{w \cdot \tau}{d \cdot (1 + h)}$
+  \end{itemize}
+\end{frame}
+
+% ----- Planning: A* --------------------------------------------
+\begin{frame}{Planning: A*}
+  \begin{columns}
+    \column{0.55\textwidth}
+      \begin{itemize}
+        \item Manhattan distance heuristic (admissible on grid)
+        \item Walkability checked dynamically from beliefs
+        \item Conveyors: directional movement only
+        \item Plan reused while desire type and target unchanged
+      \end{itemize}
+    \column{0.42\textwidth}
+      % TODO: populate media/astar/ with frame images, then uncomment:
+      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/astar/frame-}{0}{47}
+      \begin{block}{}
+        \centering\textit{[pathfinding]}
+      \end{block}
+  \end{columns}
+\end{frame}
+
+% ----- Collision Handling --------------------------------------
+\begin{frame}{Collision Handling}
+  \begin{columns}
+    \column{0.55\textwidth}
+      Next tile occupied? Three-stage escalation:
+      \begin{enumerate}
+        \item \textbf{Detour} — replan with tile as wall (within cost threshold)
+        \item \textbf{Wait} — random pause duration
+        \item \textbf{Block \& replan} — temporary TTL block, full replan
+      \end{enumerate}
+    \column{0.42\textwidth}
+      % TODO: populate media/collision/ with frame images, then uncomment:
+      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/collision/frame-}{0}{47}
+      \begin{block}{}
+        \centering\textit{[collision resolution]}
+      \end{block}
+  \end{columns}
+\end{frame}

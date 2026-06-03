@@ -1,0 +1,59 @@
+\section{PDDL Crate Navigation}
+
+% ----- When A* Fails -------------------------------------------
+\begin{frame}{When A* Fails}
+  \begin{columns}
+    \column{0.55\textwidth}
+      \begin{itemize}
+        \item A* fails: no path that avoids crates
+        \item Second A* ignoring crates finds a ``ghost'' path
+        \item Crates intersecting that path confirm blockage
+        \item PDDL planner invoked as fallback
+      \end{itemize}
+    \column{0.42\textwidth}
+      % TODO: populate media/crates/ with frame images, then uncomment:
+      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/crates/frame-}{0}{47}
+      \begin{block}{}
+        \centering\textit{[crate push]}
+      \end{block}
+  \end{columns}
+\end{frame}
+
+% ----- The PDDL Domain -----------------------------------------
+\begin{frame}{The PDDL Domain}
+  \begin{itemize}
+    \item STRIPS: two object types — \texttt{tile} and \texttt{crate}
+    \item 4 directional \textbf{move} actions (step into crate-free tile)
+    \item 4 directional \textbf{push} actions:
+    \begin{itemize}
+      \item Agent adjacent on opposite side of push direction
+      \item Destination must be a valid, crate-free tile
+    \end{itemize}
+    \item Push relocates crate; agent steps onto its former tile
+  \end{itemize}
+\end{frame}
+
+% ----- Performance Bottleneck ----------------------------------
+\begin{frame}{Performance Bottleneck}
+  \begin{itemize}
+    \item PDDL solver too slow for real-time play
+    \item Moved to local solver: eliminated remote API overhead
+    \item Caching fails — agent position changes the cache key
+    \item Trivial position shift $\Rightarrow$ full re-solve of same maneuver
+  \end{itemize}
+\end{frame}
+
+% ----- Smart Fix -----------------------------------------------
+\begin{frame}{Smart Fix: Problem Restatement}
+  \begin{block}{Split the journey into three segments}
+    \begin{enumerate}
+      \item A* from current position to cluster \emph{entry}
+      \item PDDL through the crate cluster (entry $\to$ exit)
+      \item A* from cluster \emph{exit} to final goal
+    \end{enumerate}
+  \end{block}
+  \begin{itemize}
+    \item PDDL problem anchored to cluster entry tile
+    \item Cache key: $(\text{entry},\, \text{exit},\, \{\text{crate positions}\})$
+  \end{itemize}
+\end{frame}

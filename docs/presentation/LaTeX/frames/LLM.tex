@@ -1,0 +1,82 @@
+\section{LLM Agent Layer}
+
+% ----- LLM Layer Overview --------------------------------------
+\begin{frame}{LLM Layer Overview}
+  \begin{itemize}
+    \item Thin wrapper around the BDI agent
+    \item Listens for mission-controller chat messages
+    \item Up to 4 tool-call rounds (hops) per message
+    \item Three command categories: \textbf{goals} · \textbf{rules} · \textbf{coordination}
+  \end{itemize}
+\end{frame}
+
+% ----- Goal Injection ------------------------------------------
+\begin{frame}{Goal Injection}
+  \begin{itemize}
+    \item \textbf{go-to} $\to$ \texttt{REACH\_TILE} desire (configurable reward + TTL)
+    \item \textbf{deliver-at} $\to$ \texttt{DELIVER\_PARCEL} at specific tile
+    \item Both compete with parcel goals via standard scoring
+    \item Persist and re-evaluated until executed or TTL expires
+  \end{itemize}
+\end{frame}
+
+% ----- Rule Injection ------------------------------------------
+\begin{frame}{Rule Injection}
+  \begin{itemize}
+    \item \texttt{RuleStore}: condition + multiplier $m$ + offset $a$
+    \item Applied each cycle: scales/shifts baseline desire scores
+    \item Example: incentivise collecting $n$ parcels before delivery
+    \item Stack rule automatically elevates Explore to priority~1
+  \end{itemize}
+\end{frame}
+
+% ----- Traversal Penalties -------------------------------------
+\begin{frame}{Traversal Penalties}
+  \begin{itemize}
+    \item Adds additive cost to A* edge leading onto a tile
+    \item Agent prefers detour if detour $<$ penalty length
+    \item Tile not forbidden — used as last resort
+    \item Operates at the planning layer, not the deliberation layer
+  \end{itemize}
+\end{frame}
+
+% ----- Team Communication --------------------------------------
+\begin{frame}{Team Communication}
+  \begin{itemize}
+    \item \textbf{Beacons} — each agent broadcasts position at fixed interval
+    \item Ensures up-to-date peer positions beyond sensing radius
+    \item \textbf{Peer-injection} — command applied locally, then broadcast
+    \item Simple commands (goals, rules, penalties) are fire-and-forget
+  \end{itemize}
+\end{frame}
+
+% ----- Holds: 2-Phase Commit -----------------------------------
+\begin{frame}{Holds: 2-Phase Commit}
+  \begin{columns}
+    \column{0.55\textwidth}
+      \texttt{request\_rendezvous} \& \texttt{request\_red\_light} use 2PC:
+      \begin{itemize}
+        \item \textbf{Phase 1} — propose broadcast; each teammate votes
+        \item Vote: accept if hold-tile score beats current best goal
+        \item \textbf{Phase 2} — unanimous accept $\to$ commit; else abort
+        \item Red light: hold on nearest odd-row tile; green light clears all holds
+      \end{itemize}
+    \column{0.42\textwidth}
+      % TODO: populate media/redlight/ with frame images, then uncomment:
+      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/redlight/frame-}{0}{47}
+      \begin{block}{}
+        \centering\textit{[traffic control]}
+      \end{block}
+  \end{columns}
+\end{frame}
+
+% ----- Coordinator ---------------------------------------------
+\begin{frame}{Coordinator}
+  \begin{itemize}
+    \item Periodic rounds: broadcast \texttt{request\_beliefs} to team
+    \item Collects positions, payloads, high-value zones
+    \item LLM receives geometric summary $\to$ issues \texttt{assign\_goto} commands
+    \item Distributes agents across the map optimally
+    \item Also triggered on-demand via \texttt{request\_team\_status}
+  \end{itemize}
+\end{frame}
