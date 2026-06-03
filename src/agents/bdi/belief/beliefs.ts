@@ -1,7 +1,7 @@
 import type { IOConfig } from "../../../models/djs.js";
 import { parseTimeInterval } from "../../../utils/time.js";
-import type { GameSettings } from "../../../models/config.js";
-import type { BeliefsReport } from "../../../models/team.js";
+import type { GameSettings } from "../../../models/game_configs.js";
+import type { BeliefsReport } from "../../../models/message_injection.js";
 import { AgentBeliefs } from "./agent_beliefs.js";
 import { MapBeliefs } from "./map_beliefs.js";
 import { ParcelBeliefs } from "./parcel_beliefs.js";
@@ -10,9 +10,7 @@ import { manhattanDistance } from "../../../utils/metrics.js";
 import { config as appConfig } from "../../../config.js";
 
 
-/**
- * The Beliefs class serves as the central repository for all beliefs held by the BDI agent
- */
+/** Central repository for all beliefs held by the BDI agent */
 export class Beliefs {
     // Belief sub-systems
     readonly agents  = new AgentBeliefs();   // Tracks me, friends, and enemies

@@ -3,14 +3,13 @@ import type { RuleStore } from "../agents/bdi/belief/rule_store.js";
 import type { InjectedIntention } from "./intentions.js";
 import type { DesireType } from "./desires.js";
 import type { ScoringRule } from "./rules.js";
-import { TILE_TYPE } from "./tile_type.js";
 import {
     parseGotoArgs,
     parseScoringRuleArgs,
     parseTraversalPenaltyArgs,
     parseRendezvousArgs,
     parseRedLightArgs,
-} from "./tool_args.js";
+} from "./injection_args.js";
 
 export interface InjectionDeps {
     beliefs: Beliefs;
@@ -42,11 +41,8 @@ export function applyInjection(
         case "request_goto": {
             const p = parseGotoArgs(rawArgs);
             if ("error" in p) return p;
-            const map = beliefs.map.getMap();
-            if (!map) return { error: "Map not yet loaded" };
-            if (!beliefs.map.checkMapBounds(p.target_x, p.target_y)) return { error: "Coordinates out of map bounds" };
-            if (map.tiles[p.target_y][p.target_x] === TILE_TYPE.WALL) return { error: "Target tile is a wall" };
-            if (beliefs.map.isBlocked({ x: p.target_x, y: p.target_y })) return { error: "Target tile is currently blocked" };
+            const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
+            if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             addInjectedIntention({
                 desire: { type: "REACH_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
@@ -59,11 +55,8 @@ export function applyInjection(
         case "request_putdown_at": {
             const p = parseGotoArgs(rawArgs);
             if ("error" in p) return p;
-            const map = beliefs.map.getMap();
-            if (!map) return { error: "Map not yet loaded" };
-            if (!beliefs.map.checkMapBounds(p.target_x, p.target_y)) return { error: "Coordinates out of map bounds" };
-            if (map.tiles[p.target_y][p.target_x] === TILE_TYPE.WALL) return { error: "Target tile is a wall" };
-            if (beliefs.map.isBlocked({ x: p.target_x, y: p.target_y })) return { error: "Target tile is currently blocked" };
+            const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
+            if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             addInjectedIntention({
                 desire: { type: "DELIVER_PARCEL", target: { x: p.target_x, y: p.target_y }, bonus: p.reward },

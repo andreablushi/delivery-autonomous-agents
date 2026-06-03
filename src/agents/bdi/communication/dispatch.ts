@@ -1,4 +1,4 @@
-import { tryDecode, encode } from "../../../models/envelope.js";
+import { tryDecode, encode } from "../../../models/message_injection.js";
 import { applyInjection, type InjectionDeps } from "../../../models/apply_injection.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../belief/rule_store.js";
@@ -42,7 +42,7 @@ export async function dispatch(
     if (envelope.tool === "request_beliefs") {
         if (!reply) { log.warn("request_beliefs received but no reply callback available"); return; }
         const report = beliefs.buildReport();
-        const msg = encode({ v: 1, kind: "peer_injection", tool: "beliefs_report", args: report as unknown as Record<string, unknown> });
+        const msg = encode({ v: 1, kind: "peer_injection", tool: "beliefs_report", args: report });
         await reply(senderId, msg);
         return;
     }

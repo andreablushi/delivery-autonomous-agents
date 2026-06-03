@@ -1,5 +1,5 @@
 import type { Agent } from "../../../models/agent.js";
-import type { PlayerSettings } from "../../../models/config.js";
+import type { PlayerSettings } from "../../../models/game_configs.js";
 import type { IOAgent } from "../../../models/djs.js";
 import { Position } from "../../../models/position.js";
 import { isHalfPosition } from "../../../utils/metrics.js";
@@ -244,9 +244,7 @@ export class AgentBeliefs {
         );
     }
 
-    /**
-     * Evict stale beliefs that haven't been updated recently to prevent memory bloat.
-     */
+    /** Evict stale beliefs that haven't been updated recently to prevent memory bloat. */
     private evict(): void {
         const now = Date.now();
         if (now - this.lastEvict < config.beliefs.evictIntervalMs) return;

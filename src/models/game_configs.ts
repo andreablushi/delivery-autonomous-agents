@@ -1,3 +1,4 @@
+/** Settings for the game environment */
 export type GameSettings = {
     title: string;                         // Title of the game
     description: string;                   // Description of the game
@@ -5,6 +6,7 @@ export type GameSettings = {
     clock: number;                         // Server game-tick duration in milliseconds (from IOConfig.CLOCK)
 }
 
+/** Settings for parcel behavior */
 export type ParcelSettings = {
     parcel_spawn_interval: number;         // Interval before new parcels spawn
     reward_decay_interval: number;         // Interval before parcel rewards decay
@@ -13,6 +15,7 @@ export type ParcelSettings = {
     reward_variance: number;               // Variance in parcel rewards
 }
 
+/** Settings for player behavior */
 export type PlayerSettings = {
     movement_duration: number;             // Duration of player movement actions
     observation_distance: number;          // Distance within which players can observe parcels (Manhattan)

@@ -1,7 +1,7 @@
-import { tryDecode, encode } from "../../../models/envelope.js";
+import { tryDecode, encode } from "../../../models/message_injection.js";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { Messenger } from "../../bdi/communication/messenger.js";
-import type { BeliefsReport } from "../../../models/team.js";
+import type { BeliefsReport } from "../../../models/message_injection.js";
 import type { LLMClient } from "../client/llm_client.js";
 import { buildTeamGeometry } from "./geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
@@ -39,7 +39,7 @@ export class Coordinator {
         const envelope = tryDecode(content);
         if (!envelope || envelope.tool !== "beliefs_report") return;
         this.log.debug(`Received beliefs_report from ${senderId}`);
-        this.reports.set(senderId, { report: envelope.args as unknown as BeliefsReport, at: Date.now() });
+        this.reports.set(senderId, { report: envelope.args, at: Date.now() });
     }
 
     /** Broadcast a `request_beliefs` envelope to all currently-sensed friends. */

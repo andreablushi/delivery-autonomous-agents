@@ -2,7 +2,7 @@ import type { GameMap, Tile } from "../../../models/map.js";
 import type { Crate } from "../../../models/crate.js";
 import type { Position } from "../../../models/position.js";
 import type { IOTile, IOCrate } from "../../../models/djs.js";
-import { TILE_TYPE, type TileType } from "../../../models/tile_type.js";
+import { TILE_TYPE, staticBlocksEntry, type TileType } from "../../../models/tile_type.js";
 import { Tracker } from "./utils/tracker.js";
 import { computeSafeTiles } from "./utils/reachability.js";
 import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../utils/metrics.js";
@@ -105,10 +105,10 @@ export class MapBeliefs {
                 case TILE_TYPE.DELIVERY_POINT: return 'D';
                 case TILE_TYPE.CRATE_SPACE:
                 case TILE_TYPE.CRATE_OCCUPIED: return 'C';
-                case TILE_TYPE.CONVEYOR_LEFT: return '<';
-                case TILE_TYPE.CONVEYOR_RIGHT: return '>';
-                case TILE_TYPE.CONVEYOR_UP: return '^';
-                case TILE_TYPE.CONVEYOR_DOWN: return 'v';
+                case TILE_TYPE.DIRECTIONAL_LEFT: return '<';
+                case TILE_TYPE.DIRECTIONAL_RIGHT: return '>';
+                case TILE_TYPE.DIRECTIONAL_UP: return '^';
+                case TILE_TYPE.DIRECTIONAL_DOWN: return 'v';
                 default: return '?';
             }
         };
@@ -162,9 +162,7 @@ export class MapBeliefs {
         if (manhattanDistance(from, to) !== 1) return false;
 
         const tile = this.getTileAt(to);
-
-        // If there's no tile (out of bounds) or it's a wall, it's not walkable
-        if (tile === null || tile.type === TILE_TYPE.WALL) return false;
+        if (tile === null) return false;
 
         // If a crate is currently at this position, it's not walkable
         if (this.isCrateAt(to)) return false;
@@ -172,18 +170,7 @@ export class MapBeliefs {
         // If it's temporary blocked (e.g. occupied by another agent), it's not walkable
         if (this.isBlocked(to)) return false;
 
-        // Conveyors block entry only from the direction that opposes their push.
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        switch (tile.type) {
-            case TILE_TYPE.CONVEYOR_LEFT:  return dx !== 1;   // blocked if moving right (dx+1 against left)
-            case TILE_TYPE.CONVEYOR_RIGHT: return dx !== -1;  // blocked if moving left  (dx-1 against right)
-            case TILE_TYPE.CONVEYOR_UP:    return dy !== -1;  // blocked if moving down  (dy-1 against up)
-            case TILE_TYPE.CONVEYOR_DOWN:  return dy !== 1;   // blocked if moving up    (dy+1 against down)
-        }
-
-        // Otherwise, it's walkable
-        return true;
+        return !staticBlocksEntry(tile.type, to.x - from.x, to.y - from.y);
     }
 
     /**
@@ -198,21 +185,7 @@ export class MapBeliefs {
      */
     static isStaticWalkable(matrix: TileType[][], width: number, height: number, from: Position, to: Position): boolean {
         if (to.x < 0 || to.x >= width || to.y < 0 || to.y >= height) return false;
-    
-        const toType = matrix[to.y][to.x];
-        if (toType === TILE_TYPE.WALL) return false;
-    
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-    
-        // If the target tile is directional one, we cannot walk onto it from
-        // the direction opposite to its defined movement direction
-        if (toType === TILE_TYPE.CONVEYOR_UP && dy === -1) return false;
-        if (toType === TILE_TYPE.CONVEYOR_DOWN && dy === 1) return false;
-        if (toType === TILE_TYPE.CONVEYOR_LEFT && dx === 1) return false;
-        if (toType === TILE_TYPE.CONVEYOR_RIGHT && dx === -1) return false;
-    
-        return true;
+        return !staticBlocksEntry(matrix[to.y][to.x], to.x - from.x, to.y - from.y);
     }
 
 
@@ -380,6 +353,18 @@ export class MapBeliefs {
         if (exp === undefined) return false;
         if (Date.now() >= exp) { this.temporaryBlocked.delete(key); return false; }
         return true;
+    }
+
+    /**
+     * Validate that (x, y) is a legal injection target: map loaded, in bounds, not a wall, not blocked.
+     * Returns an error string on failure, null on success.
+     */
+    validateTargetTile(x: number, y: number): string | null {
+        if (!this.map) return "Map not yet loaded";
+        if (!this.checkMapBounds(x, y)) return "Coordinates out of map bounds";
+        if (this.map.tiles[y][x] === TILE_TYPE.WALL) return "Target tile is a wall";
+        if (this.isBlocked({ x, y })) return "Target tile is currently blocked";
+        return null;
     }
 
     /**

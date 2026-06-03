@@ -1,5 +1,5 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { BeliefsReport } from "../../../models/team.js";
+import type { BeliefsReport } from "../../../models/message_injection.js";
 import { manhattanDistance, posKey, NEIGHBOURS } from "../../../utils/metrics.js";
 import { config } from "../../../config.js";
 

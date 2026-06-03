@@ -6,7 +6,7 @@ import type { RuleStore } from "../../bdi/belief/rule_store.js";
 import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
 import { buildCoordinationPrompt } from "../prompt/coordination/index.js";
-import type { BeliefsReport } from "../../../models/team.js";
+import type { BeliefsReport } from "../../../models/message_injection.js";
 import type { TeamGeometry } from "../coordination/geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";

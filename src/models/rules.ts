@@ -54,6 +54,3 @@ export type ScoringRule =
   | StackCountRule
   | DeliveryTileRule
   | ParcelValueRule;
-
-/** Defines the axes along which scoring rules can be applied. */
-export type ScoringAxis = ScoringRule["conditioned_axis"];

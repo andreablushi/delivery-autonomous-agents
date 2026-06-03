@@ -1,3 +1,4 @@
+/** Defines the interface for the game world objects, as received by the server */
 import { TileType } from "./tile_type.js";
 import { Position } from "./position.js";
 

@@ -1,21 +1,25 @@
 import type { Position } from "./position.js";
 
+/** A desire to explore the space */
 export type ExploreDesire = {
     type: "EXPLORE";        // The agent wants to explore the map
     target: Position;       // A spawn tile to walk toward as a fallback goal
 };
 
+/** A desire to reach a specific parcel */
 export type ReachParcelDesire = {
     type: "REACH_PARCEL";   // The agent wants to navigate to and collect a parcel
     target: Position;       // Last known position of the target parcel
 };
 
+/** A desire to deliver a specific parcel */
 export type DeliverParcelDesire = {
     type: "DELIVER_PARCEL"; // The agent wants to navigate to the nearest delivery tile
     target: Position;       // Nearest delivery tile position
     bonus?: number;         // Optional reward bonus added to carried score (used by LLM-injected desires)
 };
 
+/** A desire to reach a specific, generic tile */
 export type ReachTileDesire = {
     type: "REACH_TILE";     // The agent wants to navigate to a specific tile
     target: Position;       // Target tile position
@@ -24,6 +28,7 @@ export type ReachTileDesire = {
     reward: number;         // Mock reward used by the sorter
 };
 
+/** A desire to hold a specific tile (navigate there and remain until released)*/
 export type HoldTileDesire = {
     type: "HOLD_TILE";      // Navigate to target tile and remain there until released
     target: Position;       // Tile to navigate to and hold
@@ -34,7 +39,8 @@ export type HoldTileDesire = {
     releaseZone?: { center: Position; maxDistance: number };
 };
 
+/** Union type for all possible desire types*/
 export type DesireType = ExploreDesire | ReachParcelDesire | DeliverParcelDesire | ReachTileDesire | HoldTileDesire;
 
-// Grouped map for easier access to desires by type
+/** Maps desire type strings to arrays of corresponding desires (e.g. "EXPLORE" -> ExploreDesire[]) */
 export type GeneratedDesires = Map<DesireType["type"], DesireType[]>;

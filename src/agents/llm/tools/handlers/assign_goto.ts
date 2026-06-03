@@ -1,7 +1,18 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { TILE_TYPE } from "../../../../models/tile_type.js";
-import { parseAssignGotoArgs } from "../../../../models/tool_args.js";
+import { parseGotoArgs, type GotoArgs } from "../../../../models/injection_args.js";
+
+type AssignGotoArgs = { agent_id: string } & GotoArgs;
+
+function parseAssignGotoArgs(json: unknown): AssignGotoArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.agent_id !== "string" || obj.agent_id.trim() === "") return { error: "agent_id must be a non-empty string" };
+    const rest = parseGotoArgs(json);
+    if ("error" in rest) return rest;
+    return { agent_id: obj.agent_id, ...rest };
+}
 import { communicateTo } from "../../communication/communicate.js";
 import { applyInjection } from "../../../../models/apply_injection.js";
 
