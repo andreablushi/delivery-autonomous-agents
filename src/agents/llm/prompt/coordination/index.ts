@@ -14,6 +14,7 @@ export function buildCoordinationPrompt(
     geometry: TeamGeometry,
     beliefs: Readonly<Beliefs>,
     ruleStore: RuleStore,
+    missionNote = "",
 ): { system: string; user: string } {
     const me = beliefs.agents.getCurrentMe();
     const myId = me?.id ?? "unknown";
@@ -54,8 +55,10 @@ export function buildCoordinationPrompt(
     const geometryStr = geoLines.join("\n");
     const context = [beliefs.summarize(), ruleStore.format()].filter(Boolean).join("\n");
 
+    const missionLine = missionNote.trim() ? `Active mission directive: ${missionNote.trim()}` : "";
+
     return {
         system: render(DIR, "system", {}),
-        user: render(DIR, "user", { roster, geometry: geometryStr, context }),
+        user: render(DIR, "user", { roster, geometry: geometryStr, context, missionNote: missionLine }),
     };
 }

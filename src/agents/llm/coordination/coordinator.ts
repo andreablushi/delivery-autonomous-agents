@@ -3,7 +3,7 @@ import type { Communication } from "../../communication/communication.js";
 import { PeerKind, type BeliefsReport, type PeerInjectionMessage, type PeerInjectionKind } from "../../../models/message_injection.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { LLMClient } from "../client/llm_client.js";
-import { parseRendezvousArgs, parseRedLightArgs } from "../../../models/injection_args.js";
+import { parseRendezvousArgs, parseRedLightArgs, parseGotoArgs } from "../../../models/injection_args.js";
 import { buildTeamGeometry } from "./geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
@@ -29,6 +29,7 @@ export class Coordinator {
         private readonly comm: Communication,
         private readonly client: LLMClient,
         private readonly addInjectedIntention: (entry: InjectedIntention) => void,
+        private readonly getMissionNote: () => string = () => "",
     ) {
         this.log = createLogger("coordination");
     }
@@ -41,13 +42,32 @@ export class Coordinator {
         if (msg.tool === PeerKind.BeliefsReport) {
             this.log.debug(`Received beliefs_report from ${senderId}`);
             this.reports.set(senderId, { report: msg.args, at: Date.now() });
-        } else if (msg.tool === PeerKind.RendezvousVote || msg.tool === PeerKind.RedLightVote) {
+        } else if (
+            msg.tool === PeerKind.RendezvousVote ||
+            msg.tool === PeerKind.RedLightVote ||
+            msg.tool === PeerKind.GotoVote
+        ) {
             const args = msg.args as Record<string, unknown>;
             if (typeof args.rid === "string" && typeof args.accept === "boolean") {
-                this.log.debug(`Received rendezvous_vote from ${senderId}: accept=${args.accept} rid=${args.rid}`);
+                this.log.debug(`Received ${msg.tool} from ${senderId}: accept=${args.accept} rid=${args.rid}`);
                 this.votes.set(senderId, { rid: args.rid, accept: args.accept, at: Date.now() });
             }
         }
+    }
+
+    async proposeGoto(agentId: string, rawArgs: unknown): Promise<string> {
+        const p = parseGotoArgs(rawArgs);
+        if ("error" in p) return JSON.stringify(p);
+        if (!this.beliefs.map.checkMapBounds(p.target_x, p.target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
+        if (!this.beliefs.agents.getTeammateIds().has(agentId)) return JSON.stringify({ error: `Agent ${agentId} is not a known teammate` });
+        const rid = `goto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        return this.runTwoPhaseCommit({
+            label: "Goto", rid,
+            proposeKind: PeerKind.GotoPropose, commitKind: PeerKind.GotoCommit, abortKind: PeerKind.GotoAbort,
+            proposeArgs: { rid, target_x: p.target_x, target_y: p.target_y, reward: p.reward, ttl_seconds: p.ttl_seconds },
+            recipients: [agentId],
+            onCommit: () => {},
+        });
     }
 
     async proposeRendezvous(rawArgs: unknown): Promise<string> {
@@ -118,9 +138,11 @@ export class Coordinator {
         abortKind: Exclude<PeerInjectionKind, "beliefs_report">;
         proposeArgs: Record<string, unknown>;
         onCommit: () => void;
+        /** Subset of peers to address. Defaults to all teammates. */
+        recipients?: string[];
     }): Promise<string> {
         const { label, rid, proposeKind, commitKind, abortKind, proposeArgs, onCommit } = opts;
-        const teammateIds = [...this.beliefs.agents.getTeammateIds()];
+        const teammateIds = opts.recipients ?? [...this.beliefs.agents.getTeammateIds()];
 
         if (teammateIds.length === 0) {
             onCommit();
@@ -199,7 +221,7 @@ export class Coordinator {
 
             this.log.debug(`Collected ${freshReports.size} fresh report(s), running LLM coordinate pass`);
             const geometry = buildTeamGeometry(this.beliefs, freshReports);
-            await this.client.coordinate(freshReports, geometry, this.beliefs, () => void this.runRound());
+            await this.client.coordinate(freshReports, geometry, this.beliefs, () => void this.runRound(), this.getMissionNote());
         } catch (err) {
             this.log.error("Coordination round failed:", err);
         } finally {

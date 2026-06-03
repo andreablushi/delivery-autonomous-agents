@@ -37,6 +37,7 @@ export class LLMClient {
     private readonly ruleStore: RuleStore;
     private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
     private readonly proposeRedLight: (rawArgs: unknown) => Promise<string>;
+    private readonly proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>;
 
     constructor(
         addInjectedIntention: (entry: InjectedIntention) => void,
@@ -45,6 +46,7 @@ export class LLMClient {
         ruleStore: RuleStore,
         proposeRendezvous: (rawArgs: unknown) => Promise<string>,
         proposeRedLight: (rawArgs: unknown) => Promise<string>,
+        proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>,
         agentId?: string,
     ) {
         this.client = new OpenAI({
@@ -61,6 +63,7 @@ export class LLMClient {
         this.ruleStore = ruleStore;
         this.proposeRendezvous = proposeRendezvous;
         this.proposeRedLight = proposeRedLight;
+        this.proposeGoto = proposeGoto;
     }
 
     /**
@@ -148,6 +151,7 @@ export class LLMClient {
             ruleStore: this.ruleStore,
             proposeRendezvous: this.proposeRendezvous,
             proposeRedLight: this.proposeRedLight,
+            proposeGoto: this.proposeGoto,
         };
 
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -167,6 +171,7 @@ export class LLMClient {
         geometry: TeamGeometry,
         beliefs: Readonly<Beliefs>,
         requestTeamStatus: () => void,
+        missionNote = "",
     ): Promise<void> {
         const ctx = {
             beliefs: beliefs as Beliefs,
@@ -176,9 +181,10 @@ export class LLMClient {
             sourceId: "coordinator",
             ruleStore: this.ruleStore,
             requestTeamStatus,
+            proposeGoto: this.proposeGoto,
         };
 
-        const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore);
+        const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote);
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: "system", content: system },
             { role: "user", content: user },

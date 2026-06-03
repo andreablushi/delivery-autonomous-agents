@@ -1,6 +1,6 @@
 import { encode, tryDecode, PeerKind, type PeerInjectionMessage, type PeerInjectionKind } from "../../models/message_injection.js";
 import { applyInjection, type InjectionDeps } from "../../models/apply_injection.js";
-import { evaluateRendezvousVote, evaluateRedLightVote } from "../bdi/desire/scoring/vote.js";
+import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote } from "../bdi/desire/scoring/vote.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
 import type { RuleStore } from "../bdi/desire/rule_store.js";
 import type { InjectedIntention } from "../../models/intentions.js";
@@ -98,6 +98,7 @@ export class Communication {
                     case PeerKind.BeliefsReport:
                     case PeerKind.RendezvousVote:
                     case PeerKind.RedLightVote:
+                    case PeerKind.GotoVote:
                         this.handleCoordinationMessage(senderId, msg);
                         return;
 
@@ -125,6 +126,16 @@ export class Communication {
                             : "";
                         this.log.debug(`red_light_propose from ${senderName}: accept=${accept} (rid=${rid})`);
                         await this.send(senderId, PeerKind.RedLightVote, { rid, accept });
+                        return;
+                    }
+
+                    case PeerKind.GotoPropose: {
+                        const accept = evaluateGotoVote(deps.beliefs, deps.ruleStore, msg.args);
+                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
+                            ? (msg.args as Record<string, unknown>).rid as string
+                            : "";
+                        this.log.debug(`goto_propose from ${senderName}: accept=${accept} (rid=${rid})`);
+                        await this.send(senderId, PeerKind.GotoVote, { rid, accept });
                         return;
                     }
 

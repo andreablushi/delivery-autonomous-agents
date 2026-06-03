@@ -17,4 +17,6 @@ export interface ToolContext {
     proposeRendezvous?: (rawArgs: unknown) => Promise<string>;
     /** Run the two-phase red-light commit protocol; returns a JSON result string. */
     proposeRedLight?: (rawArgs: unknown) => Promise<string>;
+    /** Run the two-phase goto commit protocol for a specific teammate; returns a JSON result string. */
+    proposeGoto?: (agentId: string, rawArgs: unknown) => Promise<string>;
 }

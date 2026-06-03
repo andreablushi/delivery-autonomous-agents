@@ -12,6 +12,8 @@ export class LLMAgent {
     // invoked at tool-call time, well after construction completes.
     private coordinator!: Coordinator;
     private readonly log: Logger;
+    /** Latest mission directive from the filtered emitter; forwarded to each coordination prompt. */
+    private missionNote = "";
 
     constructor(socket: any, agentId?: string, teammateIds?: string[]) {
         this.log = createLogger("llm", agentId);
@@ -25,6 +27,7 @@ export class LLMAgent {
             this.bdi.getRuleStore(),
             rawArgs => this.coordinator.proposeRendezvous(rawArgs),
             rawArgs => this.coordinator.proposeRedLight(rawArgs),
+            (agentId2, rawArgs) => this.coordinator.proposeGoto(agentId2, rawArgs),
             agentId
         );
         this.coordinator = new Coordinator(
@@ -32,15 +35,17 @@ export class LLMAgent {
             comm,
             this.client,
             entry => this.bdi.addInjectedIntention(entry),
+            () => this.missionNote,
         );
         this.coordinator.start();
 
         // Handler for coordination messages from teammates. Forwarded to the coordinator for processing.
         comm.onCoordination((senderId, msg) => this.coordinator.handleInbound(senderId, msg));
-        
+
         // Handler for mission chat messages from the mission emitter. Passed to the LLM client
         comm.onMission((senderId, senderName, content) => {
             if (!this.isValidMessage(senderId, senderName, content)) return;
+            this.missionNote = content;
             this.log.debug(`mission msg from ${senderName} (${senderId}): "${content}"`);
             this.client
                 .processMessage(senderId, senderName, content, this.bdi.getBeliefs())

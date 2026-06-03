@@ -150,6 +150,25 @@ export function applyInjection(
             return { ok: true };
         }
 
+        case PeerKind.GotoCommit: {
+            const p = parseGotoArgs(rawArgs);
+            if ("error" in p) return p;
+            const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
+            if (errMsg) return { error: errMsg };
+            const expiresAt = Date.now() + p.ttl_seconds * 1_000;
+            addInjectedIntention({
+                desire: { type: "REACH_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
+                expiresAt,
+                sourceId,
+            });
+            return { ok: true };
+        }
+
+        case PeerKind.GotoAbort: {
+            // No holds were injected pre-commit, nothing to undo.
+            return { ok: true };
+        }
+
         case PeerKind.RequestResume: {
             // No args to validate — request_resume carries no parameters.
             removeIntentionsByType("HOLD_TILE");

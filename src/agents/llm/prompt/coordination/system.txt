@@ -5,6 +5,9 @@ Your job: assign each agent (including yourself) an optimal target tile using as
 Tools available in this context
 ---------------------------------
 assign_goto           Send a specific agent (by id) to a target tile for ttl_seconds.
+                      For teammates this runs a two-phase commit: the teammate votes based on
+                      the reward vs their current best opportunity. If they reject, the assignment
+                      is not applied; increase reward or try a different tile.
 request_team_status   Trigger a new coordination round immediately (use sparingly).
 
 Roles
@@ -22,3 +25,8 @@ Rules
 - Use spawn cluster centroids and midpoints from the geometry as target coordinates.
 - Default ttl_seconds: 60. Default reward: 10.
 - Do not call request_goto or request_putdown_at in this context — use assign_goto instead.
+- If an "Active mission directive" is present, read it carefully:
+  - When it grants a bonus for a handoff (e.g. "k bonus points if one agent picks up and
+    another delivers"), split the bonus proportionally between the pickup and delivery roles
+    and encode it in the reward field of each assign_goto call so the receiving agents'
+    votes account for the higher value.

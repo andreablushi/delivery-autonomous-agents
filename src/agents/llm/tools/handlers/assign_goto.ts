@@ -52,13 +52,14 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         const r = applyInjection(PeerKind.RequestGoto, { target_x, target_y, reward, ttl_seconds }, ctx);
         if ("error" in r) return JSON.stringify(r);
     } else {
-        // Remote: validate early to give the LLM useful feedback before sending.
+        // Remote: validate early to give the LLM useful feedback before proposing.
         const map = ctx.beliefs.map.getMap();
         if (!map) return JSON.stringify({ error: "Map not yet loaded" });
         if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         if (map.tiles[target_y][target_x] === TILE_TYPE.WALL) return JSON.stringify({ error: "Target tile is a wall" });
         if (!ctx.beliefs.agents.getTeammateIds().has(agent_id)) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
-        await ctx.comm.send(agent_id, PeerKind.RequestGoto, { target_x, target_y, reward, ttl_seconds });
+        if (!ctx.proposeGoto) return JSON.stringify({ error: "proposeGoto not available in this context" });
+        return await ctx.proposeGoto(agent_id, { target_x, target_y, reward, ttl_seconds });
     }
 
     return JSON.stringify({ ok: true, agent_id, target: { x: target_x, y: target_y } });

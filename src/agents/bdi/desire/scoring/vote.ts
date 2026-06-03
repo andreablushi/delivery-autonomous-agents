@@ -2,12 +2,13 @@ import type { Beliefs } from "../../belief/beliefs.js";
 import type { RuleStore } from "../rule_store.js";
 import type { HoldTileDesire, ReachParcelDesire, DeliverParcelDesire } from "../../../../models/desires.js";
 import type { Position } from "../../../../models/position.js";
-import { bfsDistancesFrom } from "../../../../utils/metrics.js";
+import { bfsDistancesFrom, posKey } from "../../../../utils/metrics.js";
 import { MapBeliefs } from "../../belief/modules/map_beliefs.js";
 import { carriedEffectiveValue } from "./utils.js";
 import { scoreReachDesire } from "./reach_parcel.js";
 import { scoreDeliverDesire } from "./deliver_parcel.js";
 import { scoreHoldTile } from "./hold_tile.js";
+import { scoreReachTile } from "./reach_tile.js";
 
 type VoteCtx = {
     me: { id: string; lastPosition: Position };
@@ -74,6 +75,22 @@ function bestCurrentScore(beliefs: Beliefs, ctx: VoteCtx, ruleStore: RuleStore):
 }
 
 /**
+ * Compute the expected total reward lost to parcel decay while standing still for `holdDurationMs`.
+ * Decay is linear: each carried parcel loses 1 reward point per `decayInterval` ms.
+ * Returns the reduction to apply to `carriedValue` (clamped to [0, carriedValue]).
+ */
+function expectedCarriedDecayLoss(
+    carriedCount: number,
+    holdDurationMs: number,
+    decayInterval: number,
+    carriedValue: number,
+): number {
+    if (carriedCount === 0 || decayInterval <= 0) return 0;
+    const decaySteps = Math.floor(holdDurationMs / decayInterval);
+    return Math.min(carriedValue, carriedCount * decaySteps);
+}
+
+/**
  * Evaluate a rendezvous proposal on behalf of a BDI agent.
  *
  * Returns `true` (accept) iff:
@@ -82,7 +99,8 @@ function bestCurrentScore(beliefs: Beliefs, ctx: VoteCtx, ruleStore: RuleStore):
  *      REACH_PARCEL / DELIVER_PARCEL score.
  *
  * Both sides use (value_preserved_or_gained / distance) units, so the comparison is consistent
- * even when the agent carries a stack.
+ * even when the agent carries a stack. The hold's carried value is reduced by the expected
+ * reward decay over the meeting time to price in points lost while waiting.
  */
 export function evaluateRendezvousVote(
     beliefs: Beliefs,
@@ -103,13 +121,26 @@ export function evaluateRendezvousVote(
     const tiles = beliefs.map.allRendezvousTiles(ctx.me.lastPosition, x, y, max_distance);
     if (tiles.length === 0) return false;
 
+    const decayInterval = beliefs.parcels.getSettings()?.reward_decay_interval ?? 0;
+    const movementDuration = beliefs.agents.getSettings()?.movement_duration ?? 500;
+
     let holdScore = 0;
     for (const tile of tiles) {
+        // Meeting time for this tile in steps; convert to ms for decay calc.
+        const distSteps = ctx.meDist.get(posKey(tile)) ?? Infinity;
+        const friendMaxSteps = ctx.friendDists.length > 0
+            ? Math.max(...ctx.friendDists.map(fd => fd.get(posKey(tile)) ?? Infinity))
+            : 0;
+        const meetingSteps = Math.max(distSteps, friendMaxSteps);
+        const holdDurationMs = isFinite(meetingSteps) ? meetingSteps * movementDuration : 0;
+        const decayLoss = expectedCarriedDecayLoss(ctx.carriedCount, holdDurationMs, decayInterval, ctx.carriedValue);
+        const adjustedCarriedValue = ctx.carriedValue - decayLoss;
+
         const hold: HoldTileDesire = {
             type: "HOLD_TILE", target: tile, sourceId: "vote", reward,
             releaseZone: { center: { x, y }, maxDistance: max_distance },
         };
-        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, ctx.friendDists, ctx.carriedValue));
+        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, ctx.friendDists, adjustedCarriedValue));
     }
 
     return holdScore >= bestCurrentScore(beliefs, ctx, ruleStore);
@@ -122,6 +153,9 @@ export function evaluateRendezvousVote(
  *   1. At least one matching tile is reachable, AND
  *   2. The best red-light rate-score across candidate tiles ≥ the agent's current best
  *      REACH_PARCEL / DELIVER_PARCEL score.
+ *
+ * The hold's carried value is reduced by the expected decay over the full TTL to price in
+ * points lost while standing still.
  */
 export function evaluateRedLightVote(
     beliefs: Beliefs,
@@ -144,11 +178,46 @@ export function evaluateRedLightVote(
     const tiles = beliefs.map.allLineTiles(ctx.me.lastPosition, axis, parity);
     if (tiles.length === 0) return false;
 
+    const decayInterval = beliefs.parcels.getSettings()?.reward_decay_interval ?? 0;
+    const holdDurationMs = ttl_seconds * 1_000;
+    const decayLoss = expectedCarriedDecayLoss(ctx.carriedCount, holdDurationMs, decayInterval, ctx.carriedValue);
+    const adjustedCarriedValue = ctx.carriedValue - decayLoss;
+
     let holdScore = 0;
     for (const tile of tiles) {
         const hold: HoldTileDesire = { type: "HOLD_TILE", target: tile, sourceId: "vote", reward };
-        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, ctx.friendDists, ctx.carriedValue));
+        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, ctx.friendDists, adjustedCarriedValue));
     }
 
     return holdScore >= bestCurrentScore(beliefs, ctx, ruleStore);
+}
+
+/**
+ * Evaluate a coordinator goto proposal on behalf of a BDI agent.
+ *
+ * Returns `true` (accept) iff the REACH_TILE score for the proposed target
+ * is at least as high as the agent's current best REACH_PARCEL / DELIVER_PARCEL score.
+ */
+export function evaluateGotoVote(
+    beliefs: Beliefs,
+    ruleStore: RuleStore,
+    rawArgs: unknown,
+): boolean {
+    if (typeof rawArgs !== "object" || rawArgs === null) return false;
+    const obj = rawArgs as Record<string, unknown>;
+    const target_x = typeof obj.target_x === "number" ? obj.target_x : null;
+    const target_y = typeof obj.target_y === "number" ? obj.target_y : null;
+    const reward   = typeof obj.reward   === "number" ? obj.reward   : null;
+    if (target_x === null || target_y === null || reward === null) return false;
+
+    const ctx = buildVoteContext(beliefs, ruleStore);
+    if (!ctx) return false;
+
+    const desire: import("../../../../models/desires.js").ReachTileDesire = {
+        type: "REACH_TILE", target: { x: target_x, y: target_y }, sourceId: "vote", reward,
+        expiresAt: Infinity,
+    };
+    const gotoScore = scoreReachTile(desire, ctx.meDist, beliefs, ctx.carriedValue);
+
+    return gotoScore >= bestCurrentScore(beliefs, ctx, ruleStore);
 }

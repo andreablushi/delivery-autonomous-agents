@@ -6,5 +6,5 @@
 
 --- Your current state ---
 {{context}}
-
+{{missionNote}}
 Assign positions to all agents now.
