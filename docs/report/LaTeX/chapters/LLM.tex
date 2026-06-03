@@ -2,24 +2,19 @@
 \label{sec:llm}
 The LLM layer functions as a thin wrapper around the underlying BDI agent. 
 It interprets high-level textual commands from a mission controller, utilizing tools exposed by the BDI core to inject new desires, 
-adjust scoring rules, or initiate team coordination.
+adjust scoring rules, or initiate team coordination. 
+The mission controller can issue requests that fall into three broad categories: direct navigation goals, persistent behavioural adjustments, and team-level control. 
+Each category is handled through a different mechanism in the BDI core, chosen to integrate naturally with the existing deliberation loop rather than bypassing it.
 
-\subsection{Runtime Tools}
-The LLM is equipped with a suite of tools that allow it to modify the agent's behavior dynamically, without interrupting execution:
-\begin{itemize}[noitemsep]
-  \item \textbf{request\_goto}: Injects a \texttt{REACH\_TILE} desire featuring a configurable reward and expiration timer.
-  \item \textbf{request\_putdown\_at}: Injects a \texttt{DELIVER\_PARCEL} desire directed at a specific tile, complete with an optional bonus reward.
-  \item \textbf{register\_scoring\_rule}: Inserts or updates a rule within the shared \texttt{RuleStore}, directly altering the scoring formulas detailed in Section~\ref{sec:scoring_rules}.
-  \item \textbf{register\_traversal\_penalty}: Applies a soft tile penalty that influences both A* routing and penalized-distance scoring.
-  \item \textbf{request\_rendezvous}: Directs all agents to converge on a joint-optimal holding tile near a target destination, automatically releasing them once the entire team enters the specified zone.
-  \item \textbf{request\_red\_light} / \textbf{request\_green\_light}: Suspends all agents on their nearest odd-row tile, or resumes normal operations.
-  \item \textbf{request\_team\_status}: Forces an immediate coordination round.
-  \item \textbf{reply}: Transmits a textual response back to the mission controller.
-  \item \textbf{calculate}: Evaluates a sandboxed arithmetic expression (this is the only tool that automatically advances the execution loop).
-\end{itemize}
-Any tool that alters agent behavior shares a common injection pathway with the peer-message dispatcher. Consequently, LLM-issued and peer-forwarded commands are subject to identical validation and execution logic.
+\subsection{Adapting Behavior Through Goal Injection}
+The simplest requests are navigation goals: move to a tile, or deliver at a specific location.
+These are translated into desires that enter the BDI intention queue and compete with existing goals through the standard scoring mechanism.
+A \emph{go-to} request creates a \texttt{REACH\_TILE} desire with a configurable reward and expiry time; the reward determines how aggressively the desire competes against parcel collection.
+A \emph{deliver-at} request creates a \texttt{DELIVER\_PARCEL} desire targeting a specific tile, with an optional bonus reward that biases the delivery score for that destination (Section~\ref{sec:scoring_rules}).
 
-\subsection{Adaptive Scoring via Rule Injection}
+All those requests have a limited duration to be executed. The generated desire are made persistent for all the specified TTL, so that they can be continuously re-evaluated and pursued until completion or expiry.
+
+\subsection{Adapting Strategy via Rule Injection}
 \label{sec:scoring_rules}
 The \texttt{RuleStore} maintains a persistent registry of LLM-defined scoring rules.
 Each rule encodes a state condition alongside a linear effect: a multiplier $m$ and an additive offset $a$.
@@ -46,7 +41,10 @@ However, when a positive stack rule is triggered, \texttt{Explore} is elevated t
 Its score is subsequently scaled by the anticipated reward of completing the stack, incentivizing the agent to actively search for missing parcels rather than settling for a premature delivery.
 This behavior emerges naturally from the linear weighting system: the LLM is not required to issue an explicit exploration command, as simply registering a stack rule is sufficient to trigger the shift.
 
-\subsection{Coordination}
+\paragraph{Traversal Penalties:}
+
+
+\subsection{Coordination and Communication}
 \label{sec:coordination}
 
 \paragraph{Peer Communication.}

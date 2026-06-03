@@ -2,11 +2,11 @@ import { stepsTo } from "./navigation/a_star.js";
 import { CollisionManager } from "./collision/collision_manager.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Position } from "../../../models/position.js";
-import type { NavigationDesire } from "../../../models/desires.js";
+import type { DesireType } from "../../../models/desires.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
 
 /** Terminal steps appended to the path for desires that require a game action on arrival. */
-export const TERMINAL_STEP: Partial<Record<NavigationDesire["type"], PlanStep>> = {
+export const TERMINAL_STEP: Partial<Record<DesireType["type"], PlanStep>> = {
     REACH_PARCEL: { kind: "pickup" },
     DELIVER_PARCEL: { kind: "putdown" },
 };
@@ -32,7 +32,7 @@ export class AStarPlanner {
      * @param blockedTile An extra tile to avoid during this search, or null.
      * @returns A Plan, or null if no valid path exists.
      */
-    plan(from: Position, intention: NavigationDesire, blockedTile: Position | null = null): Plan | null {
+    plan(from: Position, intention: DesireType, blockedTile: Position | null = null): Plan | null {
         const steps = stepsTo(this.beliefs, from, intention.target, blockedTile);
         if (!steps) return null;
 

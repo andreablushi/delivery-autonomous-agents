@@ -1,5 +1,5 @@
 import type { Position } from "./position.js";
-import type { NavigationDesire } from "./desires.js";
+import type { DesireType } from "./desires.js";
 import type { LocatedCrate } from "./crate.js";
 
 export type MoveDirection = "up" | "down" | "left" | "right";
@@ -28,5 +28,5 @@ export type Plan = {
     source: PlanSource;
     steps: PlanStep[];
     cursor: number;        // index of the next step to execute
-    target: NavigationDesire; // the navigation desire this plan was built for
+    target: DesireType; // the navigation desire this plan was built for
 };

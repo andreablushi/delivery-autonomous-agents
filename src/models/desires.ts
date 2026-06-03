@@ -34,10 +34,7 @@ export type HoldTileDesire = {
     releaseZone?: { center: Position; maxDistance: number };
 };
 
-// All desires require navigation and always have a `target` position
-export type NavigationDesire = ExploreDesire | ReachParcelDesire | DeliverParcelDesire | ReachTileDesire | HoldTileDesire;
-
-export type DesireType = NavigationDesire;
+export type DesireType = ExploreDesire | ReachParcelDesire | DeliverParcelDesire | ReachTileDesire | HoldTileDesire;
 
 // Grouped map for easier access to desires by type
 export type GeneratedDesires = Map<DesireType["type"], DesireType[]>;

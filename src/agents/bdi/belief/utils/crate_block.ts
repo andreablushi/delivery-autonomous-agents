@@ -2,7 +2,7 @@ import { pathIgnoring, pathThroughPushableCrates } from "../../plan/navigation/a
 import { posKey } from "../../../../utils/metrics.js";
 import type { Beliefs } from "../beliefs.js";
 import type { Position } from "../../../../models/position.js";
-import type { NavigationDesire } from "../../../../models/desires.js";
+import type { DesireType } from "../../../../models/desires.js";
 import type { LocatedCrate } from "../../../../models/crate.js";
 import type { CrateSegment } from "../../../../models/plan.js";
 
@@ -17,7 +17,7 @@ import type { CrateSegment } from "../../../../models/plan.js";
 export function detectCrateBlock(
     beliefs: Beliefs,
     from: Position,
-    desire: NavigationDesire,
+    desire: DesireType,
 ): string[] | null {
     const crates = beliefs.map.getCurrentCrates().flatMap(c =>
         c.lastPosition ? [{ id: c.id, position: c.lastPosition }] : [],
