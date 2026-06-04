@@ -42,7 +42,8 @@ export class Intentions {
         this.injectedIntentions.push(entry);
     }
 
-    /** Set the active cooperation strategy (replaces any previous one). */
+    /** Set the active cooperation strategy. POSITIONING desires are regenerated each cycle, so
+     *  there is no injected state to clean up here. */
     setGameStrategy(strategy: GameStrategy): void {
         this.currentStrategy = strategy;
         this.log.debug(`Game strategy set: ${strategy.strategy}/${strategy.role}` +
@@ -126,7 +127,7 @@ export class Intentions {
         this.pruneStrategy();
         this.pruneInjectedIntentions();
         this.pruneSatisfiedInjectedIntentions(beliefs);
-        const desires = generateDesires(beliefs, this.injectedIntentions);
+        const desires = generateDesires(beliefs, this.injectedIntentions, this.currentStrategy);
 
         this.desireLog.debug(
             `Desires generated — ${[...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none"}`

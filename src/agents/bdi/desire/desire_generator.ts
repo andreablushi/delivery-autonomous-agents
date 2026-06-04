@@ -4,9 +4,16 @@ import type {
     ExploreDesire,
     ReachParcelDesire,
     DeliverParcelDesire,
+    ReachTileDesire,
 } from "../../../models/desires.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
+import type { GameStrategy } from "../../../models/game_strategy.js";
+import { StrategyType } from "../../../models/game_strategy.js";
+import { TILE_TYPE } from "../../../models/tile_type.js";
 import type { Beliefs } from "../belief/beliefs.js";
+
+/** Default reward for a positioning REACH_TILE (modest, so worthwhile parcels still preempt it). */
+const POSITIONING_REWARD = 10;
 
 /**
     * Generates desires based on the current beliefs and injected intentions.
@@ -23,6 +30,7 @@ import type { Beliefs } from "../belief/beliefs.js";
 export function generateDesires(
     beliefs: Beliefs,
     injectedIntentions: readonly InjectedIntention[],
+    strategy: GameStrategy | null = null,
 ): GeneratedDesires {
     const desires: GeneratedDesires = new Map();
 
@@ -33,6 +41,11 @@ export function generateDesires(
     // DELIVER_PARCEL for each delivery tile if the agent is carrying any parcels
     const deliverParcel = generateDeliverDesires(beliefs);
     if (deliverParcel.length > 0) desires.set("DELIVER_PARCEL", deliverParcel);
+
+    // REACH_TILE over the assigned zone for a POSITIONING strategy (regenerated every cycle, never
+    // injected — so it needs no cleanup and re-pulls the agent back if it drifts).
+    const positioning = generatePositioningDesires(beliefs, strategy);
+    if (positioning.length > 0) desires.set("REACH_TILE", positioning);
 
     // EXPLORE desire for each spawn tile as a fallback when no parcels are available
     const explore = generateExploreDesires(beliefs);
@@ -45,6 +58,37 @@ export function generateDesires(
         desires.set(entry.desire.type, bucket);
     }
 
+    return desires;
+}
+
+/**
+ * Generate a REACH_TILE for each in-bounds, non-wall tile within manhattan `maxDistance` of the
+ * POSITIONING strategy's assigned center. A range (not a single tile) so the agent loiters within
+ * its zone instead of ping-ponging one edge; the sorter scores reachable tiles and ignores the rest.
+ * @param beliefs Current beliefs (map for bounds/wall checks).
+ * @param strategy The active GameStrategy, or null.
+ * @returns REACH_TILE desires for the zone, or [] when no POSITIONING strategy is active.
+ */
+function generatePositioningDesires(beliefs: Beliefs, strategy: GameStrategy | null): ReachTileDesire[] {
+    if (!strategy || strategy.strategy !== StrategyType.Positioning) return [];
+    const center = strategy.tiles[0];
+    if (!center) return [];
+    const map = beliefs.map.getMap();
+    if (!map) return [];
+
+    const maxDistance = strategy.maxDistance ?? 1;
+    const reward = strategy.bonus ?? POSITIONING_REWARD;
+    const desires: ReachTileDesire[] = [];
+    for (let dy = -maxDistance; dy <= maxDistance; dy++) {
+        for (let dx = -maxDistance; dx <= maxDistance; dx++) {
+            if (Math.abs(dx) + Math.abs(dy) > maxDistance) continue;
+            const x = center.x + dx;
+            const y = center.y + dy;
+            if (!beliefs.map.checkMapBounds(x, y)) continue;
+            if (map.tiles[y][x] === TILE_TYPE.WALL) continue;
+            desires.push({ type: "REACH_TILE", target: { x, y }, sourceId: "strategy", reward, expiresAt: Infinity });
+        }
+    }
     return desires;
 }
 

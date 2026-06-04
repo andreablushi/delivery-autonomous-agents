@@ -24,8 +24,6 @@ export interface InjectionDeps {
     sourceId: string;
 }
 
-/** Default HOLD_TILE reward for a positioning hold (modest, so good parcels still preempt it). */
-const POSITIONING_HOLD_REWARD = 10;
 /** Default HOLD_TILE reward for a DELIVER_AGENT waiting at the midpoint (committed wait). */
 const DELIVER_HOLD_REWARD = 100;
 
@@ -69,34 +67,26 @@ export function applyInjection(
                 expiresAt,
             });
 
-            // PICKUP_AGENT behaves normally until it grabs a parcel, when it triggers the handshake.
-            if (p.role === StrategyRole.PickupAgent) return { ok: true };
+            // POSITIONING (CAMPER / MIDFIELDER) and PICKUP_AGENT inject nothing here:
+            //  - POSITIONING is driven by REACH_TILE desires regenerated each cycle (desire_generator).
+            //  - PICKUP_AGENT behaves normally until it grabs a parcel, then triggers the handshake.
+            if (p.role !== StrategyRole.DeliverAgent) return { ok: true };
 
+            // DELIVER_AGENT waits near the midpoint with a rendezvous-style hold that auto-releases
+            // once both agents are in the zone (so it can then pick up the dropped parcel).
             const from = beliefs.agents.getCurrentPosition();
             if (!from) return { ok: true }; // strategy stored; no position yet to place a hold
-
             const tiles = beliefs.map.allRendezvousTiles(from, center.x, center.y, p.max_distance);
             if (tiles.length === 0) return { error: "No reachable tile within assigned zone" };
-
             for (const tile of tiles) {
-                if (p.role === StrategyRole.DeliverAgent) {
-                    // Wait near the midpoint; auto-releases once both agents are in the zone (rendezvous-style).
-                    addInjectedIntention({
-                        desire: {
-                            type: "HOLD_TILE", target: tile, sourceId, reward: p.bonus ?? DELIVER_HOLD_REWARD,
-                            releaseZone: { center, maxDistance: p.max_distance },
-                        },
-                        expiresAt,
-                        sourceId,
-                    });
-                } else {
-                    // POSITIONING (CAMPER / MIDFIELDER): hold the assigned tile until the strategy expires.
-                    addInjectedIntention({
-                        desire: { type: "HOLD_TILE", target: tile, sourceId, reward: p.bonus ?? POSITIONING_HOLD_REWARD },
-                        expiresAt,
-                        sourceId,
-                    });
-                }
+                addInjectedIntention({
+                    desire: {
+                        type: "HOLD_TILE", target: tile, sourceId, reward: p.bonus ?? DELIVER_HOLD_REWARD,
+                        releaseZone: { center, maxDistance: p.max_distance },
+                    },
+                    expiresAt,
+                    sourceId,
+                });
             }
             return { ok: true };
         }
