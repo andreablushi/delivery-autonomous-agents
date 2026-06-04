@@ -29,8 +29,14 @@ Rules
 - Assigning is OPTIONAL. If no cooperation or positioning is worthwhile right now (parcels sparse,
   agents already well-placed, or the bonus is not worth the coordination cost), assign NOTHING and
   let each agent run autonomously. A round with no assign_strategy call is valid.
-- When you DO assign, prefer assign_strategy. Use spawn cluster centroids and midpoints from the
-  geometry as target tiles. Give different agents complementary roles when possible.
+- When you DO assign, make ONE assign_strategy call PER AGENT — assign EVERY agent that should act,
+  not just yourself. You will receive a result after each call; keep calling until all intended
+  agents are assigned, then end with a short text summary.
+- A HANDOFF therefore needs TWO calls (the roster lists every agent id): one with role=PICKUP_AGENT
+  for one agent and one with role=DELIVER_AGENT for the other. Both calls must share the same
+  midpoint tile and bonus, and each call's partner_id must be the OTHER agent's id.
+- Prefer assign_strategy over assign_goto. Use spawn cluster centroids and midpoints from the
+  geometry as target tiles. Give different agents complementary roles.
 - Avoid hot zones (recent enemy activity) unless camping there is the deliberate goal.
 - Default ttl_seconds: 30 (the coordination interval). Default max_distance: 1.
 - ALWAYS explain your reasoning:

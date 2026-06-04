@@ -27,6 +27,15 @@ function tryParseTextToolCall(text: string): { name: string; args: unknown } | n
     return null;
 }
 
+/**
+ * In the coordination pass the model emits one tool call per response, so multi-agent assignment
+ * requires looping. Treat assign_goto / assign_strategy as follow-up tools ONLY in the coordinator
+ * context, so the loop continues until the LLM stops assigning (then emits a final rationale text).
+ */
+function isCoordAssign(ctx: import("../tools/context.js").ToolContext, name: string): boolean {
+    return ctx.sourceId === "coordinator" && (name === "assign_goto" || name === "assign_strategy");
+}
+
 export class LLMClient {
     private readonly client: OpenAI;
     private readonly model: string;
@@ -107,7 +116,7 @@ export class LLMClient {
                     this.log.debug(`Text tool call [hop ${hop}]: ${textCall.name}(${JSON.stringify(textCall.args)})`);
                     const result = await executeToolCall(textCall.name, textCall.args, ctx);
                     this.log.debug(`Tool result [hop ${hop}]: ${result}`);
-                    if (!FOLLOWUP_TOOLS.has(textCall.name)) break;
+                    if (!FOLLOWUP_TOOLS.has(textCall.name) && !isCoordAssign(ctx, textCall.name)) break;
                     messages.push({ role: "assistant", content: text });
                     messages.push({ role: "user", content: `Tool result: ${result}` });
                     continue;
@@ -137,7 +146,9 @@ export class LLMClient {
                 const result = await executeToolCall(call.function.name, args, ctx);
                 this.log.debug(`Tool result [hop ${hop}]: ${result}`);
                 messages.push({ role: "tool", tool_call_id: call.id, content: result });
-                if (FOLLOWUP_TOOLS.has(call.function.name)) needsFollowUp = true;
+                // In coordination, assign one agent per hop and loop until the LLM stops — this
+                // model emits a single tool call per response, so parallel calls never happen.
+                if (FOLLOWUP_TOOLS.has(call.function.name) || isCoordAssign(ctx, call.function.name)) needsFollowUp = true;
             }
 
             if (!needsFollowUp) break;

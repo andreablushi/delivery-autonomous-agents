@@ -51,8 +51,11 @@ export function applyInjection(
         case PeerKind.AssignStrategy: {
             const p = parseAssignStrategyArgs(rawArgs);
             if ("error" in p) return p;
-            const errMsg = beliefs.map.validateTargetTile(p.tile_x, p.tile_y);
-            if (errMsg) return { error: errMsg };
+            // The tile is the CENTER of a hold zone, not a step target — it need not be walkable
+            // itself, since allRendezvousTiles (below) snaps to reachable tiles within maxDistance.
+            // Only require it to be in bounds.
+            if (!beliefs.map.getMap()) return { error: "Map not yet loaded" };
+            if (!beliefs.map.checkMapBounds(p.tile_x, p.tile_y)) return { error: "Coordinates out of map bounds" };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             const center = { x: p.tile_x, y: p.tile_y };
 

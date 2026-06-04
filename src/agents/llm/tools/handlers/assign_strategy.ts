@@ -63,8 +63,10 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         if ("error" in r) return JSON.stringify(r);
     } else {
         if (!ctx.beliefs.agents.getTeammateIds().has(agent_id)) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
-        const errMsg = ctx.beliefs.map.validateTargetTile(parsed.tile_x, parsed.tile_y);
-        if (errMsg) return JSON.stringify({ error: errMsg });
+        // The tile is a hold-ZONE center, not a step target — it need not be walkable itself
+        // (allRendezvousTiles snaps to reachable tiles within max_distance). Only require bounds.
+        if (!ctx.beliefs.map.getMap()) return JSON.stringify({ error: "Map not yet loaded" });
+        if (!ctx.beliefs.map.checkMapBounds(parsed.tile_x, parsed.tile_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         await ctx.comm.send(agent_id, PeerKind.AssignStrategy, args);
     }
 
