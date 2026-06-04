@@ -24,11 +24,11 @@
 % ----- Beliefs: Agents -----------------------------------------
 \begin{frame}{Beliefs: Agents}
   \begin{itemize}
-    \item \textbf{Self} — own position and current state
-    \item \textbf{Friends} — latest state per teammate via Tracker
-    \item \textbf{Enemies} — latest state via Tracker; position history via Memory
-    \item \textbf{EnemyPredictor} — estimates each enemy's next position from history
-    \item Spatial heat field — aggregates past enemy observations across the map
+    \item \textbf{Self}: own position and current state
+    \item \textbf{Friends}: latest state per teammate via Tracker
+    \item \textbf{Enemies}: latest state via Tracker; position history via Memory
+    \item \textbf{EnemyPredictor}: estimates each enemy's next position from history
+    \item Spatial heat field: aggregates past enemy observations across the map
   \end{itemize}
 \end{frame}
 
@@ -41,8 +41,8 @@
 \end{frame}
 
 % ----- Beliefs: Map --------------------------------------------
-\begin{frame}{Beliefs: Map --- Safe Zones}
-  Directional Tiles create one-way edges — may trap agents in dead zones
+\begin{frame}{Beliefs: Map - Safe Zones}
+  Directional Tiles create one-way edges, may trap agents in dead zones
   \begin{block}{Safe SCC (Tarjan's algorithm)}
     \begin{itemize}
         \item Map is represented as a directed graph with edges for valid movements;
@@ -68,9 +68,9 @@
 % ----- Desire: Distance Metric ---------------------------------
 \begin{frame}{Desire: Distance Metric}
   \begin{itemize}
-    \item A* search with dynamic tile costs based on beliefs
-    \item Walls and blocked tiles are impassable; crates are high-cost
-    \item Distance $d$ is the total cost of the A* path to the target
+    \item Manhattan distance poorly correlates with actual path;
+    \item BFS from target tile computes true shortest path distance accounting for walls and crates;
+    \item This gives a more accurate heuristic for desire scoring.
   \end{itemize}
 \end{frame}
 
@@ -78,7 +78,7 @@
 \begin{frame}{Desire: ReachParcel}
   \begin{itemize}
     \item Navigate to and collect a visible parcel
-    \item Priority 1 — competes directly with DeliverParcel
+    \item Priority 1: competes directly with DeliverParcel
   \end{itemize}
   \begin{block}{Score}
     \[ S = \frac{r_p + \sum_{c \in C} r_c}{d} \cdot \gamma, \qquad
@@ -86,7 +86,7 @@
     \begin{itemize}
         \item $r_p$: parcel reward;
         \item $\sum_{c \in C} r_c$: value of carried stack;
-        \item $\gamma$: race factor — penalizes parcels where enemies have advantage;
+        \item $\gamma$: race factor that penalizes parcels where enemies have advantage;
     \end{itemize}
   \end{block}
 \end{frame}
@@ -95,7 +95,7 @@
 \begin{frame}{Desire: DeliverParcel}
   \begin{itemize}
     \item Navigate to delivery tile while carrying parcels
-    \item Priority 1 — competes directly with ReachParcel
+    \item Priority 1: competes directly with ReachParcel
   \end{itemize}
   \begin{block}{Score}
     \[ S = \frac{\sum_{c \in C} r_c}{d} \]
@@ -106,7 +106,7 @@
 \begin{frame}{Desire: Explore}
   \begin{itemize}
     \item Seek unvisited spawn tile when no parcels are reachable
-    \item Priority 0 — fallback;
+    \item Priority 0: fallback;
     \item $w$: cluster density;\quad $\tau$: freshness;\quad $h$: enemy heat
   \end{itemize}
   \begin{block}{Score}
@@ -115,14 +115,14 @@
 \end{frame}
 
 % ----- Desire: Explore — Variables ----------------------------
-\begin{frame}{Desire: Explore --- Variables}
+\begin{frame}{Desire: Explore - Variables}
   \begin{block}{Freshness $\tau$}
     \[ \tau = \min\!\left(1,\, \frac{\Delta t}{T_{\text{spawn}}}\right) \]
-    $\Delta t$: time since spawn tile last observed;\quad $T_{\text{spawn}}$: spawn interval
+    $\Delta t$: time since spawn tile last observed; \quad $T_{\text{spawn}}$: spawn interval
   \end{block}
   \begin{block}{Cluster weight $w$}
     \[ w = \sum_{y \in OST} \frac{1}{\delta(x,\,y)+1} \]
-    $OST$: spawn tiles within observation range $R_{\text{obs}}$
+    $OST$: spawn tiles within observation range; \quad $\delta(x, y)$: BFS distance from $x$ to $y$
   \end{block}
   \begin{block}{Enemy heat $h$}
     \[ h = \sum_{e \in E}
@@ -150,11 +150,11 @@
   \begin{columns}
     \column{0.58\textwidth}
       \begin{enumerate}
-        \item \textbf{Detour} — replan with tile as wall;\\
+        \item \textbf{Detour}: replan with tile as wall;\\
               accepted only if extra steps $\leq \Delta_{th}$
-        \item \textbf{Wait} — no viable detour:\\
+        \item \textbf{Wait}: no viable detour:\\
               pause for random duration $\sim \mathcal{U}$
-        \item \textbf{Block \& replan} — after wait expires\\
+        \item \textbf{Block \& replan}: after wait expires\\
               \emph{or} after $L$ repeated invalidations:\\
               mark tile blocked for random TTL, full replan
       \end{enumerate}
