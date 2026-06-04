@@ -4,27 +4,17 @@
     \begin{itemize}
         \item A* fails: no path that avoids crates
         \item Second A* ignoring crates finds a ``ghost'' path
-        \item Crates intersecting that path confirm blockage
-        \item PDDL planner invoked as fallback
+        \item Crates intersecting that path are part of the ``PDDL`` problem instance
     \end{itemize}
 \end{frame}
 
-% ----- PDDL Fallback -------------------------------------------
-\begin{frame}{PDDL Fallback}
-  \begin{columns}
-    \column{0.55\textwidth}
-      \begin{itemize}
-        \item Cluster detected $\to$ PDDL problem built from current beliefs
-        \item Solver finds \texttt{move} + \texttt{push} sequence to reach goal
-        \item Result translated back to agent's action plan
-      \end{itemize}
-    \column{0.42\textwidth}
-      % TODO: populate media/crates/ with frame images, then uncomment:
-      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/crates/frame-}{0}{47}
-      \begin{block}{}
-        \centering\textit{[crate push video]}
-      \end{block}
-  \end{columns}
+% ----- PDDL  -------------------------------------------
+\begin{frame}{PDDL}
+  \begin{itemize}
+    \item Cluster detected $\to$ PDDL problem built from current beliefs
+    \item Solver finds \texttt{move} + \texttt{push} sequence to reach goal
+    \item Result translated back to agent's action plan
+  \end{itemize}
 \end{frame}
 
 % ----- The PDDL Domain -----------------------------------------
@@ -41,27 +31,41 @@
   \end{itemize}
 \end{frame}
 
-% ----- Performance Bottleneck ----------------------------------
-\begin{frame}{Performance Bottleneck}
+% ----- Performance Bottlenecks ----------------------------------
+\begin{frame}{Performance Bottlenecks}
   \begin{itemize}
-    \item PDDL solver too slow for real-time play
-    \item Moved to local solver: eliminated remote API overhead
-    \item Caching fails — agent position changes the cache key
-    \item Trivial position shift $\Rightarrow$ full re-solve of same maneuver
+    \item \textbf{Real-Time Constraints:} The initial PDDL solver integration was too slow to meet the game's strict timing demands.
+    \item \textbf{Identified Issues \& Fixes:}
+    \begin{itemize}
+      \item \emph{API Overhead:} Remote solver calls introduced heavy latency. \textbf{Fix:} Migrated to a local solver instance.
+      \item \emph{Redundant Computation:} Identical crate configurations were being solved repeatedly, but implementing a standard cache was non-trivial.
+    \end{itemize}
+    \item \textbf{The Pivot:} Rather than brute-forcing a complex caching mechanism, we restated the problem to naturally maximize cache hits.
   \end{itemize}
 \end{frame}
 
 % ----- Smart Fix -----------------------------------------------
-\begin{frame}{Smart Fix: Problem Restatement}
-  \begin{block}{Split the journey into three segments}
+\begin{frame}{Optimization: Problem Restatement}
+  \begin{block}{Three-Phase Journey Segmentation}
     \begin{enumerate}
-      \item A* from current position to cluster \emph{entry}
-      \item PDDL through the crate cluster (entry $\to$ exit)
-      \item A* from cluster \emph{exit} to final goal
+      \item \textbf{Approach:} A* pathfinding from the current position to the cluster \emph{entry}.
+      \item \textbf{Manipulation:} PDDL execution solely through the crate cluster (entry $\to$ exit).
+      \item \textbf{Completion:} A* pathfinding from the cluster \emph{exit} to the final goal.
     \end{enumerate}
   \end{block}
-  \begin{itemize}
-    \item PDDL problem anchored to cluster entry tile
-    \item Cache key: $(\text{entry},\, \text{exit},\, \{\text{crate positions}\})$
-  \end{itemize}
+\end{frame}
+
+% ----- Smart Fix (Result) --------------------------------------
+\begin{frame}{Optimization: Problem Restatement}
+  \begin{columns}
+    \column{0.4\textwidth}
+      \begin{itemize}
+        \item \textbf{The Result:} The PDDL problem is now strictly anchored to the cluster entry tile rather than absolute map coordinates.
+        \item \textbf{Simplified Cache Key:} $\langle \text{entry},\, \text{exit},\, \{\text{crate positions}\} \rangle$.
+      \end{itemize}
+    \column{0.55\textwidth}
+      \begin{block}{}
+        \centering\textit{[segmentation result video]}
+      \end{block}
+  \end{columns}
 \end{frame}
