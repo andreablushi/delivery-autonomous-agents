@@ -3,6 +3,7 @@ import type { IOParcel } from "../../../../models/djs.js";
 import type { Position } from "../../../../models/position.js";
 import { Tracker } from "./utils/tracker.js";
 import { ParcelSettings } from "../../../../models/game_configs.js";
+import { config } from "../../../../config.js";
 
 /**
  * Beliefs about parcels in the environment.
@@ -15,6 +16,7 @@ export class ParcelBeliefs {
 
     private lastScoreUpdate = 0;                            // Timestamp of the last score update, used to trigger reward decay
     private lastDecayApplied = new Map<string, number>();   // Per-parcel decay clock: parcelId → timestamp decay last advanced to
+    private recentlyDropped = new Map<string, number>();    // parcelId → expiry epoch ms; suppresses re-pickup after a drop
     
     /**
      * Update parcel settings belief with the latest config info.
@@ -32,8 +34,16 @@ export class ParcelBeliefs {
      * @returns void
      */
     private updateSensedParcels(sensedParcels: IOParcel[]): void {
+        const now = Date.now();
         sensedParcels.forEach(parcel => {
-            // Update the carriedBy field based on whether the parcel is currently believed to be carried by 
+            // Skip parcels this agent recently dropped — prevents re-grabbing a handover stack.
+            const until = this.recentlyDropped.get(parcel.id);
+            if (until !== undefined) {
+                if (until > now) return;                        // still suppressed — do not re-add
+                this.recentlyDropped.delete(parcel.id);        // cooldown expired — allow re-add
+            }
+
+            // Update the carriedBy field based on whether the parcel is currently believed to be carried by
             const carriedBy = parcel.carriedBy !== undefined
                 ? (parcel.carriedBy || null)
                 : (this.carriedByMe.has(parcel.id)
@@ -181,10 +191,12 @@ export class ParcelBeliefs {
      * @returns void
      */
     cleanDeliveredParcels(deliveredParcels: Parcel[]): void {
+        const expiry = Date.now() + config.parcels.droppedCooldownMs;
         for (const parcel of deliveredParcels) {
             this.parcels.delete(parcel.id);
             this.lastDecayApplied.delete(parcel.id);
             this.carriedByMe.delete(parcel.id);
+            this.recentlyDropped.set(parcel.id, expiry);
         }
     }
 }   

@@ -78,4 +78,8 @@ export const config = {
         hotTilesLimit: 5,   // Max hot tiles included in a single belief report
     },
 
+    parcels: {
+        droppedCooldownMs: 5_000, // Ignore parcels this agent just put down, so it doesn't re-grab a handover
+    },
+
 } as const;

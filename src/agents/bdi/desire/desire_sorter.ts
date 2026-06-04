@@ -6,6 +6,7 @@ import type {
     ReachParcelDesire,
     DeliverParcelDesire,
     ReachTileDesire,
+    ParkTileDesire,
     HoldTileDesire,
     GeneratedDesires,
 } from "../../../models/desires.js";
@@ -17,6 +18,7 @@ import { carriedEffectiveValue } from "./scoring/utils.js";
 import { scoreReachDesire } from "./scoring/reach_parcel.js";
 import { scoreDeliverDesire } from "./scoring/deliver_parcel.js";
 import { scoreReachTile } from "./scoring/reach_tile.js";
+import { scoreParkTile } from "./scoring/park_tile.js";
 import { scoreHoldTile } from "./scoring/hold_tile.js";
 import { scoreExplore } from "./scoring/explore.js";
 
@@ -25,10 +27,11 @@ import { scoreExplore } from "./scoring/explore.js";
  * Build the ordered desire queue for all candidates generated this cycle.
  *
  * Priority tiers:
- *   2 — HOLD_TILE with releaseZone (committed rendezvous): non-preemptible once committed.
- *   1 — REACH_PARCEL, DELIVER_PARCEL, REACH_TILE, HOLD_TILE (red-light), and EXPLORE when a
- *       positive stack rule is active and the expected stack reward is positive.
- *   0 — EXPLORE (fallback): always yields to goal desires.
+ *   2   — HOLD_TILE with releaseZone (committed rendezvous): non-preemptible once committed.
+ *   1   — REACH_PARCEL, DELIVER_PARCEL, REACH_TILE, HOLD_TILE (red-light), and EXPLORE when a
+ *         positive stack rule is active and the expected stack reward is positive.
+ *   0.5 — PARK_TILE (LLM-injected station goal): settles on tile, yields to parcels, beats explore.
+ *   0   — EXPLORE (fallback): always yields to goal desires.
  *
  * All tier-1 scores use the same unit — (value preserved/gained) / distance — so desires
  * compete fairly even when the agent is carrying a stack.
@@ -93,6 +96,11 @@ export function getIntentionQueue(
         // preempted by parcels once committed; red-light holds (no releaseZone) stay tier 1.
         const priority = desire.releaseZone ? 2 : 1;
         queue.push({ desire, score: scoreHoldTile(desire, meDist, beliefs, friendDists, carriedValue), priority });
+    }
+
+    const parkTiles = (desires.get("PARK_TILE") ?? []) as ParkTileDesire[];
+    for (const desire of parkTiles) {
+        queue.push({ desire, score: scoreParkTile(desire, meDist, beliefs), priority: 0.5 });
     }
 
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];

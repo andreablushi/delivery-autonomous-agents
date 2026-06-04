@@ -28,6 +28,15 @@ export type ReachTileDesire = {
     reward: number;         // Mock reward used by the sorter
 };
 
+/** A desire to park on a specific tile (navigate there and settle; yields to parcels, beats explore) */
+export type ParkTileDesire = {
+    type: "PARK_TILE";   // Navigate to target tile and settle there until TTL expires or cancelled
+    target: Position;
+    sourceId: string;
+    expiresAt: number;
+    reward: number;      // Priority bias; scored as reward / distance (no carried-value term)
+};
+
 /** A desire to hold a specific tile (navigate there and remain until released)*/
 export type HoldTileDesire = {
     type: "HOLD_TILE";      // Navigate to target tile and remain there until released
@@ -41,7 +50,7 @@ export type HoldTileDesire = {
 };
 
 /** Union type for all possible desire types*/
-export type DesireType = ExploreDesire | ReachParcelDesire | DeliverParcelDesire | ReachTileDesire | HoldTileDesire;
+export type DesireType = ExploreDesire | ReachParcelDesire | DeliverParcelDesire | ReachTileDesire | ParkTileDesire | HoldTileDesire;
 
 /** Maps desire type strings to arrays of corresponding desires (e.g. "EXPLORE" -> ExploreDesire[]) */
 export type GeneratedDesires = Map<DesireType["type"], DesireType[]>;

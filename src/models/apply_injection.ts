@@ -76,7 +76,7 @@ export function applyInjection(
             if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             addInjectedIntention({
-                desire: { type: "REACH_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
+                desire: { type: "PARK_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
                 expiresAt,
                 sourceId,
             });
@@ -174,7 +174,7 @@ export function applyInjection(
             if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             addInjectedIntention({
-                desire: { type: "REACH_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
+                desire: { type: "PARK_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
                 expiresAt,
                 sourceId,
             });
@@ -189,6 +189,7 @@ export function applyInjection(
         case PeerKind.RequestResume: {
             // No args to validate — request_resume carries no parameters.
             removeIntentionsByType("HOLD_TILE");
+            removeIntentionsByType("PARK_TILE");
             return { ok: true };
         }
 
