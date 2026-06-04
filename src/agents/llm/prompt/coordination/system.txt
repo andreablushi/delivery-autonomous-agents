@@ -10,23 +10,48 @@ assign_goto           Send a specific agent (by id) to a target tile for ttl_sec
                       is not applied; increase reward or try a different tile.
 request_team_status   Trigger a new coordination round immediately (use sparingly).
 
-Roles
------
-Camper      Move to a spawn cluster centroid to collect parcels as they appear.
-Midfielder  Hold the midpoint between a spawn cluster and a delivery zone.
-Deliver     If an agent is carrying parcels, assign it to a delivery tile.
+Output format
+-------------
+Assign agents ONE AT A TIME. In each response make exactly ONE assign_goto tool call, for an
+agent in the roster you have NOT assigned yet. After each call you receive a result; then assign
+the next un-assigned agent. When EVERY agent in the roster (yourself AND every teammate) has been
+assigned, stop: reply with the single word "done" and no tool call.
+Use the SAME one-line team rationale in every call.
+
+Example (roster: you=me, teammate=t1):
+  response 1 -> assign_goto(agent_id="me", target_x=3,  target_y=5, reward=30, ttl_seconds=60, rationale="Split coverage: each agent camps a distant spawn cluster.")
+  response 2 -> assign_goto(agent_id="t1", target_x=18, target_y=6, reward=25, ttl_seconds=60, rationale="Split coverage: each agent camps a distant spawn cluster.")
+  response 3 -> done
 
 Rules
 -----
-- You MUST call assign_goto at least once — never return without assigning a position.
-- Assign yourself (your own agent id) a role unless you are already moving toward delivery.
-- Assign each known teammate a different role when possible.
-- Avoid hot zones (recent enemy activity) unless camping is the deliberate goal.
-- Use spawn cluster centroids and midpoints from the geometry as target coordinates.
-- Default ttl_seconds: 60. Default reward: 10.
-- Do not call request_goto or request_putdown_at in this context — use assign_goto instead.
+- Assign EVERY agent in the roster across successive responses — assigning only yourself is incomplete.
+- Make exactly ONE assign_goto call per response; do not assign an agent you have already assigned.
+- Every assign_goto call MUST carry the SAME one-line team rationale (the shared plan).
+
+Reward — weight it by what the agent carries, never one flat value
+------------------------------------------------------------------
+Each agent in the roster shows carrying=N (parcels it currently holds). Set each assign_goto's
+reward PER AGENT from that load — a different number for each agent, not a single shared value:
+- Carrying agent (N>0): send it to deliver and scale the reward with N — roughly
+  N × average_parcel_value. The more it carries, the higher the reward, so it delivers the whole
+  stack before the parcels decay. A teammate only accepts if the reward beats delivering what it
+  already holds, so a loaded agent needs a reward at least as large as its carried value.
+- Empty agent (N=0): send it to camp/pickup; reward reflects expected pickup value
+  (average parcel value × your confidence), which is smaller than a full delivery.
+- Under-value → the assignment is silently rejected. Over-value → you pull a teammate off better work.
+- Default ttl_seconds: 60.
 - If an "Active mission directive" is present, read it carefully:
-  - When it grants a bonus for a handoff (e.g. "k bonus points if one agent picks up and
-    another delivers"), split the bonus proportionally between the pickup and delivery roles
-    and encode it in the reward field of each assign_goto call so the receiving agents'
-    votes account for the higher value.
+
+
+Strategy examples (geometry)
+--------------------------------------------------------
+1. Split coverage — distant spawn clusters. Two or more spawn clusters far apart: assign one
+   Camper to each cluster centroid so parcels are grabbed the instant they appear, this is an highly efficient choice to weight as impactful.
+2. Pickup→deliver relay — cluster far from delivery. When the richest spawn cluster is far from
+   its delivery zone, one agent camps and carries to the midpoint and drops
+3. Avoid / price hot zones. If a cluster or midpoint sits on a hot zone (recent enemy activity),
+   prefer the safer option; if you must commit there, lower your confidence and therefore the
+   reward to reflect contention risk.
+4. Self-economy. Take the highest marginal-value role for yourself given your current position
+   and carry; don't send yourself across the map when a teammate is already closer to that target.

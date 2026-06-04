@@ -97,7 +97,8 @@ export class LLMClient {
                     this.log.debug(`Text tool call [hop ${hop}]: ${textCall.name}(${JSON.stringify(textCall.args)})`);
                     const result = await executeToolCall(textCall.name, textCall.args, ctx);
                     this.log.debug(`Tool result [hop ${hop}]: ${result}`);
-                    if (!FOLLOWUP_TOOLS.has(textCall.name)) break;
+                    const coordAssign = ctx.sourceId === "coordinator" && textCall.name === "assign_goto";
+                    if (!FOLLOWUP_TOOLS.has(textCall.name) && !coordAssign) break;
                     messages.push({ role: "assistant", content: text });
                     messages.push({ role: "user", content: `Tool result: ${result}` });
                     continue;
@@ -122,7 +123,10 @@ export class LLMClient {
                 const result = await executeToolCall(call.function.name, args, ctx);
                 this.log.debug(`Tool result [hop ${hop}]: ${result}`);
                 messages.push({ role: "tool", tool_call_id: call.id, content: result });
-                if (FOLLOWUP_TOOLS.has(call.function.name)) needsFollowUp = true;
+                // In coordination, assign one agent per hop and loop until the LLM stops —
+                // this model emits a single tool call per response, so parallel calls never happen.
+                if (FOLLOWUP_TOOLS.has(call.function.name) ||
+                    (ctx.sourceId === "coordinator" && call.function.name === "assign_goto")) needsFollowUp = true;
             }
 
             if (!needsFollowUp) break;

@@ -60,6 +60,9 @@ export class Coordinator {
         if ("error" in p) return JSON.stringify(p);
         if (!this.beliefs.map.checkMapBounds(p.target_x, p.target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         if (!this.beliefs.agents.getTeammateIds().has(agentId)) return JSON.stringify({ error: `Agent ${agentId} is not a known teammate` });
+        const rationale = typeof (rawArgs as Record<string, unknown>)?.rationale === "string"
+            ? (rawArgs as Record<string, unknown>).rationale as string : "";
+        this.log.debug(`assign_goto → ${agentId} @(${p.target_x},${p.target_y}) reward=${p.reward}: ${rationale}`);
         const rid = `goto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         return this.runTwoPhaseCommit({
             label: "Goto", rid,
@@ -210,8 +213,18 @@ export class Coordinator {
             await this.requestBeliefs();
             const requestedAt = Date.now();
 
-            // Wait for reports to arrive
-            await new Promise<void>(r => setTimeout(r, config.coordination.collectWindowMs));
+            // Wait until every known teammate has replied with a fresh report (or the window
+            // elapses). A blind fixed delay can run the LLM before reports land, leaving the
+            // roster with only "You" — so the LLM never learns teammate ids and self-assigns.
+            const teammateIds = [...this.beliefs.agents.getTeammateIds()];
+            const deadline = requestedAt + config.coordination.collectWindowMs;
+            const haveAllFresh = () => teammateIds.every(id => {
+                const entry = this.reports.get(id);
+                return entry !== undefined && entry.at >= requestedAt;
+            });
+            while (!haveAllFresh() && Date.now() < deadline) {
+                await new Promise<void>(r => setTimeout(r, config.coordination.collectPollMs));
+            }
 
             // Collect only reports that arrived after this request was sent
             const freshReports = new Map<string, BeliefsReport>();
