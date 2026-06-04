@@ -3,6 +3,8 @@ import type { RuleStore } from "../agents/bdi/desire/rule_store.js";
 import type { InjectedIntention } from "./intentions.js";
 import type { DesireType } from "./desires.js";
 import type { ScoringRule } from "./rules.js";
+import type { GameStrategy } from "./game_strategy.js";
+import { StrategyRole } from "./game_strategy.js";
 import { PeerKind } from "./message_injection.js";
 import {
     parseGotoArgs,
@@ -10,6 +12,7 @@ import {
     parseTraversalPenaltyArgs,
     parseRendezvousProposeArgs,
     parseRedLightProposeArgs,
+    parseAssignStrategyArgs,
 } from "./injection_args.js";
 
 export interface InjectionDeps {
@@ -17,8 +20,14 @@ export interface InjectionDeps {
     ruleStore: RuleStore;
     addInjectedIntention: (entry: InjectedIntention) => void;
     removeIntentionsByType: (type: DesireType["type"]) => void;
+    setGameStrategy: (strategy: GameStrategy) => void;
     sourceId: string;
 }
+
+/** Default HOLD_TILE reward for a positioning hold (modest, so good parcels still preempt it). */
+const POSITIONING_HOLD_REWARD = 10;
+/** Default HOLD_TILE reward for a DELIVER_AGENT waiting at the midpoint (committed wait). */
+const DELIVER_HOLD_REWARD = 100;
 
 export type InjectionResult = { ok: true } | { error: string };
 
@@ -35,9 +44,59 @@ export function applyInjection(
     rawArgs: unknown,
     deps: InjectionDeps,
 ): InjectionResult {
-    const { beliefs, ruleStore, addInjectedIntention, removeIntentionsByType, sourceId } = deps;
+    const { beliefs, ruleStore, addInjectedIntention, removeIntentionsByType, setGameStrategy, sourceId } = deps;
 
     switch (tool) {
+
+        case PeerKind.AssignStrategy: {
+            const p = parseAssignStrategyArgs(rawArgs);
+            if ("error" in p) return p;
+            const errMsg = beliefs.map.validateTargetTile(p.tile_x, p.tile_y);
+            if (errMsg) return { error: errMsg };
+            const expiresAt = Date.now() + p.ttl_seconds * 1_000;
+            const center = { x: p.tile_x, y: p.tile_y };
+
+            setGameStrategy({
+                strategy: p.strategy,
+                role: p.role,
+                tiles: [center],
+                maxDistance: p.max_distance,
+                bonus: p.bonus,
+                partnerId: p.partner_id,
+                expiresAt,
+            });
+
+            // PICKUP_AGENT behaves normally until it grabs a parcel, when it triggers the handshake.
+            if (p.role === StrategyRole.PickupAgent) return { ok: true };
+
+            const from = beliefs.agents.getCurrentPosition();
+            if (!from) return { ok: true }; // strategy stored; no position yet to place a hold
+
+            const tiles = beliefs.map.allRendezvousTiles(from, center.x, center.y, p.max_distance);
+            if (tiles.length === 0) return { error: "No reachable tile within assigned zone" };
+
+            for (const tile of tiles) {
+                if (p.role === StrategyRole.DeliverAgent) {
+                    // Wait near the midpoint; auto-releases once both agents are in the zone (rendezvous-style).
+                    addInjectedIntention({
+                        desire: {
+                            type: "HOLD_TILE", target: tile, sourceId, reward: p.bonus ?? DELIVER_HOLD_REWARD,
+                            releaseZone: { center, maxDistance: p.max_distance },
+                        },
+                        expiresAt,
+                        sourceId,
+                    });
+                } else {
+                    // POSITIONING (CAMPER / MIDFIELDER): hold the assigned tile until the strategy expires.
+                    addInjectedIntention({
+                        desire: { type: "HOLD_TILE", target: tile, sourceId, reward: p.bonus ?? POSITIONING_HOLD_REWARD },
+                        expiresAt,
+                        sourceId,
+                    });
+                }
+            }
+            return { ok: true };
+        }
 
         case PeerKind.RequestGoto: {
             const p = parseGotoArgs(rawArgs);

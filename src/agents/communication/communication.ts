@@ -1,10 +1,12 @@
 import { encode, tryDecode, PeerKind, type PeerInjectionMessage, type PeerInjectionKind } from "../../models/message_injection.js";
 import { applyInjection, type InjectionDeps } from "../../models/apply_injection.js";
-import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote } from "../bdi/desire/scoring/vote.js";
+import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote, evaluateHandshakeVote } from "../bdi/desire/scoring/vote.js";
+import { StrategyRole } from "../../models/game_strategy.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
 import type { RuleStore } from "../bdi/desire/rule_store.js";
 import type { InjectedIntention } from "../../models/intentions.js";
 import type { DesireType } from "../../models/desires.js";
+import type { GameStrategy } from "../../models/game_strategy.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 
@@ -14,6 +16,8 @@ export type IncomingDeps = {
     ruleStore: RuleStore;
     addInjectedIntention: (e: InjectedIntention) => void;
     removeIntentionsByType: (t: DesireType["type"]) => void;
+    setGameStrategy: (s: GameStrategy) => void;
+    getGameStrategy: () => GameStrategy | null;
 };
 
 /**
@@ -139,12 +143,51 @@ export class Communication {
                         return;
                     }
 
+                    case PeerKind.HandshakePropose: {
+                        // DELIVER_AGENT side: decide whether to wait for this handover.
+                        const accept = evaluateHandshakeVote(deps.beliefs, deps.ruleStore, msg.args);
+                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
+                            ? (msg.args as Record<string, unknown>).rid as string
+                            : "";
+                        this.log.debug(`handshake_propose from ${senderName}: accept=${accept} (rid=${rid})`);
+                        await this.send(senderId, PeerKind.HandshakeVote, { rid, accept });
+                        return;
+                    }
+
+                    case PeerKind.HandshakeVote: {
+                        // PICKUP_AGENT side: on accept, inject the midpoint drop (DELIVER_PARCEL @ midpoint).
+                        const accept = (msg.args as Record<string, unknown>).accept === true;
+                        this.log.debug(`handshake_vote from ${senderName}: accept=${accept}`);
+                        if (!accept) return; // rejected — keep delivering solo
+
+                        const strategy = deps.getGameStrategy();
+                        if (!strategy || strategy.role !== StrategyRole.PickupAgent || strategy.partnerId !== senderId) return;
+                        const midpoint = strategy.tiles[0];
+                        if (!midpoint) return;
+
+                        const reward = strategy.bonus && strategy.bonus > 0 ? strategy.bonus : 200;
+                        const injDeps: InjectionDeps = {
+                            beliefs: deps.beliefs,
+                            ruleStore: deps.ruleStore,
+                            addInjectedIntention: deps.addInjectedIntention,
+                            removeIntentionsByType: deps.removeIntentionsByType,
+                            setGameStrategy: deps.setGameStrategy,
+                            sourceId: senderId,
+                        };
+                        const result = applyInjection(PeerKind.RequestPutdownAt,
+                            { target_x: midpoint.x, target_y: midpoint.y, reward, ttl_seconds: 60 }, injDeps);
+                        if ("error" in result) this.log.warn(`handover drop injection failed:`, result.error);
+                        else this.log.debug(`handover accepted — midpoint drop @(${midpoint.x},${midpoint.y}) reward=${reward}`);
+                        return;
+                    }
+
                     default: {
                         const injDeps: InjectionDeps = {
                             beliefs: deps.beliefs,
                             ruleStore: deps.ruleStore,
                             addInjectedIntention: deps.addInjectedIntention,
                             removeIntentionsByType: deps.removeIntentionsByType,
+                            setGameStrategy: deps.setGameStrategy,
                             sourceId: senderId,
                         };
                         const result = applyInjection(msg.tool, msg.args, injDeps);

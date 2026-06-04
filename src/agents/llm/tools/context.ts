@@ -1,6 +1,7 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { DesireType } from "../../../models/desires.js";
+import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/desire/rule_store.js";
 
@@ -8,6 +9,8 @@ export interface ToolContext {
     beliefs: Beliefs;
     addInjectedIntention: (entry: InjectedIntention) => void;
     removeIntentionsByType: (type: DesireType["type"]) => void;
+    setGameStrategy: (strategy: GameStrategy) => void;
+    getGameStrategy: () => GameStrategy | null;
     comm: Communication;
     sourceId: string;
     ruleStore: RuleStore;

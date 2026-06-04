@@ -1,6 +1,7 @@
 import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../desire/rule_store.js";
 import type { DesireType, HoldTileDesire } from "../../../models/desires.js";
+import type { GameStrategy } from "../../../models/game_strategy.js";
 import { manhattanDistance } from "../../../utils/metrics.js";
 import type { IntentionQueue, InjectedIntention } from "../../../models/intentions.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
@@ -17,6 +18,8 @@ export class Intentions {
     private intentionsQueue: IntentionQueue = [];
     // List of injected intentions from external sources (e.g. LLM, peer agents) that should be merged into the generated desires each cycle, with expiration.
     private injectedIntentions: InjectedIntention[] = [];
+    // Active cooperation directive assigned by the coordination LLM. At most one; pruned by TTL.
+    private currentStrategy: GameStrategy | null = null;
     private readonly desireLog: Logger;
     private readonly log: Logger;
 
@@ -39,6 +42,23 @@ export class Intentions {
         this.injectedIntentions.push(entry);
     }
 
+    /** Set the active cooperation strategy (replaces any previous one). */
+    setGameStrategy(strategy: GameStrategy): void {
+        this.currentStrategy = strategy;
+        this.log.debug(`Game strategy set: ${strategy.strategy}/${strategy.role}` +
+            (strategy.partnerId ? ` partner=${strategy.partnerId}` : ""));
+    }
+
+    /** Returns the active cooperation strategy, or null if none. */
+    getGameStrategy(): GameStrategy | null {
+        return this.currentStrategy;
+    }
+
+    /** Clear the active cooperation strategy. */
+    clearGameStrategy(): void {
+        this.currentStrategy = null;
+    }
+
     /**
      * Removes expired injected intentions from the list.
      * Should be called at the start of each deliberation cycle before rebuilding the intention queue.
@@ -46,6 +66,14 @@ export class Intentions {
     private pruneInjectedIntentions(): void {
         const now = Date.now();
         this.injectedIntentions = this.injectedIntentions.filter(e => e.expiresAt === undefined || e.expiresAt > now);
+    }
+
+    /** Drop the active strategy once its TTL has elapsed, returning the agent to autonomous behaviour. */
+    private pruneStrategy(): void {
+        if (this.currentStrategy?.expiresAt !== undefined && this.currentStrategy.expiresAt <= Date.now()) {
+            this.log.debug(`Game strategy expired: ${this.currentStrategy.strategy}/${this.currentStrategy.role}`);
+            this.currentStrategy = null;
+        }
     }
 
     /**
@@ -71,6 +99,12 @@ export class Intentions {
                 const allInside = inZone(pos) && friends.every(f => inZone(f.lastPosition!));
                 return !allInside; // drop when everyone is in zone
             }
+            if (e.desire.type === "DELIVER_PARCEL") {
+                // Injected midpoint-drop (the handover): once nothing is carried, the drop is done — clear it.
+                const me = beliefs.agents.getCurrentMe();
+                const stillCarrying = me ? beliefs.parcels.getCarriedByAgent(me.id).length > 0 : true;
+                return stillCarrying;
+            }
             return true;
         });
         if (this.injectedIntentions.length !== before) {
@@ -89,6 +123,7 @@ export class Intentions {
      * @param ruleStore Active scoring rules, forwarded to the generator (for pre-filtering) and sorter (for scoring).
      */
     update(beliefs: Beliefs, ruleStore: RuleStore): void {
+        this.pruneStrategy();
         this.pruneInjectedIntentions();
         this.pruneSatisfiedInjectedIntentions(beliefs);
         const desires = generateDesires(beliefs, this.injectedIntentions);

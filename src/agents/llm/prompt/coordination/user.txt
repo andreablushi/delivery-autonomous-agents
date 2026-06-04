@@ -7,4 +7,4 @@
 --- Your current state ---
 {{context}}
 {{missionNote}}
-Assign positions to all agents now.
+Decide now: assign strategies via assign_strategy (with a rationale), or reply explaining why no assignment is needed.

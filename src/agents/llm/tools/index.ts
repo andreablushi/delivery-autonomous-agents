@@ -10,6 +10,7 @@ import * as requestGreenLight from "./handlers/request_green_light.js";
 import * as reply from "./handlers/reply.js";
 import * as calculate from "./handlers/calculate.js";
 import * as assignGoto from "./handlers/assign_goto.js";
+import * as assignStrategy from "./handlers/assign_strategy.js";
 import * as requestTeamStatus from "./handlers/request_team_status.js";
 
 export type { ToolContext };
@@ -30,6 +31,7 @@ const modules: Record<string, ToolModule> = {
     reply,
     calculate,
     assign_goto: assignGoto,
+    assign_strategy: assignStrategy,
     request_team_status: requestTeamStatus,
 };
 

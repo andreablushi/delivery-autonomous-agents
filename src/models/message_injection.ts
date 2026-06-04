@@ -22,6 +22,9 @@ export const PeerKind = {
     RequestBeliefs:           "request_beliefs",
     BeliefsReport:            "beliefs_report",
     PositionBeacon:           "position_beacon",
+    AssignStrategy:           "assign_strategy",
+    HandshakePropose:         "handshake_propose",
+    HandshakeVote:            "handshake_vote",
 } as const;
 /** Type representing the valid peer-injection message kinds. */
 export type PeerInjectionKind = typeof PeerKind[keyof typeof PeerKind];

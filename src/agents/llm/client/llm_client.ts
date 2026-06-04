@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
+import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/desire/rule_store.js";
 import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
@@ -33,15 +34,20 @@ export class LLMClient {
     private readonly promptLog: Logger;
     private readonly addInjectedIntention: (entry: InjectedIntention) => void;
     private readonly removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
+    private readonly setGameStrategy: (strategy: GameStrategy) => void;
+    private readonly getGameStrategy: () => GameStrategy | null;
     private readonly comm: Communication;
     private readonly ruleStore: RuleStore;
     private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
     private readonly proposeRedLight: (rawArgs: unknown) => Promise<string>;
     private readonly proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>;
+    private readonly coordLog: Logger;
 
     constructor(
         addInjectedIntention: (entry: InjectedIntention) => void,
         removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
+        setGameStrategy: (strategy: GameStrategy) => void,
+        getGameStrategy: () => GameStrategy | null,
         comm: Communication,
         ruleStore: RuleStore,
         proposeRendezvous: (rawArgs: unknown) => Promise<string>,
@@ -59,11 +65,14 @@ export class LLMClient {
         this.promptLog = createLogger("llm-prompt", agentId);
         this.addInjectedIntention = addInjectedIntention;
         this.removeIntentionsByType = removeIntentionsByType;
+        this.setGameStrategy = setGameStrategy;
+        this.getGameStrategy = getGameStrategy;
         this.comm = comm;
         this.ruleStore = ruleStore;
         this.proposeRendezvous = proposeRendezvous;
         this.proposeRedLight = proposeRedLight;
         this.proposeGoto = proposeGoto;
+        this.coordLog = createLogger("coordination", agentId);
     }
 
     /**
@@ -72,6 +81,7 @@ export class LLMClient {
     private async runHops(
         messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
         ctx: import("../tools/context.js").ToolContext,
+        onNoToolText?: (text: string) => void,
     ): Promise<void> {
         for (let hop = 0; hop < config.llm.maxHops; hop++) {
             this.log.debug(`LLM call, hop ${hop}...`);
@@ -101,6 +111,11 @@ export class LLMClient {
                     messages.push({ role: "assistant", content: text });
                     messages.push({ role: "user", content: `Tool result: ${result}` });
                     continue;
+                }
+                if (onNoToolText) {
+                    // Coordination: the model declined to assign — log its rationale, don't broadcast.
+                    onNoToolText(text);
+                    break;
                 }
                 this.log.debug(`No tool calls — sending model text as chat reply`);
                 await executeToolCall("reply", { text: text.slice(0, config.llm.replyMaxChars) }, ctx);
@@ -146,6 +161,8 @@ export class LLMClient {
             beliefs: beliefs as Beliefs,
             addInjectedIntention: this.addInjectedIntention,
             removeIntentionsByType: this.removeIntentionsByType,
+            setGameStrategy: this.setGameStrategy,
+            getGameStrategy: this.getGameStrategy,
             comm: this.comm,
             sourceId: senderId,
             ruleStore: this.ruleStore,
@@ -177,10 +194,14 @@ export class LLMClient {
             beliefs: beliefs as Beliefs,
             addInjectedIntention: this.addInjectedIntention,
             removeIntentionsByType: this.removeIntentionsByType,
+            setGameStrategy: this.setGameStrategy,
+            getGameStrategy: this.getGameStrategy,
             comm: this.comm,
             sourceId: "coordinator",
             ruleStore: this.ruleStore,
             requestTeamStatus,
+            proposeRendezvous: this.proposeRendezvous,
+            proposeRedLight: this.proposeRedLight,
             proposeGoto: this.proposeGoto,
         };
 
@@ -190,6 +211,6 @@ export class LLMClient {
             { role: "user", content: user },
         ];
         this.log.debug("Running coordination pass");
-        await this.runHops(messages, ctx);
+        await this.runHops(messages, ctx, text => this.coordLog.debug(`coordination rationale (no assignment): ${text}`));
     }
 }

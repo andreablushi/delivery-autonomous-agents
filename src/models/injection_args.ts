@@ -1,3 +1,5 @@
+import { StrategyType, StrategyRole } from "./game_strategy.js";
+
 /** Coerce string-encoded numbers to actual numbers; leave all other values untouched. */
 function coerceNum(v: unknown): unknown {
     return typeof v === "string" && v.trim() !== "" ? Number(v) : v;
@@ -222,4 +224,88 @@ export function parseTraversalPenaltyArgs(json: unknown): TraversalPenaltyArgs |
     if (typeof target_y !== "number" || !Number.isInteger(target_y)) return { error: "target_y must be an integer" };
     if (typeof cost !== "number" || cost < 0 || cost > 1000) return { error: "cost must be a number in [0, 1000]" };
     return { id: obj.id, target_x, target_y, cost };
+}
+
+
+/** Arguments for `assign_strategy` (the `agent_id`/`rationale` fields are handled by the tool handler). */
+export type AssignStrategyArgs = {
+    strategy: StrategyType;
+    role: StrategyRole;
+    tile_x: number;
+    tile_y: number;
+    max_distance: number;
+    ttl_seconds: number;
+    bonus?: number;
+    partner_id?: string;
+};
+
+const STRATEGY_TYPES: ReadonlySet<string> = new Set(Object.values(StrategyType));
+const STRATEGY_ROLES: ReadonlySet<string> = new Set(Object.values(StrategyRole));
+
+export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+
+    if (typeof obj.strategy !== "string" || !STRATEGY_TYPES.has(obj.strategy))
+        return { error: `strategy must be one of: ${[...STRATEGY_TYPES].join(", ")}` };
+    if (typeof obj.role !== "string" || !STRATEGY_ROLES.has(obj.role))
+        return { error: `role must be one of: ${[...STRATEGY_ROLES].join(", ")}` };
+
+    const tile_x       = coerceNum(obj.tile_x);
+    const tile_y       = coerceNum(obj.tile_y);
+    const max_distance = coerceNum(obj.max_distance);
+    const ttl_seconds  = coerceNum(obj.ttl_seconds);
+    const bonus        = coerceNum(obj.bonus);
+    if (typeof tile_x !== "number" || !Number.isInteger(tile_x)) return { error: "tile_x must be an integer" };
+    if (typeof tile_y !== "number" || !Number.isInteger(tile_y)) return { error: "tile_y must be an integer" };
+    if (typeof max_distance !== "number" || !Number.isInteger(max_distance) || max_distance < 0 || max_distance > 10)
+        return { error: "max_distance must be an integer in [0, 10]" };
+    if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
+        return { error: "ttl_seconds must be an integer in [5, 120]" };
+    if (bonus !== undefined && (typeof bonus !== "number" || bonus < 0))
+        return { error: "bonus must be a non-negative number" };
+
+    const partner_id = typeof obj.partner_id === "string" && obj.partner_id.trim() !== "" ? obj.partner_id : undefined;
+    if (obj.strategy === StrategyType.Handoff && partner_id === undefined)
+        return { error: "partner_id is required for HANDOFF strategy" };
+
+    return {
+        strategy: obj.strategy as StrategyType,
+        role: obj.role as StrategyRole,
+        tile_x, tile_y, max_distance, ttl_seconds,
+        bonus: bonus as number | undefined,
+        partner_id,
+    };
+}
+
+
+/** Wire args for `handshake_propose` (PICKUP_AGENT → DELIVER_AGENT after a real pickup). */
+export type HandshakeProposeArgs = {
+    rid: string;
+    midpoint_x: number;
+    midpoint_y: number;
+    max_distance: number;
+    carried_value: number;
+    carried_count: number;
+    bonus: number;
+};
+
+export function parseHandshakeProposeArgs(json: unknown): HandshakeProposeArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
+    const midpoint_x   = coerceNum(obj.midpoint_x);
+    const midpoint_y   = coerceNum(obj.midpoint_y);
+    const max_distance = coerceNum(obj.max_distance);
+    const carried_value = coerceNum(obj.carried_value);
+    const carried_count = coerceNum(obj.carried_count);
+    const bonus        = coerceNum(obj.bonus);
+    if (typeof midpoint_x !== "number" || !Number.isInteger(midpoint_x)) return { error: "midpoint_x must be an integer" };
+    if (typeof midpoint_y !== "number" || !Number.isInteger(midpoint_y)) return { error: "midpoint_y must be an integer" };
+    if (typeof max_distance !== "number" || !Number.isInteger(max_distance) || max_distance < 0 || max_distance > 10)
+        return { error: "max_distance must be an integer in [0, 10]" };
+    if (typeof carried_value !== "number" || carried_value < 0) return { error: "carried_value must be a non-negative number" };
+    if (typeof carried_count !== "number" || !Number.isInteger(carried_count) || carried_count < 0) return { error: "carried_count must be a non-negative integer" };
+    if (typeof bonus !== "number" || bonus < 0) return { error: "bonus must be a non-negative number" };
+    return { rid: obj.rid, midpoint_x, midpoint_y, max_distance, carried_value, carried_count, bonus };
 }

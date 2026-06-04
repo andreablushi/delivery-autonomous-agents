@@ -56,7 +56,7 @@ export const config = {
     },
 
     coordination: {
-        intervalMs: 30_000,     // How often the LLM coordinator runs a team assignment round
+        intervalMs: 10_000,     // How often the LLM coordinator runs a team assignment round
         collectWindowMs: 750,   // Time to wait for belief reports before running the LLM pass
         cooldownMs: 5_000,      // Minimum gap between coordination rounds
         hotZonesLimit: 5,       // Max hot zones kept when merging teammate reports

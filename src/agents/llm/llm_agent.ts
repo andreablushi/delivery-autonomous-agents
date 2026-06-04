@@ -23,6 +23,8 @@ export class LLMAgent {
         this.client = new LLMClient(
             entry => this.bdi.addInjectedIntention(entry),
             type => this.bdi.removeIntentionsByType(type),
+            strategy => this.bdi.setGameStrategy(strategy),
+            () => this.bdi.getGameStrategy(),
             comm,
             this.bdi.getRuleStore(),
             rawArgs => this.coordinator.proposeRendezvous(rawArgs),

@@ -193,6 +193,49 @@ export function evaluateRedLightVote(
 }
 
 /**
+ * Evaluate a handshake proposal on behalf of the DELIVER_AGENT.
+ *
+ * The PICKUP_AGENT (proposer) just grabbed a stack worth `carried_value` and offers to hand it
+ * over at the midpoint for an extra `bonus`. We accept iff receiving the handoff is at least as
+ * good as our own current best opportunity: the gain `(carried_value + bonus)` is scored as a
+ * HOLD_TILE at the midpoint (meeting-time rate, accounting for both agents' travel) and compared
+ * to our best REACH_PARCEL / DELIVER_PARCEL score. The whole carried stack is weighted, not a
+ * single parcel.
+ */
+export function evaluateHandshakeVote(
+    beliefs: Beliefs,
+    ruleStore: RuleStore,
+    rawArgs: unknown,
+): boolean {
+    if (typeof rawArgs !== "object" || rawArgs === null) return false;
+    const obj = rawArgs as Record<string, unknown>;
+    const x = typeof obj.midpoint_x === "number" ? obj.midpoint_x : null;
+    const y = typeof obj.midpoint_y === "number" ? obj.midpoint_y : null;
+    const max_distance = typeof obj.max_distance === "number" ? obj.max_distance : null;
+    const carried_value = typeof obj.carried_value === "number" ? obj.carried_value : null;
+    const bonus = typeof obj.bonus === "number" ? obj.bonus : null;
+    if (x === null || y === null || max_distance === null || carried_value === null || bonus === null) return false;
+
+    const ctx = buildVoteContext(beliefs, ruleStore);
+    if (!ctx) return false;
+
+    const tiles = beliefs.map.allRendezvousTiles(ctx.me.lastPosition, x, y, max_distance);
+    if (tiles.length === 0) return false;
+
+    const gain = carried_value + bonus;
+    let holdScore = 0;
+    for (const tile of tiles) {
+        const hold: HoldTileDesire = {
+            type: "HOLD_TILE", target: tile, sourceId: "vote", reward: gain,
+            releaseZone: { center: { x, y }, maxDistance: max_distance },
+        };
+        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, ctx.friendDists, ctx.carriedValue));
+    }
+
+    return holdScore >= bestCurrentScore(beliefs, ctx, ruleStore);
+}
+
+/**
  * Evaluate a coordinator goto proposal on behalf of a BDI agent.
  *
  * Returns `true` (accept) iff the REACH_TILE score for the proposed target
