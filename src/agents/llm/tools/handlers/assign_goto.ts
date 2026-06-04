@@ -3,16 +3,15 @@ import type { ToolContext } from "../context.js";
 import { TILE_TYPE } from "../../../../models/tile_type.js";
 import { parseGotoArgs, type GotoArgs } from "../../../../models/injection_args.js";
 
-type AssignGotoArgs = { agent_id: string; rationale: string } & GotoArgs;
+type AssignGotoArgs = { agent_id: string } & GotoArgs;
 
 function parseAssignGotoArgs(json: unknown): AssignGotoArgs | { error: string } {
     if (typeof json !== "object" || json === null) return { error: "args must be an object" };
     const obj = json as Record<string, unknown>;
     if (typeof obj.agent_id !== "string" || obj.agent_id.trim() === "") return { error: "agent_id must be a non-empty string" };
-    if (typeof obj.rationale !== "string" || obj.rationale.trim() === "") return { error: "rationale must be a non-empty string" };
     const rest = parseGotoArgs(json);
     if ("error" in rest) return rest;
-    return { agent_id: obj.agent_id, rationale: obj.rationale, ...rest };
+    return { agent_id: obj.agent_id, ...rest };
 }
 import { applyInjection } from "../../../../models/apply_injection.js";
 import { PeerKind } from "../../../../models/message_injection.js";
@@ -30,9 +29,8 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
                 target_y:    { type: "integer", description: "Y coordinate of the target tile." },
                 reward:      { type: "integer", description: "Reward value for this goal (default: 10)." },
                 ttl_seconds: { type: "integer", description: "How many seconds this goal stays active (5–120, default: 60)." },
-                rationale:   { type: "string",  description: "One-line strategic justification: which role, why this tile, and how you weighed expected value against confidence." },
             },
-            required: ["agent_id", "target_x", "target_y", "reward", "ttl_seconds", "rationale"],
+            required: ["agent_id", "target_x", "target_y", "reward", "ttl_seconds"],
         },
     },
 };
@@ -46,7 +44,7 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     const parsed = parseAssignGotoArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
 
-    const { agent_id, target_x, target_y, reward, ttl_seconds, rationale } = parsed;
+    const { agent_id, target_x, target_y, reward, ttl_seconds } = parsed;
 
     const me = ctx.beliefs.agents.getCurrentMe();
     if (agent_id === me?.id) {
@@ -61,7 +59,7 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
         if (map.tiles[target_y][target_x] === TILE_TYPE.WALL) return JSON.stringify({ error: "Target tile is a wall" });
         if (!ctx.beliefs.agents.getTeammateIds().has(agent_id)) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
         if (!ctx.proposeGoto) return JSON.stringify({ error: "proposeGoto not available in this context" });
-        return await ctx.proposeGoto(agent_id, { target_x, target_y, reward, ttl_seconds, rationale });
+        return await ctx.proposeGoto(agent_id, { target_x, target_y, reward, ttl_seconds });
     }
 
     return JSON.stringify({ ok: true, agent_id, target: { x: target_x, y: target_y } });
