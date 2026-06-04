@@ -30,6 +30,7 @@ export class LLMAgent {
             rawArgs => this.coordinator.proposeRendezvous(rawArgs),
             rawArgs => this.coordinator.proposeRedLight(rawArgs),
             (agentId2, rawArgs) => this.coordinator.proposeGoto(agentId2, rawArgs),
+            (posture, opts) => this.coordinator.assignPosture(posture, opts ?? {}),
             agentId
         );
         this.coordinator = new Coordinator(
@@ -37,6 +38,7 @@ export class LLMAgent {
             comm,
             this.client,
             entry => this.bdi.addInjectedIntention(entry),
+            strategy => this.bdi.setGameStrategy(strategy),
             () => this.missionNote,
         );
         this.coordinator.start();

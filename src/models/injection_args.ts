@@ -237,6 +237,9 @@ export type AssignStrategyArgs = {
     ttl_seconds: number;
     bonus?: number;
     partner_id?: string;
+    /** HANDOFF/PICKUP_AGENT: spawn-cluster centroid to camp; tile_x/y remains the drop midpoint. */
+    pickup_zone_x?: number;
+    pickup_zone_y?: number;
 };
 
 const STRATEGY_TYPES: ReadonlySet<string> = new Set(Object.values(StrategyType));
@@ -269,12 +272,22 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
     if (obj.strategy === StrategyType.Handoff && partner_id === undefined)
         return { error: "partner_id is required for HANDOFF strategy" };
 
+    const pickup_zone_x = coerceNum(obj.pickup_zone_x);
+    const pickup_zone_y = coerceNum(obj.pickup_zone_y);
+    const hasPickupZone = pickup_zone_x !== undefined && pickup_zone_y !== undefined;
+    if (hasPickupZone && (typeof pickup_zone_x !== "number" || !Number.isInteger(pickup_zone_x)))
+        return { error: "pickup_zone_x must be an integer" };
+    if (hasPickupZone && (typeof pickup_zone_y !== "number" || !Number.isInteger(pickup_zone_y)))
+        return { error: "pickup_zone_y must be an integer" };
+
     return {
         strategy: obj.strategy as StrategyType,
         role: obj.role as StrategyRole,
         tile_x, tile_y, max_distance, ttl_seconds,
         bonus: bonus as number | undefined,
         partner_id,
+        pickup_zone_x: hasPickupZone ? pickup_zone_x as number : undefined,
+        pickup_zone_y: hasPickupZone ? pickup_zone_y as number : undefined,
     };
 }
 

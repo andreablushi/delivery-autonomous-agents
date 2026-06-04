@@ -26,8 +26,15 @@ export type StrategyRole = typeof StrategyRole[keyof typeof StrategyRole];
 export type GameStrategy = {
     strategy: StrategyType;
     role: StrategyRole;
-    /** POSITIONING: the hold tile. HANDOFF: the midpoint. */
+    /** POSITIONING: the hold tile. HANDOFF: the midpoint (drop/meeting point). */
     tiles: Position[];
+    /**
+     * HANDOFF/PICKUP_AGENT only: the spawn-cluster centroid to camp while collecting parcels.
+     * When set, the agent generates REACH_TILE desires around this center (not tiles[0]) and
+     * zone-aware parcel scoring uses this as the zone center. tiles[0] still holds the midpoint
+     * used for the handshake drop.
+     */
+    pickupZoneCenter?: Position;
     /** Hold-zone radius around the assigned tile (Manhattan). */
     maxDistance: number;
     /** Cross-agent delivery bonus used by the handshake heuristic and drop priority. */

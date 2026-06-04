@@ -38,7 +38,12 @@ import { scoreExplore } from "./scoring/explore.js";
  * @param ruleStore Active scoring rules; applied when scoring REACH_PARCEL, DELIVER_PARCEL, and EXPLORE.
  * @returns The ordered desire queue, or an empty array if no candidates are available.
  */
-export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, ruleStore: RuleStore): IntentionQueue {
+export function getIntentionQueue(
+    desires: GeneratedDesires,
+    beliefs: Beliefs,
+    ruleStore: RuleStore,
+    zone: { center: Position; maxDistance: number } | null = null,
+): IntentionQueue {
     const queue: IntentionQueue = [];
 
     const me = beliefs.agents.getCurrentMe();
@@ -71,7 +76,7 @@ export function getIntentionQueue(desires: GeneratedDesires, beliefs: Beliefs, r
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];
 
     for (const desire of reaches) {
-        queue.push({ desire, score: scoreReachDesire(desire, beliefs, meDist, enemyDists, ruleStore, carriedValue, carriedCount), priority: 1 });
+        queue.push({ desire, score: scoreReachDesire(desire, beliefs, meDist, enemyDists, ruleStore, carriedValue, carriedCount, zone), priority: 1 });
     }
     for (const desire of delivers) {
         queue.push({ desire, score: scoreDeliverDesire(desire, beliefs, meDist, ruleStore, carriedValue, carriedCount), priority: 1 });

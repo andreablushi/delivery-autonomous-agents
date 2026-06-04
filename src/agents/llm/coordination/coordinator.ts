@@ -4,9 +4,14 @@ import { PeerKind, type BeliefsReport, type PeerInjectionMessage, type PeerInjec
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { LLMClient } from "../client/llm_client.js";
 import { parseRendezvousArgs, parseRedLightArgs, parseGotoArgs } from "../../../models/injection_args.js";
-import { buildTeamGeometry } from "./geometry.js";
+import { buildTeamGeometry, type TeamGeometry } from "./geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
+import { StrategyType, StrategyRole, type GameStrategy } from "../../../models/game_strategy.js";
+import { bfsDistancesFrom, manhattanDistance, posKey } from "../../../utils/metrics.js";
+import { MapBeliefs } from "../../bdi/belief/modules/map_beliefs.js";
+import type { Position } from "../../../models/position.js";
+import { buildRendezvousHolds, buildHolds } from "../../cooperation/holds.js";
 
 /**
  * Owns the team-coordination loop for the LLM agent.
@@ -22,6 +27,10 @@ export class Coordinator {
     private readonly votes = new Map<string, { rid: string; accept: boolean; at: number }>();
     private coordinating = false;
     private lastRound = 0;
+    /** Geometry computed in the last coordination round — used by assignPosture. */
+    private lastGeometry: TeamGeometry | null = null;
+    /** Fresh reports collected in the last coordination round — used by assignPosture. */
+    private lastReports: Map<string, BeliefsReport> = new Map();
     private readonly log: Logger;
 
     constructor(
@@ -29,6 +38,7 @@ export class Coordinator {
         private readonly comm: Communication,
         private readonly client: LLMClient,
         private readonly addInjectedIntention: (entry: InjectedIntention) => void,
+        private readonly setGameStrategy: (strategy: GameStrategy) => void,
         private readonly getMissionNote: () => string = () => "",
     ) {
         this.log = createLogger("coordination");
@@ -76,24 +86,20 @@ export class Coordinator {
         if (!this.beliefs.map.checkMapBounds(p.x, p.y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         const from = this.beliefs.agents.getCurrentPosition();
         if (!from) return JSON.stringify({ error: "Agent position not yet known" });
-        const selfTiles = this.beliefs.map.allRendezvousTiles(from, p.x, p.y, p.max_distance);
-        if (selfTiles.length === 0) return JSON.stringify({ error: "No reachable tile within rendezvous zone for self" });
+        const center = { x: p.x, y: p.y };
         const rid = `rdv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const selfHolds = buildRendezvousHolds(this.beliefs as Beliefs, from, center, p.max_distance, p.reward, {
+            releaseZone: { center, maxDistance: p.max_distance },
+            rendezvousId: rid,
+            sourceId: "coordinator",
+        });
+        if (selfHolds.length === 0) return JSON.stringify({ error: "No reachable tile within rendezvous zone for self" });
         return this.runTwoPhaseCommit({
             label: "Rendezvous", rid,
             proposeKind: PeerKind.RendezvousPropose, commitKind: PeerKind.RendezvousCommit, abortKind: PeerKind.RendezvousAbort,
             proposeArgs: { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward },
             onCommit: () => {
-                for (const tile of selfTiles) {
-                    this.addInjectedIntention({
-                        desire: {
-                            type: "HOLD_TILE", target: tile, sourceId: "coordinator", reward: p.reward,
-                            releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
-                            rendezvousId: rid,
-                        },
-                        sourceId: "coordinator",
-                    });
-                }
+                for (const hold of selfHolds) this.addInjectedIntention(hold);
             },
         });
     }
@@ -103,7 +109,7 @@ export class Coordinator {
         if ("error" in p) return JSON.stringify(p);
         const from = this.beliefs.agents.getCurrentPosition();
         if (!from) return JSON.stringify({ error: "Agent position not yet known" });
-        const selfTiles = this.beliefs.map.allLineTiles(from, p.axis, p.parity);
+        const selfTiles = (this.beliefs as Beliefs).map.allLineTiles(from, p.axis, p.parity);
         if (selfTiles.length === 0) return JSON.stringify({ error: "No matching tile reachable for self" });
         const rid = `rl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         return this.runTwoPhaseCommit({
@@ -112,13 +118,8 @@ export class Coordinator {
             proposeArgs: { rid, reward: p.reward, ttl_seconds: p.ttl_seconds, axis: p.axis, parity: p.parity },
             onCommit: () => {
                 const expiresAt = Date.now() + p.ttl_seconds * 1_000;
-                for (const tile of selfTiles) {
-                    this.addInjectedIntention({
-                        desire: { type: "HOLD_TILE", target: tile, sourceId: "coordinator", reward: p.reward },
-                        expiresAt,
-                        sourceId: "coordinator",
-                    });
-                }
+                const holds = buildHolds(selfTiles, p.reward, { sourceId: "coordinator", expiresAt });
+                for (const hold of holds) this.addInjectedIntention(hold);
             },
         });
     }
@@ -221,12 +222,306 @@ export class Coordinator {
 
             this.log.debug(`Collected ${freshReports.size} fresh report(s), running LLM coordinate pass`);
             const geometry = buildTeamGeometry(this.beliefs, freshReports);
+            // Stash for use by assignPosture (called synchronously inside client.coordinate).
+            this.lastGeometry = geometry;
+            this.lastReports = freshReports;
             await this.client.coordinate(freshReports, geometry, this.beliefs, () => void this.runRound(), this.getMissionNote());
         } catch (err) {
             this.log.error("Coordination round failed:", err);
         } finally {
             this.coordinating = false;
         }
+    }
+
+    // ─── Deterministic posture assignment ────────────────────────────────────
+
+    /**
+     * Deterministically assign all agents to anchor zones based on the chosen posture.
+     * Called from the `set_team_posture` tool handler inside a coordinate() pass.
+     *
+     * Postures:
+     *   SPREAD  — each agent → nearest distinct spawn cluster centroid (HANDOFF/PICKUP_AGENT +
+     *             DELIVER_AGENT pair so the handshake path fires when the zone empties).
+     *   MIDFIELD — each agent → nearest distinct midpoint (POSITIONING/MIDFIELDER, self-deliver).
+     *   HANDOFF — one PICKUP_AGENT (autonomous pickup) + one DELIVER_AGENT at shared midpoint.
+     *   NONE    — no assignment; active strategies lapse on their TTL.
+     */
+    async assignPosture(posture: string, opts: { bonus?: number } = {}): Promise<string> {
+        if (posture === "NONE") {
+            this.log.debug("assignPosture: NONE — strategies will lapse on TTL");
+            return JSON.stringify({ ok: true, posture: "NONE" });
+        }
+
+        if (!this.lastGeometry) return JSON.stringify({ error: "No geometry available — wait for the first coordination round" });
+
+        const map = this.beliefs.map.getMap();
+        if (!map) return JSON.stringify({ error: "Map not yet loaded" });
+
+        // TTL = coordination interval + 2s margin to survive timing jitter between rounds.
+        const ttlSeconds = Math.min(120, Math.ceil(config.coordination.intervalMs / 1000) + 2);
+
+        // Build roster: self + teammates that reported a position this round.
+        const me = this.beliefs.agents.getCurrentMe();
+        const myPos = this.beliefs.agents.getCurrentPosition();
+        type RosterEntry = { id: string; pos: Position; bfs: Map<string, number> };
+
+        const walkable = (from: Position, to: Position) =>
+            MapBeliefs.isStaticWalkable(map.tiles, map.width, map.height, from, to);
+
+        const roster: RosterEntry[] = [];
+        if (me && myPos) roster.push({ id: me.id, pos: myPos, bfs: bfsDistancesFrom(myPos, walkable) });
+        for (const [id, report] of this.lastReports) {
+            if (report.pos) {
+                roster.push({ id, pos: report.pos, bfs: bfsDistancesFrom(report.pos, walkable) });
+            }
+        }
+
+        if (roster.length === 0) return JSON.stringify({ error: "No agents with known positions" });
+
+        if (posture === "SPREAD")   return this.assignSpread(roster, ttlSeconds, opts.bonus);
+        if (posture === "MIDFIELD") return this.assignMidfield(roster, ttlSeconds);
+        if (posture === "HANDOFF")  return this.assignHandoff(roster, ttlSeconds, opts.bonus);
+
+        return JSON.stringify({ error: `Unknown posture: ${posture}` });
+    }
+
+    /**
+     * Anchor value = base (e.g. spawn tileCount) minus penalty from hot zones within radius 3.
+     * Higher value → more attractive anchor for greedy matching.
+     */
+    private anchorValue(anchor: Position, baseValue: number): number {
+        const hotZones = this.lastGeometry?.hotZones ?? [];
+        const heatPenalty = hotZones
+            .filter(z => manhattanDistance(anchor, z) <= 3)
+            .reduce((s, z) => s + z.heat, 0);
+        return baseValue - heatPenalty;
+    }
+
+    /**
+     * Greedy max-weight bipartite matching: each agent gets at most one anchor.
+     * Score for pair (a, b) = anchor.value − 0.5 * BFS-distance(a→b).
+     * Returns assignments in greedy order (best score first).
+     */
+    private greedyMatch(
+        agents: Array<{ id: string; bfs: Map<string, number> }>,
+        anchors: Array<{ pos: Position; value: number }>,
+    ): Array<{ agentId: string; anchor: { pos: Position; value: number }; dist: number }> {
+        const remAgents = agents.map((a, i) => ({ i, a }));
+        const remAnchors = [...anchors.map((a, j) => ({ j, a }))];
+        const result: Array<{ agentId: string; anchor: { pos: Position; value: number }; dist: number }> = [];
+
+        while (remAgents.length > 0 && remAnchors.length > 0) {
+            let best = -Infinity, ba = 0, bb = 0;
+            for (let a = 0; a < remAgents.length; a++) {
+                for (let b = 0; b < remAnchors.length; b++) {
+                    const dist = remAgents[a].a.bfs.get(posKey(remAnchors[b].a.pos)) ?? Infinity;
+                    const score = remAnchors[b].a.value - 0.5 * dist;
+                    if (score > best) { best = score; ba = a; bb = b; }
+                }
+            }
+            const { a: agent } = remAgents[ba];
+            const { a: anchor } = remAnchors[bb];
+            const dist = agent.bfs.get(posKey(anchor.pos)) ?? Infinity;
+            result.push({ agentId: agent.id, anchor, dist });
+            remAgents.splice(ba, 1);
+            remAnchors.splice(bb, 1);
+        }
+        return result;
+    }
+
+    /**
+     * SPREAD: pair each agent with a distinct spawn cluster centroid using HANDOFF/PICKUP_AGENT +
+     * one DELIVER_AGENT at the best midpoint.  When only 1 agent is available, assign it CAMPER.
+     * When 2+ agents, agent closest to spawn → PICKUP, other → DELIVER at midpoint.
+     */
+    private async assignSpread(
+        roster: Array<{ id: string; pos: Position; bfs: Map<string, number> }>,
+        ttlSeconds: number,
+        bonus?: number,
+    ): Promise<string> {
+        const geometry = this.lastGeometry!;
+        const spawnAnchors = geometry.spawnClusters.map(c => ({
+            pos: c.centroid,
+            value: this.anchorValue(c.centroid, c.tileCount),
+        }));
+        if (spawnAnchors.length === 0) return JSON.stringify({ error: "No spawn clusters for SPREAD" });
+
+        // Pick best midpoint for the deliver side.
+        const bestMidpoint = geometry.midpoints.length > 0
+            ? geometry.midpoints.reduce((best, m) => {
+                const va = this.anchorValue(m, 1);
+                const vb = this.anchorValue(best, 1);
+                return va > vb ? m : best;
+            })
+            : null;
+
+        if (roster.length === 1 || !bestMidpoint) {
+            // Solo or no midpoint: pure POSITIONING/CAMPER at best spawn cluster.
+            const [[match]] = [this.greedyMatch(roster, spawnAnchors.slice(0, 1))];
+            if (!match) return JSON.stringify({ error: "No match found" });
+            const r = await this.emitStrategyAssignment(match.agentId, {
+                strategy: StrategyType.Positioning, role: StrategyRole.Camper,
+                tile_x: match.anchor.pos.x, tile_y: match.anchor.pos.y,
+                max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
+            });
+            this.log.debug(`SPREAD(solo): ${match.agentId}→camper(${match.anchor.pos.x},${match.anchor.pos.y}): ${r}`);
+            return JSON.stringify({ ok: true, posture: "SPREAD", assignments: [r] });
+        }
+
+        // Match closest agent to best spawn cluster → PICKUP_AGENT; other → DELIVER_AGENT.
+        const [pickupMatch] = this.greedyMatch(roster, spawnAnchors.slice(0, 1));
+        if (!pickupMatch) return JSON.stringify({ error: "Could not assign PICKUP_AGENT" });
+        const deliverAgent = roster.find(a => a.id !== pickupMatch.agentId);
+        if (!deliverAgent) return JSON.stringify({ error: "No remaining agent for DELIVER_AGENT" });
+
+        const results: string[] = [];
+
+        // PICKUP_AGENT: tile = shared midpoint (used for handshake drop), pickupZone = spawn centroid.
+        results.push(await this.emitStrategyAssignment(pickupMatch.agentId, {
+            strategy: StrategyType.Handoff, role: StrategyRole.PickupAgent,
+            tile_x: bestMidpoint.x, tile_y: bestMidpoint.y,
+            pickup_zone_x: pickupMatch.anchor.pos.x, pickup_zone_y: pickupMatch.anchor.pos.y,
+            max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
+            bonus, partner_id: deliverAgent.id,
+        }));
+
+        // DELIVER_AGENT: holds near midpoint waiting for the handshake.
+        results.push(await this.emitStrategyAssignment(deliverAgent.id, {
+            strategy: StrategyType.Handoff, role: StrategyRole.DeliverAgent,
+            tile_x: bestMidpoint.x, tile_y: bestMidpoint.y,
+            max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
+            bonus, partner_id: pickupMatch.agentId,
+        }));
+
+        this.log.debug(`SPREAD: ${results.join(" | ")}`);
+        return JSON.stringify({ ok: true, posture: "SPREAD", assignments: results });
+    }
+
+    /** MIDFIELD: each agent → nearest distinct midpoint, POSITIONING/MIDFIELDER, self-delivers. */
+    private async assignMidfield(
+        roster: Array<{ id: string; pos: Position; bfs: Map<string, number> }>,
+        ttlSeconds: number,
+    ): Promise<string> {
+        const geometry = this.lastGeometry!;
+        if (geometry.midpoints.length === 0) return JSON.stringify({ error: "No midpoints for MIDFIELD" });
+        const anchors = geometry.midpoints.map(m => ({ pos: m, value: this.anchorValue(m, 1) }));
+        const matches = this.greedyMatch(roster, anchors);
+        const results: string[] = [];
+        for (const { agentId, anchor } of matches) {
+            results.push(await this.emitStrategyAssignment(agentId, {
+                strategy: StrategyType.Positioning, role: StrategyRole.Midfielder,
+                tile_x: anchor.pos.x, tile_y: anchor.pos.y,
+                max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
+            }));
+        }
+        this.log.debug(`MIDFIELD: ${results.join(" | ")}`);
+        return JSON.stringify({ ok: true, posture: "MIDFIELD", assignments: results });
+    }
+
+    /**
+     * HANDOFF: one autonomous PICKUP_AGENT + one DELIVER_AGENT at the best midpoint.
+     * Requires at least 2 agents.
+     */
+    private async assignHandoff(
+        roster: Array<{ id: string; pos: Position; bfs: Map<string, number> }>,
+        ttlSeconds: number,
+        bonus?: number,
+    ): Promise<string> {
+        if (roster.length < 2) return JSON.stringify({ error: "HANDOFF requires at least 2 agents" });
+        const geometry = this.lastGeometry!;
+
+        const spawnAnchors = geometry.spawnClusters.map(c => ({
+            pos: c.centroid,
+            value: this.anchorValue(c.centroid, c.tileCount),
+        }));
+        const bestMidpoint = geometry.midpoints.length > 0
+            ? geometry.midpoints.reduce((best, m) =>
+                this.anchorValue(m, 1) > this.anchorValue(best, 1) ? m : best)
+            : null;
+        if (!bestMidpoint) return JSON.stringify({ error: "No midpoints for HANDOFF" });
+
+        // Agent closer to the best spawn cluster → PICKUP (collects autonomously); other → DELIVER.
+        const pickupAnchors = spawnAnchors.length > 0 ? spawnAnchors.slice(0, 1) : [{ pos: bestMidpoint, value: 1 }];
+        const [pickupMatch] = this.greedyMatch(roster, pickupAnchors);
+        if (!pickupMatch) return JSON.stringify({ error: "Could not assign PICKUP_AGENT" });
+        const deliverAgent = roster.find(a => a.id !== pickupMatch.agentId);
+        if (!deliverAgent) return JSON.stringify({ error: "No remaining agent for DELIVER_AGENT" });
+
+        const results: string[] = [];
+
+        // PICKUP_AGENT: tile = shared midpoint (handshake drop point); no pickupZone (autonomous).
+        results.push(await this.emitStrategyAssignment(pickupMatch.agentId, {
+            strategy: StrategyType.Handoff, role: StrategyRole.PickupAgent,
+            tile_x: bestMidpoint.x, tile_y: bestMidpoint.y,
+            max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
+            bonus, partner_id: deliverAgent.id,
+        }));
+
+        // DELIVER_AGENT: holds near midpoint.
+        results.push(await this.emitStrategyAssignment(deliverAgent.id, {
+            strategy: StrategyType.Handoff, role: StrategyRole.DeliverAgent,
+            tile_x: bestMidpoint.x, tile_y: bestMidpoint.y,
+            max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
+            bonus, partner_id: pickupMatch.agentId,
+        }));
+
+        this.log.debug(`HANDOFF: ${results.join(" | ")}`);
+        return JSON.stringify({ ok: true, posture: "HANDOFF", assignments: results });
+    }
+
+    /**
+     * Apply an AssignStrategy to a specific agent.
+     * Self → apply locally via setGameStrategy (+ HOLD_TILE for DELIVER_AGENT).
+     * Teammate → send via comm.
+     */
+    private async emitStrategyAssignment(
+        agentId: string,
+        args: {
+            strategy: StrategyType; role: StrategyRole;
+            tile_x: number; tile_y: number; max_distance: number; ttl_seconds: number;
+            bonus?: number; partner_id?: string;
+            pickup_zone_x?: number; pickup_zone_y?: number;
+        },
+    ): Promise<string> {
+        const me = this.beliefs.agents.getCurrentMe();
+        if (agentId === me?.id) {
+            this.applyLocalStrategy(args);
+            return JSON.stringify({ ok: true, agentId, role: args.role });
+        }
+        const wireArgs: Record<string, unknown> = { ...args };
+        await this.comm.send(agentId, PeerKind.AssignStrategy, wireArgs);
+        return JSON.stringify({ ok: true, agentId, role: args.role });
+    }
+
+    /**
+     * Mirror of apply_injection.ts AssignStrategy case, but called locally by the coordinator.
+     * Calls setGameStrategy and, for DELIVER_AGENT, injects the HOLD_TILE rendezvous desires.
+     */
+    private applyLocalStrategy(args: {
+        strategy: StrategyType; role: StrategyRole;
+        tile_x: number; tile_y: number; max_distance: number; ttl_seconds: number;
+        bonus?: number; partner_id?: string;
+        pickup_zone_x?: number; pickup_zone_y?: number;
+    }): void {
+        const expiresAt = Date.now() + args.ttl_seconds * 1_000;
+        const center = { x: args.tile_x, y: args.tile_y };
+        const pickupZoneCenter = (args.pickup_zone_x !== undefined && args.pickup_zone_y !== undefined)
+            ? { x: args.pickup_zone_x, y: args.pickup_zone_y }
+            : undefined;
+
+        this.setGameStrategy({
+            strategy: args.strategy,
+            role: args.role,
+            tiles: [center],
+            pickupZoneCenter,
+            maxDistance: args.max_distance,
+            bonus: args.bonus,
+            partnerId: args.partner_id,
+            expiresAt,
+        });
+
+        // Desires (REACH_TILE disk + handshake holds) are injected by desire_generator and
+        // HandshakeManager — nothing additional to inject here.
     }
 
     /** Start the periodic coordination interval. */

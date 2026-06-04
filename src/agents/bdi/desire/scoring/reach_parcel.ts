@@ -1,7 +1,7 @@
 import type { Beliefs } from "../../belief/beliefs.js";
 import type { RuleStore } from "../rule_store.js";
 import type { ReachParcelDesire } from "../../../../models/desires.js";
-import { posKey } from "../../../../utils/metrics.js";
+import { posKey, manhattanDistance } from "../../../../utils/metrics.js";
 import { penalizedDistance } from "./utils.js";
 
 /**
@@ -10,6 +10,10 @@ import { penalizedDistance } from "./utils.js";
  * so the score is on the same scale as DELIVER_PARCEL and non-parcel goals.
  * Falls back to 0 when the parcel is no longer available, unreachable, effective score ≤ 0, or
  * an enemy can reach it faster.
+ *
+ * When `zone` is provided (active POSITIONING/PICKUP_AGENT strategy), a zone-proximity factor
+ * penalises parcels outside the assigned zone: factor = 1/(1 + excess tiles beyond maxDistance).
+ * Parcels inside the zone are unaffected (factor = 1). Gate is strict — no zone means factor = 1.
  */
 export function scoreReachDesire(
     desire: ReachParcelDesire,
@@ -19,6 +23,7 @@ export function scoreReachDesire(
     ruleStore: RuleStore,
     carriedValue: number,
     carriedCount: number,
+    zone: { center: { x: number; y: number }; maxDistance: number } | null = null,
 ): number {
     const desireParcel = beliefs.parcels.getAvailableParcels().find(
         p => p.lastPosition &&
@@ -47,5 +52,12 @@ export function scoreReachDesire(
         raceFactor = Math.min(1, closestEnemyDist / distancePickup);
     }
 
-    return (effectiveScore / penalizedDistance(distancePickup, desire.target, beliefs)) * raceFactor;
+    let zoneFactor = 1;
+    if (zone) {
+        const distFromCenter = manhattanDistance(desire.target, zone.center);
+        const excess = Math.max(0, distFromCenter - zone.maxDistance);
+        zoneFactor = 1 / (1 + excess);
+    }
+
+    return (effectiveScore / penalizedDistance(distancePickup, desire.target, beliefs)) * raceFactor * zoneFactor;
 }

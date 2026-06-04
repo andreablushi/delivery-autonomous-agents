@@ -2,9 +2,7 @@ import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
 import type { InjectedIntention } from "../../models/intentions.js";
 import type { DesireType } from "../../models/desires.js";
 import type { GameStrategy } from "../../models/game_strategy.js";
-import { StrategyRole } from "../../models/game_strategy.js";
-import { PeerKind } from "../../models/message_injection.js";
-import { carriedEffectiveValue } from "./desire/scoring/utils.js";
+import { HandshakeManager } from "../cooperation/handshake.js";
 import { Beliefs } from "./belief/beliefs.js";
 import { RuleStore } from "./desire/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
@@ -27,9 +25,9 @@ export class BDIAgent {
     private intentions: Intentions;
     private executor: Executor;
     private comm: Communication;
+    private handshakeManager: HandshakeManager;
     private perceiveLog;
     private deliberateLog;
-    private cooperationLog;
 
     constructor(
         socket: any,
@@ -40,16 +38,24 @@ export class BDIAgent {
         this.socket = socket;
         this.perceiveLog = createLogger("perceive", agentId);
         this.deliberateLog = createLogger("deliberate", agentId);
-        this.cooperationLog = createLogger("coordination", agentId);
         this.beliefs = new Beliefs(agentId, teammateIds);
         this.ruleStore = new RuleStore();
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId,
-            () => this.tryInitiateHandshake());
+            () => this.handshakeManager.tick()); // re-check handshake immediately after a pickup
         this.comm = commFactory
             ? commFactory(socket, this.beliefs, agentId)
             : new Communication(socket, this.beliefs, agentId);
+        this.handshakeManager = new HandshakeManager(
+            this.beliefs,
+            this.ruleStore,
+            (toId, tool, args) => this.comm.send(toId, tool as Parameters<typeof this.comm.send>[1], args),
+            entry => this.addInjectedIntention(entry),
+            predicate => this.intentions.removeInjectedIntentions(predicate),
+            () => this.getGameStrategy(),
+            agentId,
+        );
         this.comm.start({
             beliefs: this.beliefs,
             ruleStore: this.ruleStore,
@@ -57,6 +63,7 @@ export class BDIAgent {
             removeIntentionsByType: type => this.removeIntentionsByType(type),
             setGameStrategy: strategy => this.setGameStrategy(strategy),
             getGameStrategy: () => this.getGameStrategy(),
+            handleHandshake: (senderId, tool, args) => this.handshakeManager.handleInbound(senderId, tool, args),
         });
 
         this.socket.once('controller', (status: string, agent: { id: string; name: string; teamId: string; teamName: string; score: number }) => {
@@ -121,35 +128,6 @@ export class BDIAgent {
         this.intentions.clearGameStrategy();
     }
 
-    /**
-     * Called after a successful pickup. If a HANDOFF/PICKUP_AGENT strategy is active, propose a
-     * handshake to the partner so it can decide whether to wait for the handover at the midpoint.
-     */
-    private tryInitiateHandshake(): void {
-        const strategy = this.intentions.getGameStrategy();
-        if (!strategy || strategy.role !== StrategyRole.PickupAgent || !strategy.partnerId) return;
-
-        const me = this.beliefs.agents.getCurrentMe();
-        if (!me) return;
-        const carried = this.beliefs.parcels.getCarriedByAgent(me.id);
-        if (carried.length === 0) return;
-
-        const midpoint = strategy.tiles[0];
-        if (!midpoint) return;
-
-        const rid = `hs-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        const args = {
-            rid,
-            midpoint_x: midpoint.x,
-            midpoint_y: midpoint.y,
-            max_distance: strategy.maxDistance,
-            carried_value: carriedEffectiveValue(carried, this.ruleStore),
-            carried_count: carried.length,
-            bonus: strategy.bonus ?? 0,
-        };
-        this.cooperationLog.debug(`Initiating handshake with ${strategy.partnerId} (rid=${rid}, carried_value=${args.carried_value}, bonus=${args.bonus})`);
-        void this.comm.send(strategy.partnerId, PeerKind.HandshakePropose, args);
-    }
 
     /**
      * Expose the communication module for external use (e.g. by LLMAgent to register hooks).
@@ -205,7 +183,7 @@ export class BDIAgent {
     deliberate(): void {
         this.intentions.update(this.beliefs, this.ruleStore);
         this.deliberateLog.debug("Intention selected:", this.intentions.getIntentionHead());
-
+        this.handshakeManager.tick(); // drive handshake state machine each cycle
         this.executor.start();
     }
 }

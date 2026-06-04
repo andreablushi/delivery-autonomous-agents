@@ -12,6 +12,7 @@ import * as calculate from "./handlers/calculate.js";
 import * as assignGoto from "./handlers/assign_goto.js";
 import * as assignStrategy from "./handlers/assign_strategy.js";
 import * as requestTeamStatus from "./handlers/request_team_status.js";
+import * as setTeamPosture from "./handlers/set_team_posture.js";
 
 export type { ToolContext };
 
@@ -33,6 +34,7 @@ const modules: Record<string, ToolModule> = {
     assign_goto: assignGoto,
     assign_strategy: assignStrategy,
     request_team_status: requestTeamStatus,
+    set_team_posture: setTeamPosture,
 };
 
 export const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = Object.values(modules).map(m => m.definition);

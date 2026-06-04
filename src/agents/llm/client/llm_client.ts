@@ -50,6 +50,7 @@ export class LLMClient {
     private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
     private readonly proposeRedLight: (rawArgs: unknown) => Promise<string>;
     private readonly proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>;
+    private readonly assignPosture: (posture: string, opts?: { bonus?: number }) => Promise<string>;
     private readonly coordLog: Logger;
 
     constructor(
@@ -62,6 +63,7 @@ export class LLMClient {
         proposeRendezvous: (rawArgs: unknown) => Promise<string>,
         proposeRedLight: (rawArgs: unknown) => Promise<string>,
         proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>,
+        assignPosture: (posture: string, opts?: { bonus?: number }) => Promise<string>,
         agentId?: string,
     ) {
         this.client = new OpenAI({
@@ -81,6 +83,7 @@ export class LLMClient {
         this.proposeRendezvous = proposeRendezvous;
         this.proposeRedLight = proposeRedLight;
         this.proposeGoto = proposeGoto;
+        this.assignPosture = assignPosture;
         this.coordLog = createLogger("coordination", agentId);
     }
 
@@ -214,6 +217,7 @@ export class LLMClient {
             proposeRendezvous: this.proposeRendezvous,
             proposeRedLight: this.proposeRedLight,
             proposeGoto: this.proposeGoto,
+            assignPosture: this.assignPosture,
         };
 
         const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote);

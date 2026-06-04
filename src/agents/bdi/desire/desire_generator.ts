@@ -8,7 +8,7 @@ import type {
 } from "../../../models/desires.js";
 import type { InjectedIntention } from "../../../models/intentions.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
-import { StrategyType } from "../../../models/game_strategy.js";
+import { StrategyType, StrategyRole } from "../../../models/game_strategy.js";
 import { TILE_TYPE } from "../../../models/tile_type.js";
 import type { Beliefs } from "../belief/beliefs.js";
 
@@ -63,15 +63,27 @@ export function generateDesires(
 
 /**
  * Generate a REACH_TILE for each in-bounds, non-wall tile within manhattan `maxDistance` of the
- * POSITIONING strategy's assigned center. A range (not a single tile) so the agent loiters within
- * its zone instead of ping-ponging one edge; the sorter scores reachable tiles and ignores the rest.
+ * assigned zone center. Applies to:
+ *   - POSITIONING (CAMPER/MIDFIELDER): center = tiles[0].
+ *   - HANDOFF/PICKUP_AGENT: center = pickupZoneCenter (spawn cluster to camp while collecting).
+ * A range (not a single tile) so the agent loiters within its zone instead of ping-ponging one
+ * edge; the sorter scores reachable tiles and ignores the rest.
  * @param beliefs Current beliefs (map for bounds/wall checks).
  * @param strategy The active GameStrategy, or null.
- * @returns REACH_TILE desires for the zone, or [] when no POSITIONING strategy is active.
+ * @returns REACH_TILE desires for the zone, or [] when no applicable strategy is active.
  */
 function generatePositioningDesires(beliefs: Beliefs, strategy: GameStrategy | null): ReachTileDesire[] {
-    if (!strategy || strategy.strategy !== StrategyType.Positioning) return [];
-    const center = strategy.tiles[0];
+    if (!strategy) return [];
+    const isPositioning = strategy.strategy === StrategyType.Positioning;
+    const isPickupZone = strategy.strategy === StrategyType.Handoff
+        && strategy.role === StrategyRole.PickupAgent
+        && strategy.pickupZoneCenter !== undefined;
+    // DELIVER_AGENT soft-loiters near the midpoint (tiles[0]) until the HandshakeManager injects
+    // a committed HOLD_TILE; the tier-2 hold then dominates this tier-1 positioning desire.
+    const isDeliverAgent = strategy.strategy === StrategyType.Handoff
+        && strategy.role === StrategyRole.DeliverAgent;
+    if (!isPositioning && !isPickupZone && !isDeliverAgent) return [];
+    const center = isPickupZone ? strategy.pickupZoneCenter! : strategy.tiles[0];
     if (!center) return [];
     const map = beliefs.map.getMap();
     if (!map) return [];

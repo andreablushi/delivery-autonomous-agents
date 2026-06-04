@@ -66,6 +66,14 @@ export const config = {
         commitWindowMs: 750,    // Time to wait for peer votes before committing or aborting
     },
 
+    handoff: {
+        holdReward: 100,          // Reward for the committed midpoint HOLD_TILE (PICKUP + DELIVER while waiting)
+        dropReward: 200,          // DELIVER_PARCEL reward injected once both agents are in zone (makes putdown win)
+        zoneRadius: 2,            // Default hold-zone Manhattan radius for all handoff assignments
+        proposeCooldownMs: 5_000, // Min gap between HandshakePropose attempts (resets on settle, not on send)
+        completeTimeoutMs: 15_000,// Abort a committed handoff if it hasn't completed within this window
+    },
+
     report: {
         hotTilesLimit: 5,   // Max hot tiles included in a single belief report
     },

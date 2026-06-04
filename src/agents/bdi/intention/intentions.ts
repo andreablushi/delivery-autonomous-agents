@@ -93,6 +93,8 @@ export class Intentions {
             }
             if (e.desire.type === "HOLD_TILE") {
                 const d = e.desire as HoldTileDesire;
+                // Handshake holds are exclusively managed by HandshakeManager — skip auto-prune.
+                if (e.sourceId === "handshake") return true;
                 if (!d.releaseZone) return true; // indefinite hold (red light) — only TTL / resume clears it
                 const z = d.releaseZone;
                 const inZone = (p: { x: number; y: number }) => manhattanDistance(p, z.center) <= z.maxDistance;
@@ -118,6 +120,11 @@ export class Intentions {
         this.injectedIntentions = this.injectedIntentions.filter(e => e.desire.type !== type);
     }
 
+    /** Remove all injected intentions matching `predicate`. Used by HandshakeManager. */
+    removeInjectedIntentions(predicate: (e: InjectedIntention) => boolean): void {
+        this.injectedIntentions = this.injectedIntentions.filter(e => !predicate(e));
+    }
+
     /**
      * Rebuild the intention queue from current beliefs, live injected intentions, and active scoring rules.
      * @param beliefs Current beliefs, used by the generator and sorter.
@@ -139,7 +146,12 @@ export class Intentions {
             return;
         }
 
-        this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore);
+        // POSITIONING/PICKUP_AGENT: use pickupZoneCenter when set; otherwise tiles[0].
+        const zoneCenter = this.currentStrategy?.pickupZoneCenter ?? this.currentStrategy?.tiles[0];
+        const zone = (zoneCenter && this.currentStrategy)
+            ? { center: zoneCenter, maxDistance: this.currentStrategy.maxDistance }
+            : null;
+        this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, zone);
         const head = this.intentionsQueue[0];
         this.log.debug(
             `Queue rebuilt (${this.intentionsQueue.length} items)` +

@@ -4,7 +4,6 @@ import type { InjectedIntention } from "./intentions.js";
 import type { DesireType } from "./desires.js";
 import type { ScoringRule } from "./rules.js";
 import type { GameStrategy } from "./game_strategy.js";
-import { StrategyRole } from "./game_strategy.js";
 import { PeerKind } from "./message_injection.js";
 import {
     parseGotoArgs,
@@ -14,6 +13,7 @@ import {
     parseRedLightProposeArgs,
     parseAssignStrategyArgs,
 } from "./injection_args.js";
+import { buildRendezvousHolds, buildHolds } from "../agents/cooperation/holds.js";
 
 export interface InjectionDeps {
     beliefs: Beliefs;
@@ -23,9 +23,6 @@ export interface InjectionDeps {
     setGameStrategy: (strategy: GameStrategy) => void;
     sourceId: string;
 }
-
-/** Default HOLD_TILE reward for a DELIVER_AGENT waiting at the midpoint (committed wait). */
-const DELIVER_HOLD_REWARD = 100;
 
 export type InjectionResult = { ok: true } | { error: string };
 
@@ -49,45 +46,26 @@ export function applyInjection(
         case PeerKind.AssignStrategy: {
             const p = parseAssignStrategyArgs(rawArgs);
             if ("error" in p) return p;
-            // The tile is the CENTER of a hold zone, not a step target — it need not be walkable
-            // itself, since allRendezvousTiles (below) snaps to reachable tiles within maxDistance.
+            // The tile is the CENTER of a hold zone — it need not be walkable itself.
             // Only require it to be in bounds.
             if (!beliefs.map.getMap()) return { error: "Map not yet loaded" };
             if (!beliefs.map.checkMapBounds(p.tile_x, p.tile_y)) return { error: "Coordinates out of map bounds" };
-            const expiresAt = Date.now() + p.ttl_seconds * 1_000;
-            const center = { x: p.tile_x, y: p.tile_y };
 
+            const pickupZoneCenter = (p.pickup_zone_x !== undefined && p.pickup_zone_y !== undefined)
+                ? { x: p.pickup_zone_x, y: p.pickup_zone_y }
+                : undefined;
             setGameStrategy({
                 strategy: p.strategy,
                 role: p.role,
-                tiles: [center],
+                tiles: [{ x: p.tile_x, y: p.tile_y }],
+                pickupZoneCenter,
                 maxDistance: p.max_distance,
                 bonus: p.bonus,
                 partnerId: p.partner_id,
-                expiresAt,
+                expiresAt: Date.now() + p.ttl_seconds * 1_000,
             });
-
-            // POSITIONING (CAMPER / MIDFIELDER) and PICKUP_AGENT inject nothing here:
-            //  - POSITIONING is driven by REACH_TILE desires regenerated each cycle (desire_generator).
-            //  - PICKUP_AGENT behaves normally until it grabs a parcel, then triggers the handshake.
-            if (p.role !== StrategyRole.DeliverAgent) return { ok: true };
-
-            // DELIVER_AGENT waits near the midpoint with a rendezvous-style hold that auto-releases
-            // once both agents are in the zone (so it can then pick up the dropped parcel).
-            const from = beliefs.agents.getCurrentPosition();
-            if (!from) return { ok: true }; // strategy stored; no position yet to place a hold
-            const tiles = beliefs.map.allRendezvousTiles(from, center.x, center.y, p.max_distance);
-            if (tiles.length === 0) return { error: "No reachable tile within assigned zone" };
-            for (const tile of tiles) {
-                addInjectedIntention({
-                    desire: {
-                        type: "HOLD_TILE", target: tile, sourceId, reward: p.bonus ?? DELIVER_HOLD_REWARD,
-                        releaseZone: { center, maxDistance: p.max_distance },
-                    },
-                    expiresAt,
-                    sourceId,
-                });
-            }
+            // Desires (REACH_TILE disk + handshake holds) are injected separately by
+            // desire_generator and HandshakeManager — nothing to inject here.
             return { ok: true };
         }
 
@@ -155,21 +133,13 @@ export function applyInjection(
             if (!beliefs.map.checkMapBounds(p.x, p.y)) return { error: "Coordinates out of map bounds" };
             const from = beliefs.agents.getCurrentPosition();
             if (!from) return { error: "Agent position not yet known" };
-            const tiles = beliefs.map.allRendezvousTiles(from, p.x, p.y, p.max_distance);
-            if (tiles.length === 0) return { error: "No reachable tile within rendezvous zone" };
-            for (const tile of tiles) {
-                addInjectedIntention({
-                    desire: {
-                        type: "HOLD_TILE",
-                        target: tile,
-                        sourceId,
-                        reward: p.reward,
-                        releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
-                        rendezvousId: p.rid,
-                    },
-                    sourceId,
-                });
-            }
+            const holds = buildRendezvousHolds(beliefs, from, { x: p.x, y: p.y }, p.max_distance, p.reward, {
+                releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
+                rendezvousId: p.rid,
+                sourceId,
+            });
+            if (holds.length === 0) return { error: "No reachable tile within rendezvous zone" };
+            for (const hold of holds) addInjectedIntention(hold);
             return { ok: true };
         }
 
@@ -187,13 +157,8 @@ export function applyInjection(
             const tiles = beliefs.map.allLineTiles(from, p.axis, p.parity);
             if (tiles.length === 0) return { error: "No matching tile reachable" };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
-            for (const tile of tiles) {
-                addInjectedIntention({
-                    desire: { type: "HOLD_TILE", target: tile, sourceId, reward: p.reward },
-                    expiresAt,
-                    sourceId,
-                });
-            }
+            const holds = buildHolds(tiles, p.reward, { sourceId, expiresAt });
+            for (const hold of holds) addInjectedIntention(hold);
             return { ok: true };
         }
 

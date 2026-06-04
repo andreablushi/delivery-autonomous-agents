@@ -22,4 +22,10 @@ export interface ToolContext {
     proposeRedLight?: (rawArgs: unknown) => Promise<string>;
     /** Run the two-phase goto commit protocol for a specific teammate; returns a JSON result string. */
     proposeGoto?: (agentId: string, rawArgs: unknown) => Promise<string>;
+    /**
+     * Deterministically assign all agents to anchor zones based on a chosen posture.
+     * Only available in the coordination context (sourceId === "coordinator").
+     * Returns a JSON result string.
+     */
+    assignPosture?: (posture: string, opts?: { bonus?: number }) => Promise<string>;
 }
