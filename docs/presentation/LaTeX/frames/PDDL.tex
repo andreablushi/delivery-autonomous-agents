@@ -1,20 +1,28 @@
 \section{PDDL Crate Navigation}
-
-% ----- When A* Fails -------------------------------------------
+% ----- When A* Fails ---------------------------------------------
 \begin{frame}{When A* Fails}
-  \begin{columns}
-    \column{0.55\textwidth}
-      \begin{itemize}
+    \begin{itemize}
         \item A* fails: no path that avoids crates
         \item Second A* ignoring crates finds a ``ghost'' path
         \item Crates intersecting that path confirm blockage
         \item PDDL planner invoked as fallback
+    \end{itemize}
+\end{frame}
+
+% ----- PDDL Fallback -------------------------------------------
+\begin{frame}{PDDL Fallback}
+  \begin{columns}
+    \column{0.55\textwidth}
+      \begin{itemize}
+        \item Cluster detected $\to$ PDDL problem built from current beliefs
+        \item Solver finds \texttt{move} + \texttt{push} sequence to reach goal
+        \item Result translated back to agent's action plan
       \end{itemize}
     \column{0.42\textwidth}
       % TODO: populate media/crates/ with frame images, then uncomment:
       % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/crates/frame-}{0}{47}
       \begin{block}{}
-        \centering\textit{[crate push]}
+        \centering\textit{[crate push video]}
       \end{block}
   \end{columns}
 \end{frame}
