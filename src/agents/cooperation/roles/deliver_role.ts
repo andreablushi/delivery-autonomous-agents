@@ -39,15 +39,25 @@ export class DeliverRole {
                     this.log.debug(`DELIVER: WAIT → COLLECT_DROP (parcels in zone)`);
                 }
                 break;
-            case "COLLECT_DROP":
-                if (carried.length > 0) {
+            case "COLLECT_DROP": {
+                const carryCapacity = beliefs.agents.getCarryCapacity() ?? Infinity;
+                const partnerInZone = (() => {
+                    const pos = beliefs.agents.getCurrentFriends()
+                        .find(f => f.id === strategy.partnerId)?.lastPosition ?? null;
+                    return pos !== null && inMeetZone(pos);
+                })();
+                if (carried.length >= carryCapacity) {
                     this.state = "DELIVERING";
-                    this.log.debug(`DELIVER: COLLECT_DROP → DELIVERING`);
-                } else if (inZoneParcels().length === 0) {
+                    this.log.debug(`DELIVER: COLLECT_DROP → DELIVERING (carry capacity)`);
+                } else if (carried.length > 0 && inZoneParcels().length === 0 && !partnerInZone) {
+                    this.state = "DELIVERING";
+                    this.log.debug(`DELIVER: COLLECT_DROP → DELIVERING (zone empty, partner gone)`);
+                } else if (carried.length === 0 && inZoneParcels().length === 0) {
                     this.state = "WAIT";
                     this.log.debug(`DELIVER: COLLECT_DROP → WAIT (zone empty, nothing carried)`);
                 }
                 break;
+            }
             case "DELIVERING":
                 if (carried.length === 0) {
                     this.state = "RETURN";

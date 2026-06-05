@@ -195,7 +195,7 @@ export class LLMClient {
 
     /**
      * Run a team coordination pass: the LLM is given teammate reports + map geometry
-     * and expected to call `assign_goto` for each agent.
+     * and responds with a single JSON posture decision. No tool-calling loop — one completion.
      */
     async coordinate(
         reports: Map<string, BeliefsReport>,
@@ -204,28 +204,46 @@ export class LLMClient {
         requestTeamStatus: () => void,
         missionNote = "",
     ): Promise<void> {
-        const ctx = {
-            beliefs: beliefs as Beliefs,
-            addInjectedIntention: this.addInjectedIntention,
-            removeIntentionsByType: this.removeIntentionsByType,
-            setGameStrategy: this.setGameStrategy,
-            getGameStrategy: this.getGameStrategy,
-            comm: this.comm,
-            sourceId: "coordinator",
-            ruleStore: this.ruleStore,
-            requestTeamStatus,
-            proposeRendezvous: this.proposeRendezvous,
-            proposeRedLight: this.proposeRedLight,
-            proposeGoto: this.proposeGoto,
-            assignPosture: this.assignPosture,
-        };
-
         const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote);
-        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            { role: "system", content: system },
-            { role: "user", content: user },
-        ];
         this.log.debug("Running coordination pass");
-        await this.runHops(messages, ctx, text => this.coordLog.debug(`coordination rationale (no assignment): ${text}`));
+
+        const response = await this.client.chat.completions.create({
+            model: this.model,
+            messages: [
+                { role: "system", content: system },
+                { role: "user", content: user },
+            ],
+            temperature: 0.1,
+        });
+
+        const text = response.choices[0]?.message.content?.trim() ?? "";
+        this.promptLog.debug(`Coordination response: ${text}`);
+
+        // Extract the first {...} block from the response and parse the posture.
+        const POSTURES = ["HANDOFF", "NONE"] as const;
+        type Posture = typeof POSTURES[number];
+        let posture: Posture = "NONE";
+        let bonus: number | undefined;
+
+        const match = text.match(/\{[\s\S]*?\}/);
+        if (match) {
+            try {
+                const obj = JSON.parse(match[0]) as Record<string, unknown>;
+                const p = obj.posture;
+                if (typeof p === "string" && (POSTURES as readonly string[]).includes(p)) {
+                    posture = p as Posture;
+                }
+                if (typeof obj.bonus === "number") bonus = Math.round(obj.bonus);
+                const rationale = typeof obj.rationale === "string" ? obj.rationale.trim() : "";
+                if (rationale) this.coordLog.debug(`coordination rationale: ${rationale}`);
+            } catch {
+                this.coordLog.debug(`coordination: could not parse posture JSON — defaulting to NONE. text=${text}`);
+            }
+        } else {
+            this.coordLog.debug(`coordination: no JSON found in response — defaulting to NONE. text=${text}`);
+        }
+
+        const result = await this.assignPosture(posture, { bonus });
+        this.log.debug(`Coordination assignPosture(${posture}) → ${result}`);
     }
 }

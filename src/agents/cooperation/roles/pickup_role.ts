@@ -57,7 +57,7 @@ export class PickupRole {
                     .find(f => f.id === strategy.partnerId)?.lastPosition ?? null;
                 if (inMeetZone(myPos) && partnerPos !== null && inMeetZone(partnerPos)) {
                     this.state = "DROP";
-                    this.log.debug(`PICKUP: TO_MIDPOINT → DROP (both in meet zone)`);
+                    this.log.debug(`PICKUP: TO_MIDPOINT → DROP (partner in zone)`);
                 }
                 break;
             }
