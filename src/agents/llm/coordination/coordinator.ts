@@ -258,8 +258,9 @@ export class Coordinator {
         const map = this.beliefs.map.getMap();
         if (!map) return JSON.stringify({ error: "Map not yet loaded" });
 
-        // TTL = coordination interval + 2s margin to survive timing jitter between rounds.
-        const ttlSeconds = Math.min(120, Math.ceil(config.coordination.intervalMs / 1000) + 2);
+        // TTL spans two coordination intervals so a strategy survives the gap between rounds
+        // (and a slow LLM call); the next assignment overrides it via setGameStrategy.
+        const ttlSeconds = Math.min(120, Math.ceil(config.coordination.intervalMs / 1000) * 2);
 
         // Build roster: self + teammates that reported a position this round.
         const me = this.beliefs.agents.getCurrentMe();

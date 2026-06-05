@@ -7,4 +7,4 @@
 --- Your current state ---
 {{context}}
 {{missionNote}}
-Decide now: assign strategies via assign_strategy (with a rationale), or reply explaining why no assignment is needed.
+Think step by step: Are spawn points clustered or scattered? Is there a cross-agent delivery bonus in the mission directive? Would a handoff genuinely beat both agents playing autonomously? Then output ONLY the JSON object.
