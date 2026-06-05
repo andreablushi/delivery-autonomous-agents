@@ -15,7 +15,7 @@ type HoldOpts = {
 /**
  * Build `InjectedIntention` entries from a pre-computed list of tiles.
  * The single canonical implementation of "wrap tiles as HOLD_TILE intentions."
- * Used by rendezvous-commit, red-light-commit, and the HandshakeManager.
+ * Used by rendezvous-commit and red-light-commit.
  */
 export function buildHolds(
     tiles: Position[],

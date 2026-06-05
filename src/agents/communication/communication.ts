@@ -16,9 +16,6 @@ export type IncomingDeps = {
     addInjectedIntention: (e: InjectedIntention) => void;
     removeIntentionsByType: (t: DesireType["type"]) => void;
     setGameStrategy: (s: GameStrategy) => void;
-    getGameStrategy: () => GameStrategy | null;
-    /** Route handshake messages (propose/vote/abort) to the HandshakeManager. */
-    handleHandshake?: (senderId: string, tool: string, args: Record<string, unknown>) => Promise<void>;
 };
 
 /**
@@ -141,16 +138,6 @@ export class Communication {
                             : "";
                         this.log.debug(`goto_propose from ${senderName}: accept=${accept} (rid=${rid})`);
                         await this.send(senderId, PeerKind.GotoVote, { rid, accept });
-                        return;
-                    }
-
-                    case PeerKind.HandshakePropose:
-                    case PeerKind.HandshakeVote:
-                    case PeerKind.HandshakeAbort: {
-                        // Routed entirely to HandshakeManager — the single source of truth.
-                        if (deps.handleHandshake) {
-                            await deps.handleHandshake(senderId, msg.tool, msg.args as Record<string, unknown>);
-                        }
                         return;
                     }
 

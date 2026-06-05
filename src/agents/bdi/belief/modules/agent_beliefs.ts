@@ -2,7 +2,7 @@ import type { Agent } from "../../../../models/agent.js";
 import type { PlayerSettings } from "../../../../models/game_configs.js";
 import type { IOAgent } from "../../../../models/djs.js";
 import { Position } from "../../../../models/position.js";
-import { isHalfPosition } from "../../../../utils/metrics.js";
+import { isHalfPosition, manhattanDistance } from "../../../../utils/metrics.js";
 import { Memory } from "./utils/memory.js";
 import { Tracker } from "./utils/tracker.js";
 import { predictAgentNextPosition } from "./utils/enemy_predictor.js";
@@ -237,7 +237,7 @@ export class AgentBeliefs {
         for (const obs of history) {
             const ePos = obs.value.lastPosition;
             if (!ePos) continue;
-            const d = Math.abs(pos.x - ePos.x) + Math.abs(pos.y - ePos.y);
+            const d = manhattanDistance(pos, ePos);
             const spatialDecay = Math.exp(-(d * d) / (2 * config.beliefs.enemy.heatSigma * config.beliefs.enemy.heatSigma));
             const timeDecay = Math.exp(-(now - obs.seenAt) / config.beliefs.enemy.heatTau);
             heat += spatialDecay * timeDecay;

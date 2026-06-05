@@ -56,7 +56,7 @@ export const config = {
     },
 
     coordination: {
-        intervalMs: 10_000,     // How often the LLM coordinator runs a team assignment round
+        intervalMs: 15_000,     // How often the LLM coordinator runs a team assignment round
         collectWindowMs: 750,   // Time to wait for belief reports before running the LLM pass
         cooldownMs: 5_000,      // Minimum gap between coordination rounds
         hotZonesLimit: 5,       // Max hot zones kept when merging teammate reports
@@ -67,11 +67,8 @@ export const config = {
     },
 
     handoff: {
-        holdReward: 100,          // Reward for the committed midpoint HOLD_TILE (PICKUP + DELIVER while waiting)
-        dropReward: 200,          // DELIVER_PARCEL reward injected once both agents are in zone (makes putdown win)
-        zoneRadius: 2,            // Default hold-zone Manhattan radius for all handoff assignments
-        proposeCooldownMs: 5_000, // Min gap between HandshakePropose attempts (resets on settle, not on send)
-        completeTimeoutMs: 15_000,// Abort a committed handoff if it hasn't completed within this window
+        zoneRadius: 2,    // Meet-zone Manhattan radius around the midpoint
+        pickupRadius: 4,  // Manhattan radius around the pickup zone center to consider parcels
     },
 
     report: {

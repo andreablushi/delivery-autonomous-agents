@@ -12,15 +12,15 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
     function: {
         name: "assign_strategy",
-        description: "Assign a cooperation strategy + role to an agent (yourself or a teammate). For yourself it is applied locally; for a teammate an assign_strategy message is sent. POSITIONING holds the assigned tile (CAMPER/MIDFIELDER); HANDOFF pairs a PICKUP_AGENT (grabs parcels, carries to the midpoint, drops them) with a DELIVER_AGENT (waits near the midpoint, receives the drop, delivers it for the cross-agent bonus). Assigning nothing is valid — leave agents independent when cooperation is not worthwhile.",
+        description: "Assign a HANDOFF role to an agent (yourself or a teammate). For yourself it is applied locally; for a teammate an assign_strategy message is sent. PICKUP_AGENT collects parcels in its spawn zone, travels to the midpoint, and drops them. DELIVER_AGENT waits at the midpoint, picks up the grounded parcels, delivers them, and returns. Use set_team_posture for automatic role assignment.",
         parameters: {
             type: "object",
             properties: {
                 agent_id:     { type: "string",  description: "ID of the agent to assign (use your own id to assign yourself)." },
-                strategy:     { type: "string",  enum: Object.values(StrategyType), description: "POSITIONING or HANDOFF." },
-                role:         { type: "string",  enum: Object.values(StrategyRole), description: "CAMPER/MIDFIELDER for POSITIONING; PICKUP_AGENT/DELIVER_AGENT for HANDOFF." },
-                tile_x:       { type: "integer", description: "X of the assigned tile (POSITIONING hold tile / HANDOFF midpoint)." },
-                tile_y:       { type: "integer", description: "Y of the assigned tile (POSITIONING hold tile / HANDOFF midpoint)." },
+                strategy:     { type: "string",  enum: Object.values(StrategyType), description: "Only HANDOFF is supported." },
+                role:         { type: "string",  enum: Object.values(StrategyRole), description: "PICKUP_AGENT or DELIVER_AGENT." },
+                tile_x:       { type: "integer", description: "X of the HANDOFF midpoint tile (meet zone center)." },
+                tile_y:       { type: "integer", description: "Y of the HANDOFF midpoint tile (meet zone center)." },
                 max_distance: { type: "integer", description: "Hold-zone radius around the tile (0–10)." },
                 bonus:        { type: "integer", description: "Cross-agent delivery bonus to weight the handoff decision (omit if none)." },
                 ttl_seconds:  { type: "integer", description: "How long the strategy stays active (5–120; default 30 = coordination interval)." },

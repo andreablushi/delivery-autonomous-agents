@@ -4,22 +4,20 @@ import { createLogger } from "../../../../utils/logger.js";
 
 const log = createLogger("coordination");
 
-const POSTURES = ["SPREAD", "MIDFIELD", "HANDOFF", "NONE"] as const;
+const POSTURES = ["HANDOFF", "NONE"] as const;
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
     function: {
         name: "set_team_posture",
         description:
-            "Choose the team's coordination posture. The system deterministically assigns each agent " +
-            "to the best matching anchor based on proximity — no coordinates needed from you.\n" +
-            "  SPREAD   — each agent camps a different spawn cluster centroid, collects in-zone " +
-            "parcels, and hands them off to a DELIVER partner at the midpoint when the zone empties.\n" +
-            "  MIDFIELD — each agent holds a midpoint between a spawn and delivery zone and " +
-            "self-delivers any parcels it collects there.\n" +
-            "  HANDOFF  — one agent picks up parcels freely, the other waits at the midpoint to " +
-            "receive them and deliver for the cross-agent bonus (set bonus arg).\n" +
-            "  NONE     — let agents run autonomously; current assignments lapse on their TTL.\n" +
+            "Choose the team's cooperation mode. The system deterministically assigns roles — " +
+            "no coordinates needed from you.\n" +
+            "  HANDOFF — one agent (PICKUP) collects parcels in the spawn area, heads to the " +
+            "shared midpoint when its zone is empty or full, and drops the parcels there. The " +
+            "other agent (DELIVER) waits at the midpoint, picks up the grounded parcels, " +
+            "delivers them, and returns to wait. Set the bonus arg when you want extra incentive.\n" +
+            "  NONE    — let agents run autonomously; current assignments lapse on their TTL.\n" +
             "The assignment refreshes automatically each coordination cycle.",
         parameters: {
             type: "object",

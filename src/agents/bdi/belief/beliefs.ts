@@ -7,7 +7,7 @@ import { MapBeliefs } from "./modules/map_beliefs.js";
 import { ParcelBeliefs } from "./modules/parcel_beliefs.js";
 import { CrateBeliefs } from "./modules/crate_beliefs.js";
 import { TILE_TYPE } from "../../../models/tile_type.js";
-import { manhattanDistance } from "../../../utils/metrics.js";
+import { nearestByManhattan } from "../../../utils/metrics.js";
 import { config as appConfig } from "../../../config.js";
 
 
@@ -55,12 +55,9 @@ export class Beliefs {
         }
 
         const deliveryTiles = this.map.getDeliveryTiles();
-        let nearestDelivery: typeof pos = null;
-        if (pos && deliveryTiles.length > 0) {
-            nearestDelivery = deliveryTiles.reduce((best, tile) =>
-                manhattanDistance(pos, tile) < manhattanDistance(pos, best) ? tile : best
-            );
-        }
+        const nearestDelivery = pos && deliveryTiles.length > 0
+            ? nearestByManhattan(pos, deliveryTiles) ?? null
+            : null;
 
         return { pos, carrying, enemies, hotTiles, nearestDelivery };
     }

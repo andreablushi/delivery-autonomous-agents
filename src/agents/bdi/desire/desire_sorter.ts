@@ -11,10 +11,8 @@ import type {
     GeneratedDesires,
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
-import { bfsDistancesFrom } from "../../../utils/metrics.js";
-import { MapBeliefs } from "../belief/modules/map_beliefs.js";
 import type { IntentionQueue } from "../../../models/intentions.js";
-import { carriedEffectiveValue } from "./scoring/utils.js";
+import { buildScoringContext } from "./scoring/utils.js";
 import { scoreReachDesire } from "./scoring/reach_parcel.js";
 import { scoreDeliverDesire } from "./scoring/deliver_parcel.js";
 import { scoreReachTile } from "./scoring/reach_tile.js";
@@ -49,31 +47,10 @@ export function getIntentionQueue(
 ): IntentionQueue {
     const queue: IntentionQueue = [];
 
-    const me = beliefs.agents.getCurrentMe();
-    if (!me?.lastPosition) return queue;
+    const ctx = buildScoringContext(beliefs, ruleStore);
+    if (!ctx) return queue;
 
-    const map = beliefs.map.getMap();
-    if (!map) return queue;
-    const walkable = (from: Position, to: Position) => MapBeliefs.isStaticWalkable(map.tiles, map.width, map.height, from, to);
-
-    // Single BFS from agent position — reused for all desire scoring this tick
-    const meDist = bfsDistancesFrom(me.lastPosition, walkable);
-
-    // One BFS per enemy for race factor scoring (typically few enemies)
-    const enemies = beliefs.agents.getCurrentEnemies().filter(e => e.lastPosition !== null);
-    const enemyDists = enemies.map(e => {
-        const pos = { x: Math.round(e.lastPosition!.x), y: Math.round(e.lastPosition!.y) };
-        return bfsDistancesFrom(pos, walkable);
-    });
-
-    // One BFS per friend with a known position, used for joint rendezvous scoring
-    const friends = beliefs.agents.getCurrentFriends().filter(f => f.lastPosition !== null);
-    const friendDists = friends.map(f => bfsDistancesFrom(f.lastPosition!, walkable));
-
-    // Carried value and count — computed once and shared across all scorers this tick
-    const carried = beliefs.parcels.getCarriedByAgent(me.id);
-    const carriedCount = carried.length;
-    const carriedValue = carriedEffectiveValue(carried, ruleStore);
+    const { me, meDist, friendDists, enemyDists, carriedCount, carriedValue } = ctx;
 
     const reaches = (desires.get("REACH_PARCEL") ?? []) as ReachParcelDesire[];
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];

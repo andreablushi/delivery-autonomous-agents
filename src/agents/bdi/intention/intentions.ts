@@ -2,10 +2,12 @@ import type { Beliefs } from "../belief/beliefs.js";
 import type { RuleStore } from "../desire/rule_store.js";
 import type { DesireType, HoldTileDesire } from "../../../models/desires.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
+import { StrategyType } from "../../../models/game_strategy.js";
 import { manhattanDistance } from "../../../utils/metrics.js";
 import type { IntentionQueue, InjectedIntention } from "../../../models/intentions.js";
 import { getIntentionQueue } from "../desire/desire_sorter.js";
 import { generateDesires } from "../desire/desire_generator.js";
+import { RoleController } from "../../cooperation/role_controller.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
@@ -20,10 +22,13 @@ export class Intentions {
     private injectedIntentions: InjectedIntention[] = [];
     // Active cooperation directive assigned by the coordination LLM. At most one; pruned by TTL.
     private currentStrategy: GameStrategy | null = null;
+    // Deterministic role state machine for HANDOFF strategies.
+    private readonly controller: RoleController;
     private readonly desireLog: Logger;
     private readonly log: Logger;
 
     constructor(agentId?: string) {
+        this.controller = new RoleController(agentId);
         this.desireLog = createLogger("desire", agentId);
         this.log = createLogger("intention", agentId);
     }
@@ -42,8 +47,7 @@ export class Intentions {
         this.injectedIntentions.push(entry);
     }
 
-    /** Set the active cooperation strategy. POSITIONING desires are regenerated each cycle, so
-     *  there is no injected state to clean up here. */
+    /** Set the active cooperation strategy. The RoleController generates gated desires each cycle. */
     setGameStrategy(strategy: GameStrategy): void {
         this.currentStrategy = strategy;
         this.log.debug(`Game strategy set: ${strategy.strategy}/${strategy.role}` +
@@ -58,6 +62,7 @@ export class Intentions {
     /** Clear the active cooperation strategy. */
     clearGameStrategy(): void {
         this.currentStrategy = null;
+        this.controller.reset();
     }
 
     /**
@@ -74,6 +79,7 @@ export class Intentions {
         if (this.currentStrategy?.expiresAt !== undefined && this.currentStrategy.expiresAt <= Date.now()) {
             this.log.debug(`Game strategy expired: ${this.currentStrategy.strategy}/${this.currentStrategy.role}`);
             this.currentStrategy = null;
+            this.controller.reset();
         }
     }
 
@@ -93,7 +99,7 @@ export class Intentions {
             }
             if (e.desire.type === "HOLD_TILE") {
                 const d = e.desire as HoldTileDesire;
-                // Handshake holds are exclusively managed by HandshakeManager — skip auto-prune.
+                // Handshake (role) holds are managed externally — skip auto-prune.
                 if (e.sourceId === "handshake") return true;
                 if (!d.releaseZone) return true; // indefinite hold (red light) — only TTL / resume clears it
                 const z = d.releaseZone;
@@ -120,7 +126,7 @@ export class Intentions {
         this.injectedIntentions = this.injectedIntentions.filter(e => e.desire.type !== type);
     }
 
-    /** Remove all injected intentions matching `predicate`. Used by HandshakeManager. */
+    /** Remove all injected intentions matching `predicate`. */
     removeInjectedIntentions(predicate: (e: InjectedIntention) => boolean): void {
         this.injectedIntentions = this.injectedIntentions.filter(e => !predicate(e));
     }
@@ -134,7 +140,33 @@ export class Intentions {
         this.pruneStrategy();
         this.pruneInjectedIntentions();
         this.pruneSatisfiedInjectedIntentions(beliefs);
-        const desires = generateDesires(beliefs, this.injectedIntentions, this.currentStrategy);
+
+        const strategy = this.currentStrategy;
+
+        // HANDOFF role: state-machine path — gated desires, bypasses autonomous generation.
+        if (strategy?.strategy === StrategyType.Handoff) {
+            this.controller.sync(strategy);
+            this.controller.tick(beliefs, strategy);
+            const desires = this.controller.buildDesires(beliefs, strategy);
+
+            this.desireLog.debug(
+                `Role desires (${strategy.role}) — ` +
+                ([...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none")
+            );
+
+            const zoneCenter = strategy.pickupZoneCenter ?? strategy.tiles[0];
+            const zone = zoneCenter ? { center: zoneCenter, maxDistance: strategy.maxDistance } : null;
+            this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, zone);
+            const head = this.intentionsQueue[0];
+            this.log.debug(
+                `Queue rebuilt (${this.intentionsQueue.length} items, role=${strategy.role})` +
+                (head ? ` — head: ${head.desire.type} @(${head.desire.target.x},${head.desire.target.y}) score=${head.score.toFixed(2)}` : "")
+            );
+            return;
+        }
+
+        // Autonomous path: use belief-derived desires plus injected intentions.
+        const desires = generateDesires(beliefs, this.injectedIntentions);
 
         this.desireLog.debug(
             `Desires generated — ${[...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none"}`
@@ -146,12 +178,7 @@ export class Intentions {
             return;
         }
 
-        // POSITIONING/PICKUP_AGENT: use pickupZoneCenter when set; otherwise tiles[0].
-        const zoneCenter = this.currentStrategy?.pickupZoneCenter ?? this.currentStrategy?.tiles[0];
-        const zone = (zoneCenter && this.currentStrategy)
-            ? { center: zoneCenter, maxDistance: this.currentStrategy.maxDistance }
-            : null;
-        this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, zone);
+        this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, null);
         const head = this.intentionsQueue[0];
         this.log.debug(
             `Queue rebuilt (${this.intentionsQueue.length} items)` +

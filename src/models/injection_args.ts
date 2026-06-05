@@ -290,35 +290,3 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
         pickup_zone_y: hasPickupZone ? pickup_zone_y as number : undefined,
     };
 }
-
-
-/** Wire args for `handshake_propose` (PICKUP_AGENT → DELIVER_AGENT after a real pickup). */
-export type HandshakeProposeArgs = {
-    rid: string;
-    midpoint_x: number;
-    midpoint_y: number;
-    max_distance: number;
-    carried_value: number;
-    carried_count: number;
-    bonus: number;
-};
-
-export function parseHandshakeProposeArgs(json: unknown): HandshakeProposeArgs | { error: string } {
-    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
-    const obj = json as Record<string, unknown>;
-    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
-    const midpoint_x   = coerceNum(obj.midpoint_x);
-    const midpoint_y   = coerceNum(obj.midpoint_y);
-    const max_distance = coerceNum(obj.max_distance);
-    const carried_value = coerceNum(obj.carried_value);
-    const carried_count = coerceNum(obj.carried_count);
-    const bonus        = coerceNum(obj.bonus);
-    if (typeof midpoint_x !== "number" || !Number.isInteger(midpoint_x)) return { error: "midpoint_x must be an integer" };
-    if (typeof midpoint_y !== "number" || !Number.isInteger(midpoint_y)) return { error: "midpoint_y must be an integer" };
-    if (typeof max_distance !== "number" || !Number.isInteger(max_distance) || max_distance < 0 || max_distance > 10)
-        return { error: "max_distance must be an integer in [0, 10]" };
-    if (typeof carried_value !== "number" || carried_value < 0) return { error: "carried_value must be a non-negative number" };
-    if (typeof carried_count !== "number" || !Number.isInteger(carried_count) || carried_count < 0) return { error: "carried_count must be a non-negative integer" };
-    if (typeof bonus !== "number" || bonus < 0) return { error: "bonus must be a non-negative number" };
-    return { rid: obj.rid, midpoint_x, midpoint_y, max_distance, carried_value, carried_count, bonus };
-}

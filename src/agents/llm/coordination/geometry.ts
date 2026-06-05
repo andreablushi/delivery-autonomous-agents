@@ -1,9 +1,10 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
-import { manhattanDistance, posKey, NEIGHBOURS } from "../../../utils/metrics.js";
+import type { ClusterInfo } from "../../bdi/belief/modules/map_beliefs.js";
+import { posKey, nearestByManhattan } from "../../../utils/metrics.js";
 import { config } from "../../../config.js";
 
-export type ClusterInfo = { centroid: { x: number; y: number }; tileCount: number };
+export type { ClusterInfo };
 
 export type TeamGeometry = {
     spawnClusters: ClusterInfo[];
@@ -14,43 +15,6 @@ export type TeamGeometry = {
     hotZones: { x: number; y: number; heat: number }[];
 };
 
-/** Group tiles into connected components where adjacency = Manhattan distance 1. */
-function clusterTiles(tiles: { x: number; y: number }[]): { x: number; y: number }[][] {
-    const tileSet = new Set(tiles.map(t => posKey(t)));
-    const visited = new Set<string>();
-    const clusters: { x: number; y: number }[][] = [];
-
-    for (const tile of tiles) {
-        const key = posKey(tile);
-        if (visited.has(key)) continue;
-
-        const cluster: { x: number; y: number }[] = [];
-        const queue = [tile];
-        visited.add(key);
-
-        while (queue.length > 0) {
-            const current = queue.shift()!;
-            cluster.push(current);
-            for (const n of NEIGHBOURS) {
-                const neighbor = { x: current.x + n.x, y: current.y + n.y };
-                const nKey = posKey(neighbor);
-                if (visited.has(nKey) || !tileSet.has(nKey)) continue;
-                visited.add(nKey);
-                queue.push(neighbor);
-            }
-        }
-        clusters.push(cluster);
-    }
-    return clusters;
-}
-
-/** Centroid of a set of tiles, rounded to nearest integer. */
-function centroid(tiles: { x: number; y: number }[]): { x: number; y: number } {
-    const sumX = tiles.reduce((s, t) => s + t.x, 0);
-    const sumY = tiles.reduce((s, t) => s + t.y, 0);
-    return { x: Math.round(sumX / tiles.length), y: Math.round(sumY / tiles.length) };
-}
-
 /**
  * Compute deterministic team geometry from the map and aggregated belief reports.
  * The result is passed to the LLM coordinator as orientation data.
@@ -59,31 +23,18 @@ export function buildTeamGeometry(
     beliefs: Readonly<Beliefs>,
     reports: Map<string, BeliefsReport>,
 ): TeamGeometry {
-    const spawnTiles = beliefs.map.getSpawnTiles();
-    const deliveryTiles = beliefs.map.getDeliveryTiles();
-
-    const spawnClusterTiles = clusterTiles(spawnTiles);
-    const deliveryClusterTiles = clusterTiles(deliveryTiles);
-
-    const spawnClusters: ClusterInfo[] = spawnClusterTiles.map(c => ({
-        centroid: centroid(c),
-        tileCount: c.length,
-    }));
-    const deliveryClusters: ClusterInfo[] = deliveryClusterTiles.map(c => ({
-        centroid: centroid(c),
-        tileCount: c.length,
-    }));
+    const spawnClusters = beliefs.map.getSpawnClusters();
+    const deliveryClusters = beliefs.map.getDeliveryClusters();
 
     // Midpoint between each spawn cluster centroid and its nearest delivery cluster centroid
     const midpoints: { x: number; y: number }[] = [];
     for (const spawn of spawnClusters) {
         if (deliveryClusters.length === 0) break;
-        const nearestDelivery = deliveryClusters.reduce((best, d) =>
-            manhattanDistance(spawn.centroid, d.centroid) < manhattanDistance(spawn.centroid, best.centroid) ? d : best
-        );
+        const nearestDelivery = nearestByManhattan(spawn.centroid, deliveryClusters.map(d => d.centroid));
+        if (!nearestDelivery) break;
         midpoints.push({
-            x: Math.round((spawn.centroid.x + nearestDelivery.centroid.x) / 2),
-            y: Math.round((spawn.centroid.y + nearestDelivery.centroid.y) / 2),
+            x: Math.round((spawn.centroid.x + nearestDelivery.x) / 2),
+            y: Math.round((spawn.centroid.y + nearestDelivery.y) / 2),
         });
     }
 

@@ -31,6 +31,20 @@ export const NEIGHBOURS: Position[] = [
 ];
 
 /**
+ * Return the candidate from `candidates` that has the smallest Manhattan distance to `from`.
+ * Returns `undefined` when `candidates` is empty.
+ */
+export function nearestByManhattan<T extends { x: number; y: number }>(
+    from: { x: number; y: number },
+    candidates: T[],
+): T | undefined {
+    if (candidates.length === 0) return undefined;
+    return candidates.reduce((best, c) =>
+        manhattanDistance(from, c) < manhattanDistance(from, best) ? c : best
+    );
+}
+
+/**
  * BFS from `source` using the given walkability predicate (walls-only or full).
  * Returns a map from posKey to step count. Source is included with distance 0.
  * Tiles unreachable under the predicate are absent from the result.

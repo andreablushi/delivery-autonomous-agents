@@ -64,8 +64,7 @@ export function applyInjection(
                 partnerId: p.partner_id,
                 expiresAt: Date.now() + p.ttl_seconds * 1_000,
             });
-            // Desires (REACH_TILE disk + handshake holds) are injected separately by
-            // desire_generator and HandshakeManager — nothing to inject here.
+            // The RoleController in Intentions translates the strategy into gated desires each cycle.
             return { ok: true };
         }
 

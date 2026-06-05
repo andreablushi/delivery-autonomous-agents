@@ -11,7 +11,7 @@ import { penalizedDistance } from "./utils.js";
  * Falls back to 0 when the parcel is no longer available, unreachable, effective score ≤ 0, or
  * an enemy can reach it faster.
  *
- * When `zone` is provided (active POSITIONING/PICKUP_AGENT strategy), a zone-proximity factor
+ * When `zone` is provided (active HANDOFF/PICKUP_AGENT strategy), a zone-proximity factor
  * penalises parcels outside the assigned zone: factor = 1/(1 + excess tiles beyond maxDistance).
  * Parcels inside the zone are unaffected (factor = 1). Gate is strict — no zone means factor = 1.
  */

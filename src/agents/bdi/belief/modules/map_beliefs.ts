@@ -3,10 +3,13 @@ import type { Position } from "../../../../models/position.js";
 import type { IOTile } from "../../../../models/djs.js";
 import { TILE_TYPE, staticBlocksEntry, type TileType } from "../../../../models/tile_type.js";
 import { computeSafeTiles } from "./utils/reachability.js";
-import { manhattanDistance, posKey, bfsDistancesFrom } from "../../../../utils/metrics.js";
+import { manhattanDistance, posKey, bfsDistancesFrom, NEIGHBOURS } from "../../../../utils/metrics.js";
 import { createLogger, type Logger } from "../../../../utils/logger.js";
 import { config } from "../../../../config.js";
 import type { CrateBeliefs } from "./crate_beliefs.js";
+
+/** A connected component of same-type tiles with its centroid and tile count. */
+export type ClusterInfo = { centroid: Position; tileCount: number };
 
 /**
  * Beliefs about the static map layout.
@@ -19,6 +22,8 @@ export class MapBeliefs {
     private crateSpaceTiles: Tile[] = [];            // Precomputed list of all tiles that can hold crates, used for PDDL problem generation
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
+    private spawnClusters: ClusterInfo[] | null = null;              // Connected-component clusters of spawn tiles, computed lazily after updateMap
+    private deliveryClusters: ClusterInfo[] | null = null;           // Connected-component clusters of delivery tiles, computed lazily after updateMap
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
     private llmTilePenalties = new Map<string, { id: string; tile: Position; cost: number }>();  // LLM-managed soft traversal costs, keyed by posKey; distinct from temporaryBlocked which is for collision avoidance
     private readonly log: Logger;
@@ -81,6 +86,10 @@ export class MapBeliefs {
         this.crateSpaceTiles = normalizedTiles
             .filter(t => (t.type === TILE_TYPE.CRATE_SPACE || t.type === TILE_TYPE.CRATE_OCCUPIED) && safeKeys.has(posKey(t)))
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
+
+        // Pre-compute connected-component clusters for spawn and delivery tiles (map is static).
+        this.spawnClusters = buildClusters(this.spawnTiles);
+        this.deliveryClusters = buildClusters(this.deliveryTiles);
     }
 
 
@@ -250,6 +259,24 @@ export class MapBeliefs {
     }
 
     /**
+     * Connected-component clusters of spawn tiles.
+     * Each cluster is a set of adjacent spawn tiles with its centroid and count.
+     * Available after the first `updateMap` call; returns [] before that.
+     */
+    getSpawnClusters(): ClusterInfo[] {
+        return this.spawnClusters ?? [];
+    }
+
+    /**
+     * Connected-component clusters of delivery tiles.
+     * Each cluster is a set of adjacent delivery tiles with its centroid and count.
+     * Available after the first `updateMap` call; returns [] before that.
+     */
+    getDeliveryClusters(): ClusterInfo[] {
+        return this.deliveryClusters ?? [];
+    }
+
+    /**
      * All parcel delivery tiles.
      * @return An array of delivery tiles
      */
@@ -387,4 +414,43 @@ export class MapBeliefs {
         }
         return results.sort((a, b) => a.d - b.d).map(r => r.pos);
     }
+}
+
+/**
+ * Group tiles into connected components where adjacency = Manhattan distance 1.
+ * Returns one ClusterInfo per component with its centroid (rounded mean) and tile count.
+ */
+function buildClusters(tiles: Position[]): ClusterInfo[] {
+    const tileSet = new Set(tiles.map(posKey));
+    const visited = new Set<string>();
+    const clusters: ClusterInfo[] = [];
+
+    for (const tile of tiles) {
+        const key = posKey(tile);
+        if (visited.has(key)) continue;
+
+        const component: Position[] = [];
+        const queue: Position[] = [tile];
+        visited.add(key);
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            component.push(current);
+            for (const n of NEIGHBOURS) {
+                const neighbor = { x: current.x + n.x, y: current.y + n.y };
+                const nKey = posKey(neighbor);
+                if (visited.has(nKey) || !tileSet.has(nKey)) continue;
+                visited.add(nKey);
+                queue.push(neighbor);
+            }
+        }
+
+        const sumX = component.reduce((s, t) => s + t.x, 0);
+        const sumY = component.reduce((s, t) => s + t.y, 0);
+        clusters.push({
+            centroid: { x: Math.round(sumX / component.length), y: Math.round(sumY / component.length) },
+            tileCount: component.length,
+        });
+    }
+    return clusters;
 }
