@@ -8,6 +8,7 @@ import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
 import { Communication } from "../communication/communication.js";
+import { HandpassInitiator } from "../cooperation/handpass_initiator.js";
 import { createLogger } from "../../utils/logger.js";
 
 /**
@@ -24,6 +25,7 @@ export class BDIAgent {
     private intentions: Intentions;
     private executor: Executor;
     private comm: Communication;
+    private handpass: HandpassInitiator;
     private perceiveLog;
     private deliberateLog;
 
@@ -32,7 +34,6 @@ export class BDIAgent {
         agentId?: string,
         teammateIds?: string[],
         commFactory?: (socket: any, beliefs: Beliefs, agentId?: string) => Communication,
-        onPickup?: () => void,
     ) {
         this.socket = socket;
         this.perceiveLog = createLogger("perceive", agentId);
@@ -41,16 +42,26 @@ export class BDIAgent {
         this.ruleStore = new RuleStore();
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
-        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId, onPickup);
         this.comm = commFactory
             ? commFactory(socket, this.beliefs, agentId)
             : new Communication(socket, this.beliefs, agentId);
+        this.handpass = new HandpassInitiator(
+            this.beliefs,
+            (toId, tool, args) => this.comm.send(toId, tool, args),
+            strategy => this.setGameStrategy(strategy),
+            createLogger("coordination", agentId),
+        );
+        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId,
+            () => { void this.handpass.maybeInitiate(); });
+        this.comm.onHandpassVote((id, rid, accept) => this.handpass.handleVote(id, rid, accept));
         this.comm.start({
             beliefs: this.beliefs,
             ruleStore: this.ruleStore,
             addInjectedIntention: entry => this.addInjectedIntention(entry),
             removeIntentionsByType: type => this.removeIntentionsByType(type),
             setGameStrategy: strategy => this.setGameStrategy(strategy),
+            armHandpass: (bonus, ttlMs) => this.handpass.arm(bonus, ttlMs),
+            disarmHandpass: () => this.handpass.disarm(),
         });
 
         this.socket.once('controller', (status: string, agent: { id: string; name: string; teamId: string; teamName: string; score: number }) => {
@@ -115,6 +126,15 @@ export class BDIAgent {
         this.intentions.clearGameStrategy();
     }
 
+    /** Arm the handpass initiator (called by the coordinator when OPPORTUNISTIC is selected). */
+    armHandpass(bonus: number | undefined, ttlMs: number): void {
+        this.handpass.arm(bonus, ttlMs);
+    }
+
+    /** Disarm the handpass initiator (called by the coordinator on NONE or ZONAL_RELAY). */
+    disarmHandpass(): void {
+        this.handpass.disarm();
+    }
 
     /**
      * Expose the communication module for external use (e.g. by LLMAgent to register hooks).

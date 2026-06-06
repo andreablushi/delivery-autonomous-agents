@@ -24,6 +24,11 @@ export class AgentBeliefs {
         config.beliefs.enemy.memoryTtlMs,
         config.beliefs.enemy.memorySizeEntries
     );
+    // Movement history for friend agents — mirrors enemiesMemory so prediction works for friends too
+    private friendsMemory = new Memory<Agent>(
+        config.beliefs.enemy.memoryTtlMs,
+        config.beliefs.enemy.memorySizeEntries
+    );
     // List of teammate IDs, used to classify observed agents as friends or enemies and to filter position beacons
     private readonly teammateIds: ReadonlySet<string>;
 
@@ -95,7 +100,8 @@ export class AgentBeliefs {
             // Update the corresponding tracker and memory.
             if (this.teammateIds.has(agent.id)) {
                 this.friends.update(agent.id, data);
-            } 
+                this.friendsMemory.update(agent.id, data);
+            }
             else {
                 this.enemies.update(agent.id, data);
                 this.enemiesMemory.update(agent.id, data);
@@ -181,11 +187,11 @@ export class AgentBeliefs {
          * @param agent The agent to check
          * @returns True if the agent is believed to be on the next tile, false otherwise
          */
-        const checkAgent = (agent: Agent): boolean => {
+        const checkAgent = (agent: Agent, history: { value: Agent; seenAt: number }[]): boolean => {
             // If the agent is currently observed on the next tile, it's an immediate block
             if (agentOccupiesTile(agent, next_tile)) return true;
             // Otherwise, check if a confident prediction indicates the agent will be on the next tile next tick
-            const predicted = predictAgentNextPosition(agent, this.enemiesMemory.getHistory(agent.id), isWalkable);
+            const predicted = predictAgentNextPosition(agent, history, isWalkable);
             return (
                 predicted !== null &&
                 predicted.confidence >= config.beliefs.enemy.confidenceThreshold &&
@@ -196,7 +202,7 @@ export class AgentBeliefs {
 
         // Enemies are always hard obstacles
         for (const agent of freshAgents(this.getCurrentEnemies(), this.enemies)) {
-            if (checkAgent(agent)) return true;
+            if (checkAgent(agent, this.enemiesMemory.getHistory(agent.id))) return true;
         }
 
         // Friends use a deterministic yield: the higher-id agent keeps moving while the
@@ -206,7 +212,7 @@ export class AgentBeliefs {
         for (const agent of freshAgents(this.getCurrentFriends(), this.friends)) {
             // If we know our id and it is greater, we yield to this friend — don't block.
             if (myId !== undefined && myId > agent.id) continue;
-            if (checkAgent(agent)) return true;
+            if (checkAgent(agent, this.friendsMemory.getHistory(agent.id))) return true;
         }
         return false;
     }
@@ -281,6 +287,7 @@ export class AgentBeliefs {
             lastPosition: pos,
         };
         this.friends.update(id, data);
+        this.friendsMemory.update(id, data);
     }
 
     /** Evict stale beliefs that haven't been updated recently to prevent memory bloat. */
@@ -289,5 +296,6 @@ export class AgentBeliefs {
         if (now - this.lastEvict < config.beliefs.evictIntervalMs) return;
         this.lastEvict = now;
         this.enemiesMemory.evict();
+        this.friendsMemory.evict();
     }
 }

@@ -1,7 +1,7 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
 import type { ClusterInfo } from "../../bdi/belief/modules/map_beliefs.js";
-import { posKey, nearestByManhattan } from "../../../utils/metrics.js";
+import { posKey, nearestByManhattan, manhattanDistance } from "../../../utils/metrics.js";
 import { config } from "../../../config.js";
 
 export type { ClusterInfo };
@@ -14,10 +14,18 @@ export type TeamGeometry = {
     /** Top enemy hot zones merged from all teammate reports. */
     hotZones: { x: number; y: number; heat: number }[];
     /**
-     * Spawn tile nearest to the delivery mass — used as the ZONAL_RELAY handoff meet point
-     * so PICKUP never leaves the spawn side of the map.
+     * Spawn tile nearest to the delivery mass — used as the BFS origin for snapping the dynamic
+     * relay midpoint and as a fallback when no delivery clusters are present.
      */
     spawnEdge: { x: number; y: number } | null;
+    /** True when no walkable tile has >2 walkable neighbours (agents cannot pass each other). */
+    singleFile: boolean;
+    /** Manhattan distance from spawnEdge to the nearest delivery cluster centroid. Null when either is absent. */
+    spawnDeliverySeparation: number | null;
+    /** Sum of tileCount across all spawn clusters. */
+    totalSpawnTiles: number;
+    /** Max pairwise Manhattan distance between any two spawn cluster centroids. 0 when ≤1 cluster. */
+    spawnRegionDiameter: number;
 };
 
 /**
@@ -57,6 +65,25 @@ export function buildTeamGeometry(
         .slice(0, config.coordination.hotZonesLimit);
 
     const spawnEdge = beliefs.map.getSpawnRegionEdgeTile();
+    const singleFile = beliefs.map.isSingleFileCorridor();
 
-    return { spawnClusters, deliveryClusters, midpoints, hotZones, spawnEdge };
+    let spawnDeliverySeparation: number | null = null;
+    if (spawnEdge && deliveryClusters.length > 0) {
+        const nearestDeliveryCentroid = nearestByManhattan(spawnEdge, deliveryClusters.map(d => d.centroid));
+        if (nearestDeliveryCentroid) {
+            spawnDeliverySeparation = manhattanDistance(spawnEdge, nearestDeliveryCentroid);
+        }
+    }
+
+    const totalSpawnTiles = spawnClusters.reduce((s, c) => s + c.tileCount, 0);
+
+    let spawnRegionDiameter = 0;
+    for (let i = 0; i < spawnClusters.length; i++) {
+        for (let j = i + 1; j < spawnClusters.length; j++) {
+            const d = manhattanDistance(spawnClusters[i].centroid, spawnClusters[j].centroid);
+            if (d > spawnRegionDiameter) spawnRegionDiameter = d;
+        }
+    }
+
+    return { spawnClusters, deliveryClusters, midpoints, hotZones, spawnEdge, singleFile, spawnDeliverySeparation, totalSpawnTiles, spawnRegionDiameter };
 }

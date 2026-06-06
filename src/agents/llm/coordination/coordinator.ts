@@ -31,13 +31,6 @@ export class Coordinator {
     private lastGeometry: TeamGeometry | null = null;
     /** Fresh reports collected in the last coordination round — used by assignPosture. */
     private lastReports: Map<string, BeliefsReport> = new Map();
-    /**
-     * Opportunistic mode state. Set by assignPosture("OPPORTUNISTIC") and cleared by NONE/ZONAL_RELAY.
-     * When set, a successful pickup triggers a reactive handoff proposal via maybeProposeOpportunisticHandoff.
-     */
-    private opportunistic: { bonus?: number; expiresAt: number } | null = null;
-    /** Timestamp of the last opportunistic handoff proposal — used for cooldown. */
-    private lastOpportunisticProposeAt = 0;
     private readonly log: Logger;
 
     constructor(
@@ -47,6 +40,8 @@ export class Coordinator {
         private readonly addInjectedIntention: (entry: InjectedIntention) => void,
         private readonly setGameStrategy: (strategy: GameStrategy) => void,
         private readonly getMissionNote: () => string = () => "",
+        private readonly armHandpass: (bonus: number | undefined, ttlMs: number) => void = () => {},
+        private readonly disarmHandpass: () => void = () => {},
     ) {
         this.log = createLogger("coordination");
     }
@@ -197,12 +192,17 @@ export class Coordinator {
      *  - compute geometry
      *  - invoke the LLM to assign positions
      *
-     * Re-entrant calls and calls within COOLDOWN_MS are silently dropped.
+     * Re-entrant calls are always dropped. Cooldown is skipped when `opts.force` is true
+     * (used to trigger an immediate round after an admin mission message).
      */
-    async runRound(): Promise<void> {
+    async runRound(opts?: { force?: boolean }): Promise<void> {
         const now = Date.now();
-        if (this.coordinating || now - this.lastRound < config.coordination.cooldownMs) {
-            this.log.debug("Coordination round skipped (already running or in cooldown)");
+        if (this.coordinating) {
+            this.log.debug("Coordination round skipped (already running)");
+            return;
+        }
+        if (!opts?.force && now - this.lastRound < config.coordination.cooldownMs) {
+            this.log.debug("Coordination round skipped (in cooldown)");
             return;
         }
         if (this.beliefs.agents.getTeammateIds().size === 0) {
@@ -232,6 +232,20 @@ export class Coordinator {
             // Stash for use by assignPosture (called synchronously inside client.coordinate).
             this.lastGeometry = geometry;
             this.lastReports = freshReports;
+
+            // Deterministic short-circuit: on single-file corridors where agents cannot pass
+            // each other, relay cooperation is the only productive strategy — skip the LLM.
+            if (
+                geometry.singleFile &&
+                (geometry.spawnDeliverySeparation ?? 0) >= config.coordination.corridorSeparationMin
+            ) {
+                this.log.debug(
+                    `Single-file corridor (sep=${geometry.spawnDeliverySeparation}) — forcing ZONAL_RELAY, skipping LLM`,
+                );
+                await this.assignPosture("ZONAL_RELAY");
+                return;
+            }
+
             await this.client.coordinate(freshReports, geometry, this.beliefs, () => void this.runRound(), this.getMissionNote());
         } catch (err) {
             this.log.error("Coordination round failed:", err);
@@ -250,28 +264,31 @@ export class Coordinator {
      *   ZONAL_RELAY  — one PICKUP_AGENT (sweeps the full spawn region, drops at the spawn-side edge tile)
      *                  + one DELIVER_AGENT (waits at the edge tile, ferries parcels to real deliveries).
      *                  Requires ≥2 agents and a valid spawnEdge; otherwise assigns nothing.
-     *   OPPORTUNISTIC — both agents roam autonomously; a successful pickup reactively triggers a
-     *                   handoff proposal via maybeProposeOpportunisticHandoff. No roles assigned.
-     *   NONE          — no assignment; active strategies lapse on their TTL.
+     *   OPPORTUNISTIC — arms the HandpassInitiator on both agents. Both search autonomously; the first
+     *                   to pick up initiates a handshake handpass via the BDI-layer HandpassInitiator.
+     *   NONE          — disarms handpass on both agents; active strategies lapse on their TTL.
      */
     async assignPosture(posture: string, opts: { bonus?: number } = {}): Promise<string> {
         if (posture === "NONE") {
-            this.opportunistic = null;
+            this.disarmHandpass();
+            await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: false });
             this.log.debug("assignPosture: NONE — strategies will lapse on TTL");
             return JSON.stringify({ ok: true, posture: "NONE" });
         }
 
         if (posture === "OPPORTUNISTIC") {
             const ttlSeconds = Math.min(120, Math.ceil(config.coordination.intervalMs / 1000) * 2);
-            this.opportunistic = { bonus: opts.bonus, expiresAt: Date.now() + ttlSeconds * 1_000 };
+            this.armHandpass(opts.bonus, ttlSeconds * 1_000);
+            await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: true, bonus: opts.bonus ?? null, ttl_seconds: ttlSeconds });
             this.log.debug(`assignPosture: OPPORTUNISTIC armed, bonus=${opts.bonus ?? 0}, ttl=${ttlSeconds}s`);
             return JSON.stringify({ ok: true, posture: "OPPORTUNISTIC", bonus: opts.bonus });
         }
 
         if (posture !== "ZONAL_RELAY") return JSON.stringify({ error: `Unknown posture: ${posture}` });
 
-        // Clear opportunistic mode when switching to ZONAL_RELAY
-        this.opportunistic = null;
+        // Disarm opportunistic mode when switching to ZONAL_RELAY
+        this.disarmHandpass();
+        await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: false });
 
         if (!this.lastGeometry) return JSON.stringify({ error: "No geometry available — wait for the first coordination round" });
 
@@ -301,75 +318,6 @@ export class Coordinator {
         if (roster.length === 0) return JSON.stringify({ error: "No agents with known positions" });
 
         return this.assignZonalRelay(roster, ttlSeconds, opts.bonus);
-    }
-
-    /**
-     * Called after a successful pickup when OPPORTUNISTIC mode is armed.
-     * Guards: mode still active, cooldown elapsed, exactly one teammate, carrying ≥1 parcel,
-     * partner meaningfully closer to delivery than the carrier.
-     * On a go: injects DELIVER_PARCEL at a live-computed meet tile for the carrier and
-     * proposes a GOTO to the partner via the existing 2PC path.
-     */
-    async maybeProposeOpportunisticHandoff(): Promise<void> {
-        if (!this.opportunistic) return;
-        const now = Date.now();
-        if (now > this.opportunistic.expiresAt) {
-            this.opportunistic = null;
-            return;
-        }
-        if (now - this.lastOpportunisticProposeAt < config.coordination.opportunisticCooldownMs) return;
-
-        const teammates = this.beliefs.agents.getTeammateIds();
-        if (teammates.size !== 1) return;
-        const partnerId = [...teammates][0]!;
-
-        const me = this.beliefs.agents.getCurrentMe();
-        if (!me) return;
-        const myPos = this.beliefs.agents.getCurrentPosition();
-        if (!myPos) return;
-
-        const carried = (this.beliefs as Beliefs).parcels.getCarriedByAgent(me.id);
-        if (carried.length === 0) return;
-
-        const partner = this.beliefs.agents.getCurrentFriends().find(f => f.id === partnerId);
-        const partnerPos = partner?.lastPosition ?? null;
-        if (!partnerPos) return;
-
-        const deliveryTiles = (this.beliefs as Beliefs).map.getDeliveryTiles();
-        if (deliveryTiles.length === 0) return;
-
-        // Quick Manhattan check: partner must be meaningfully closer to a delivery tile.
-        const myDelDist = Math.min(...deliveryTiles.map(t => manhattanDistance(myPos, t)));
-        const partnerDelDist = Math.min(...deliveryTiles.map(t => manhattanDistance(partnerPos, t)));
-        if (partnerDelDist >= myDelDist - config.coordination.opportunisticMinPartnerSaving) return;
-
-        // Compute live meet tile: midpoint between carrier and their nearest delivery, snapped to reachable.
-        const nearestDel = deliveryTiles.reduce((best, t) =>
-            manhattanDistance(myPos, t) < manhattanDistance(myPos, best) ? t : best
-        );
-        const cx = Math.round((myPos.x + nearestDel.x) / 2);
-        const cy = Math.round((myPos.y + nearestDel.y) / 2);
-        const reachable = (this.beliefs as Beliefs).map.allRendezvousTiles(myPos, cx, cy, config.coordination.opportunisticMeetRadius);
-        if (reachable.length === 0) return;
-        const meetTile = reachable[0]!;
-
-        const bonus = this.opportunistic.bonus ?? 0;
-        const carriedValue = carried.reduce((sum, p) => sum + p.reward, 0);
-        const reward = Math.max(1, bonus + carriedValue);
-        const ttlSeconds = 30;
-
-        this.lastOpportunisticProposeAt = now;
-
-        // Carrier: inject DELIVER_PARCEL at meet tile — carrier goes there and drops parcels.
-        this.addInjectedIntention({
-            desire: { type: "DELIVER_PARCEL", target: meetTile, bonus: bonus > 0 ? bonus : undefined },
-            expiresAt: now + ttlSeconds * 1_000,
-            sourceId: "opportunistic",
-        });
-
-        // Partner: propose GOTO via 2PC — partner navigates to meet tile (PARK_TILE), picks up grounded parcels autonomously.
-        this.log.debug(`Opportunistic handoff: proposing goto to ${partnerId} @ (${meetTile.x},${meetTile.y}), reward=${reward}`);
-        await this.proposeGoto(partnerId, { target_x: meetTile.x, target_y: meetTile.y, reward, ttl_seconds: ttlSeconds });
     }
 
     /**
@@ -414,9 +362,36 @@ export class Coordinator {
     }
 
     /**
-     * ZONAL_RELAY: PICKUP_AGENT sweeps the full spawn region, drops at the spawn-side edge tile;
-     * DELIVER_AGENT waits at the edge tile, ferries received parcels to real delivery tiles, returns.
-     * Requires at least 2 agents and a valid spawnEdge tile.
+     * Compute the relay meet tile as the midpoint between the chosen pickup spawn anchor and the
+     * nearest delivery cluster centroid, snapped to the nearest reachable tile via BFS from
+     * `reachableOrigin`. Falls back to `reachableOrigin` when delivery clusters are absent or no
+     * reachable tile is found within the snap radius.
+     */
+    private computeRelayMeetTile(
+        spawnAnchor: Position,
+        reachableOrigin: Position,
+        geometry: TeamGeometry,
+    ): Position {
+        if (geometry.deliveryClusters.length === 0) return reachableOrigin;
+
+        const nearestDelivery = geometry.deliveryClusters.reduce((best, c) =>
+            manhattanDistance(spawnAnchor, c.centroid) < manhattanDistance(spawnAnchor, best.centroid) ? c : best
+        ).centroid;
+
+        const cx = Math.round((spawnAnchor.x + nearestDelivery.x) / 2);
+        const cy = Math.round((spawnAnchor.y + nearestDelivery.y) / 2);
+
+        const snapped = (this.beliefs as Beliefs).map.allRendezvousTiles(
+            reachableOrigin, cx, cy, config.coordination.opportunisticMeetRadius,
+        );
+        return snapped[0] ?? reachableOrigin;
+    }
+
+    /**
+     * ZONAL_RELAY: PICKUP_AGENT sweeps the full spawn region, drops at a dynamic midpoint halfway
+     * between the pickup anchor and the nearest delivery zone. DELIVER_AGENT waits at that midpoint,
+     * ferries received parcels to real delivery tiles, and returns.
+     * Requires at least 2 agents and a valid spawnEdge tile (used as the BFS origin for snapping).
      */
     private async assignZonalRelay(
         roster: Array<{ id: string; pos: Position; bfs: Map<string, number> }>,
@@ -429,8 +404,9 @@ export class Coordinator {
         }
         const geometry = this.lastGeometry!;
 
-        const meetTile = geometry.spawnEdge;
-        if (!meetTile) return JSON.stringify({ error: "No spawn region edge tile for ZONAL_RELAY" });
+        // spawnEdge is the BFS-reachable reference point used for snapping and as a fallback.
+        const spawnEdge = geometry.spawnEdge;
+        if (!spawnEdge) return JSON.stringify({ error: "No spawn region edge tile for ZONAL_RELAY" });
 
         const spawnAnchors = geometry.spawnClusters.map(c => ({
             pos: c.centroid,
@@ -447,9 +423,14 @@ export class Coordinator {
         const deliverAgent = roster.find(a => a.id !== pickupMatch.agentId);
         if (!deliverAgent) return JSON.stringify({ error: "No remaining agent for DELIVER_AGENT" });
 
+        // Compute the meet tile as the midpoint between the chosen pickup anchor and the
+        // nearest delivery cluster, snapped to the nearest reachable tile. This balances the
+        // relay — PICKUP owns spawn→midpoint, DELIVER owns midpoint→delivery.
+        const meetTile = this.computeRelayMeetTile(pickupMatch.anchor.pos, spawnEdge, geometry);
+
         const results: string[] = [];
 
-        // PICKUP_AGENT: sweeps full spawn region, drops at spawn-side edge tile.
+        // PICKUP_AGENT: sweeps full spawn region, drops at dynamic midpoint.
         // No pickup_zone_x/y → PickupRole sweeps all spawn tiles via region membership filter.
         results.push(await this.emitStrategyAssignment(pickupMatch.agentId, {
             strategy: StrategyType.ZonalRelay, role: StrategyRole.PickupAgent,
@@ -458,7 +439,7 @@ export class Coordinator {
             bonus, partner_id: deliverAgent.id,
         }));
 
-        // DELIVER_AGENT: waits at the edge tile, ferries received parcels to real delivery tiles, returns.
+        // DELIVER_AGENT: waits at the dynamic midpoint, ferries received parcels to real delivery tiles, returns.
         results.push(await this.emitStrategyAssignment(deliverAgent.id, {
             strategy: StrategyType.ZonalRelay, role: StrategyRole.DeliverAgent,
             tile_x: meetTile.x, tile_y: meetTile.y,

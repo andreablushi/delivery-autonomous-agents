@@ -17,21 +17,31 @@ ZONAL_RELAY  — one agent (PICKUP) sweeps the entire spawn region, heads to the
                at the edge tile, picks up ALL dropped parcels, delivers them to the delivery zone,
                and returns to wait. Use when spawns are clustered on one side of the map.
 
-OPPORTUNISTIC — both agents roam fully autonomously. As soon as an agent picks up a parcel and a
-               cross-agent bonus is active, it proposes a reactive handoff: the carrier drops at a
-               live-computed meet point on the way to delivery, and the partner collects and delivers.
-               No fixed roles. Use when spawns are scattered AND a cross-agent bonus is active.
+OPPORTUNISTIC — arms both agents for handpass mode. Both search autonomously. The first to pick up
+               a parcel initiates a handshake (2PC): both agents converge on the midpoint between
+               them and wait for each other; the initiator (PASSER) drops its parcels there; the
+               partner (RECEIVER) collects the dropped parcels and delivers. Either agent can be
+               the initiator. Disarms automatically after one handpass + delivery cycle.
+               Use when spawns are scattered AND a cross-agent bonus is active.
 
 NONE         — agents run fully autonomously; current assignments lapse on their TTL.
 
 Decision rules
 --------------
 Choose ZONAL_RELAY when BOTH of the following are true:
-  1. Favorable geometry: there is at least one spawn cluster with ≥3 tiles AND a meaningful
-     spatial separation exists (spawn-side edge tile is ≥5 tiles from the nearest delivery zone),
-     so ferrying parcels beats both agents each making the full round trip.
+  1. Favorable geometry: ANY of (a), (b), or (c), AND spawn→delivery separation ≥5 tiles:
+     (a) At least one spawn cluster has ≥3 tiles.
+     (b) The map is a single-file corridor (agents cannot pass each other).
+     (c) The spawn region is geographically compact: total spawn tiles ≥3 AND spawn region
+         diameter ≤ spawn→delivery separation / 2. Multiple small clusters that are close
+         together form an effective pickup zone — a single PICKUP agent can sweep all of them
+         as efficiently as one large cluster.
   2. No strong cross-agent bonus is present (or even if present, clustered geometry makes zonal
      relay the dominant strategy).
+
+  Note: on a single-file corridor with sufficient separation, ZONAL_RELAY is correct even when
+  all spawn clusters have only 1–2 tiles — relay is the only way both agents stay productive
+  without deadlocking, because they cannot pass each other to swap roles mid-route.
 
 Choose OPPORTUNISTIC when:
   - A cross-agent bonus is present that requires one agent to pick up and a DIFFERENT agent to
@@ -40,8 +50,8 @@ Choose OPPORTUNISTIC when:
     pickup zone would be unproductive.
 
 Choose NONE when:
-  - Spawn tiles are scattered AND no cross-agent bonus is active.
-  - Spawn and delivery zones are essentially co-located (edge tile distance <5 tiles).
+  - Spawn tiles are scattered (large region diameter — clusters spread across the map) AND no cross-agent bonus is active.
+  - Spawn and delivery zones are essentially co-located (spawn→delivery separation <5 tiles).
   - Parcels are sparse and any form of handoff would leave one agent idle most of the time.
 
 Important distinctions

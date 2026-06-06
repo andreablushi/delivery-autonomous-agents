@@ -147,26 +147,32 @@ export class Intentions {
 
         const strategy = this.currentStrategy;
 
-        // ZONAL_RELAY role: state-machine path — gated desires, bypasses autonomous generation.
-        if (strategy?.strategy === StrategyType.ZonalRelay) {
+        // ZONAL_RELAY / OPPORTUNISTIC role: state-machine path — gated desires, bypasses autonomous generation.
+        if (strategy?.strategy === StrategyType.ZonalRelay || strategy?.strategy === StrategyType.Opportunistic) {
             this.controller.sync(strategy);
             this.controller.tick(beliefs, strategy);
-            const desires = this.controller.buildDesires(beliefs, strategy);
 
-            this.desireLog.debug(
-                `Role desires (${strategy.role}) — ` +
-                ([...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none")
-            );
+            // Completion teardown: clear strategy and fall through to autonomous path this cycle.
+            if (this.controller.isComplete(strategy)) {
+                this.log.debug(`Role FSM complete (${strategy.role}) — clearing strategy`);
+                this.clearGameStrategy();
+                // Fall through to autonomous path below.
+            } else {
+                const desires = this.controller.buildDesires(beliefs, strategy);
 
-            // No centroid zone — PICKUP sweeps the full spawn region (role handles spatial gating),
-            // DELIVER is driven by REACH_TILE / REACH_PARCEL desires from the role state machine.
-            this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, null, prevHoldTarget);
-            const head = this.intentionsQueue[0];
-            this.log.debug(
-                `Queue rebuilt (${this.intentionsQueue.length} items, role=${strategy.role})` +
-                (head ? ` — head: ${head.desire.type} @(${head.desire.target.x},${head.desire.target.y}) score=${head.score.toFixed(2)}` : "")
-            );
-            return;
+                this.desireLog.debug(
+                    `Role desires (${strategy.role}) — ` +
+                    ([...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none")
+                );
+
+                this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, null, prevHoldTarget);
+                const head = this.intentionsQueue[0];
+                this.log.debug(
+                    `Queue rebuilt (${this.intentionsQueue.length} items, role=${strategy.role})` +
+                    (head ? ` — head: ${head.desire.type} @(${head.desire.target.x},${head.desire.target.y}) score=${head.score.toFixed(2)}` : "")
+                );
+                return;
+            }
         }
 
         // Autonomous path: use belief-derived desires plus injected intentions.

@@ -36,7 +36,7 @@ export function buildCoordinationPrompt(
 
     // Geometry
     const geoLines: string[] = [];
-    geoLines.push(`Spawn clusters (${geometry.spawnClusters.length}):`);
+    geoLines.push(`Spawn region: ${geometry.totalSpawnTiles} total tiles, ${geometry.spawnClusters.length} cluster(s), region diameter=${geometry.spawnRegionDiameter} tiles`);
     geometry.spawnClusters.forEach((c, i) =>
         geoLines.push(`  Cluster ${i + 1}: centroid=(${c.centroid.x},${c.centroid.y}), ${c.tileCount} tiles`)
     );
@@ -47,6 +47,8 @@ export function buildCoordinationPrompt(
     const midStr = geometry.midpoints.length > 0
         ? geometry.midpoints.map(m => `(${m.x},${m.y})`).join(" ") : "none";
     geoLines.push(`Midpoints (spawn→delivery): ${midStr}`);
+    geoLines.push(`Single-file corridor: ${geometry.singleFile ? "yes (agents cannot pass each other)" : "no"}`);
+    geoLines.push(`Spawn→delivery separation: ${geometry.spawnDeliverySeparation !== null ? `${geometry.spawnDeliverySeparation} tiles` : "unknown"}`);
     if (geometry.hotZones.length > 0) {
         geoLines.push(`Hot zones: ${geometry.hotZones.map(z => `(${z.x},${z.y}) heat=${z.heat.toFixed(2)}`).join(" ")}`);
     }

@@ -24,6 +24,7 @@ export class MapBeliefs {
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
     private clusters: Record<"spawn" | "delivery", ClusterInfo[]> = { spawn: [], delivery: [] }; // Connected-component clusters per tile role, built in updateMap
     private spawnRegionEdgeTile: Position | null = null; // Spawn tile nearest to the delivery mass; precomputed in updateMap
+    private singleFile = false; // True when no walkable tile has >2 walkable neighbours (single-file corridor)
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
     private llmTilePenalties = new Map<string, { id: string; tile: Position; cost: number }>();  // LLM-managed soft traversal costs, keyed by posKey; distinct from temporaryBlocked which is for collision avoidance
     private readonly log: Logger;
@@ -100,6 +101,29 @@ export class MapBeliefs {
         } else {
             this.spawnRegionEdgeTile = null;
         }
+
+        // Single-file corridor detection: the map is single-file when no walkable tile
+        // has more than 2 walkable orthogonal neighbours (the walkable graph is a pure path/ring).
+        this.singleFile = true;
+        outer: for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (matrix[y][x] === TILE_TYPE.WALL) continue;
+                let walkableNeighbours = 0;
+                for (const n of NEIGHBOURS) {
+                    const nx = x + n.x;
+                    const ny = y + n.y;
+                    if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                    if (MapBeliefs.isStaticWalkable(matrix, width, height, { x, y }, { x: nx, y: ny })) {
+                        walkableNeighbours++;
+                    }
+                }
+                if (walkableNeighbours > 2) {
+                    this.singleFile = false;
+                    break outer;
+                }
+            }
+        }
+        this.log.debug(`Single-file corridor: ${this.singleFile}`);
     }
 
 
@@ -268,6 +292,15 @@ export class MapBeliefs {
      */
     getSpawnRegionEdgeTile(): Position | null {
         return this.spawnRegionEdgeTile;
+    }
+
+    /**
+     * True when the walkable graph is a single-file corridor — no tile has more than two
+     * walkable orthogonal neighbours, so agents cannot pass each other.
+     * Computed once in updateMap; always false before the first call.
+     */
+    isSingleFileCorridor(): boolean {
+        return this.singleFile;
     }
 
     /**

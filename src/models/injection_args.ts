@@ -228,6 +228,32 @@ export function parseTraversalPenaltyArgs(json: unknown): TraversalPenaltyArgs |
 }
 
 
+/** Wire args for `handpass_propose` and `handpass_commit` (same shape, includes rid). */
+export type HandpassProposeArgs = {
+    rid: string;
+    meet_x: number;
+    meet_y: number;
+    reward: number;
+    ttl_seconds: number;
+};
+
+export function parseHandpassProposeArgs(json: unknown): HandpassProposeArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
+    const meet_x      = coerceNum(obj.meet_x);
+    const meet_y      = coerceNum(obj.meet_y);
+    const reward      = coerceNum(obj.reward);
+    const ttl_seconds = coerceNum(obj.ttl_seconds);
+    if (typeof meet_x !== "number" || !Number.isInteger(meet_x)) return { error: "meet_x must be an integer" };
+    if (typeof meet_y !== "number" || !Number.isInteger(meet_y)) return { error: "meet_y must be an integer" };
+    if (typeof reward !== "number" || reward <= 0) return { error: "reward must be a positive number" };
+    if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
+        return { error: "ttl_seconds must be an integer in [5, 120]" };
+    return { rid: obj.rid, meet_x, meet_y, reward, ttl_seconds };
+}
+
+
 /** Arguments for `assign_strategy` (the `agent_id`/`rationale` fields are handled by the tool handler). */
 export type AssignStrategyArgs = {
     strategy: StrategyType;

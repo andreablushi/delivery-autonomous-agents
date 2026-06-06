@@ -19,9 +19,7 @@ export class LLMAgent {
         this.log = createLogger("llm", agentId);
         let comm!: LLMCommunication;
         this.bdi = new BDIAgent(socket, agentId, teammateIds,
-            (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; },
-            // Lazy closure: coordinator is assigned after bdi in this constructor and is available by the time any pickup fires.
-            () => { void this.coordinator.maybeProposeOpportunisticHandoff(); });
+            (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; });
         this.client = new LLMClient(
             entry => this.bdi.addInjectedIntention(entry),
             type => this.bdi.removeIntentionsByType(type),
@@ -42,16 +40,20 @@ export class LLMAgent {
             entry => this.bdi.addInjectedIntention(entry),
             strategy => this.bdi.setGameStrategy(strategy),
             () => this.missionNote,
+            (bonus, ttlMs) => this.bdi.armHandpass(bonus, ttlMs),
+            () => this.bdi.disarmHandpass(),
         );
         this.coordinator.start();
 
         // Handler for coordination messages from teammates. Forwarded to the coordinator for processing.
         comm.onCoordination((senderId, msg) => this.coordinator.handleInbound(senderId, msg));
 
-        // Handler for mission chat messages from the mission emitter. Passed to the LLM client
+        // Handler for mission chat messages from the mission emitter. Passed to the LLM client.
+        // Also triggers an immediate coordination round so posture changes take effect right away.
         comm.onMission((senderId, senderName, content) => {
             if (!this.isValidMessage(senderId, senderName, content)) return;
             this.missionNote = content;
+            void this.coordinator.runRound({ force: true });
             this.log.debug(`mission msg from ${senderName} (${senderId}): "${content}"`);
             this.client
                 .processMessage(senderId, senderName, content, this.bdi.getBeliefs())

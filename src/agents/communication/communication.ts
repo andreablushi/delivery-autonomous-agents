@@ -1,6 +1,6 @@
 import { encode, tryDecode, PeerKind, type PeerInjectionMessage, type PeerInjectionKind } from "../../models/message_injection.js";
 import { applyInjection, type InjectionDeps } from "../../models/apply_injection.js";
-import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote } from "../bdi/desire/scoring/vote.js";
+import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote, evaluateHandpassVote } from "../bdi/desire/scoring/vote.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
 import type { RuleStore } from "../bdi/desire/rule_store.js";
 import type { InjectedIntention } from "../../models/intentions.js";
@@ -16,6 +16,8 @@ export type IncomingDeps = {
     addInjectedIntention: (e: InjectedIntention) => void;
     removeIntentionsByType: (t: DesireType["type"]) => void;
     setGameStrategy: (s: GameStrategy) => void;
+    armHandpass?: (bonus: number | undefined, ttlMs: number) => void;
+    disarmHandpass?: () => void;
 };
 
 /**
@@ -30,6 +32,7 @@ export type IncomingDeps = {
  */
 export class Communication {
     protected readonly log: Logger;
+    private handpassVoteHook?: (senderId: string, rid: string, accept: boolean) => void;
 
     constructor(
         protected readonly socket: any,
@@ -37,6 +40,11 @@ export class Communication {
         agentId?: string,
     ) {
         this.log = createLogger("communication", agentId);
+    }
+
+    /** Register a callback invoked when a handpass_vote arrives. Used by HandpassInitiator. */
+    onHandpassVote(fn: (senderId: string, rid: string, accept: boolean) => void): void {
+        this.handpassVoteHook = fn;
     }
 
     /** Send a peer-injection message to a specific agent. */
@@ -141,6 +149,24 @@ export class Communication {
                         return;
                     }
 
+                    case PeerKind.HandpassPropose: {
+                        const accept = evaluateHandpassVote(deps.beliefs, deps.ruleStore, msg.args);
+                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
+                            ? (msg.args as Record<string, unknown>).rid as string
+                            : "";
+                        this.log.debug(`handpass_propose from ${senderName}: accept=${accept} (rid=${rid})`);
+                        await this.send(senderId, PeerKind.HandpassVote, { rid, accept });
+                        return;
+                    }
+
+                    case PeerKind.HandpassVote: {
+                        const args = msg.args as Record<string, unknown>;
+                        const rid = typeof args.rid === "string" ? args.rid : "";
+                        const accept = typeof args.accept === "boolean" ? args.accept : false;
+                        this.handpassVoteHook?.(senderId, rid, accept);
+                        return;
+                    }
+
                     default: {
                         const injDeps: InjectionDeps = {
                             beliefs: deps.beliefs,
@@ -149,6 +175,8 @@ export class Communication {
                             removeIntentionsByType: deps.removeIntentionsByType,
                             setGameStrategy: deps.setGameStrategy,
                             sourceId: senderId,
+                            armHandpass: deps.armHandpass,
+                            disarmHandpass: deps.disarmHandpass,
                         };
                         const result = applyInjection(msg.tool, msg.args, injDeps);
                         if ("error" in result) this.log.warn(`injection error (${msg.tool}):`, result.error);

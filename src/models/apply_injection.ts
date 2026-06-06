@@ -6,6 +6,8 @@ import type { ScoringRule } from "./rules.js";
 import { SCORING_AXIS } from "./rules.js";
 import type { GameStrategy } from "./game_strategy.js";
 import { PeerKind } from "./message_injection.js";
+import { StrategyType, StrategyRole } from "./game_strategy.js";
+import { config } from "../config.js";
 import {
     parseGotoArgs,
     parseScoringRuleArgs,
@@ -13,6 +15,7 @@ import {
     parseRendezvousProposeArgs,
     parseRedLightProposeArgs,
     parseAssignStrategyArgs,
+    parseHandpassProposeArgs,
 } from "./injection_args.js";
 import { buildRendezvousHolds, buildHolds } from "../agents/cooperation/holds.js";
 
@@ -23,6 +26,8 @@ export interface InjectionDeps {
     removeIntentionsByType: (type: DesireType["type"]) => void;
     setGameStrategy: (strategy: GameStrategy) => void;
     sourceId: string;
+    armHandpass?: (bonus: number | undefined, ttlMs: number) => void;
+    disarmHandpass?: () => void;
 }
 
 export type InjectionResult = { ok: true } | { error: string };
@@ -190,6 +195,38 @@ export function applyInjection(
             // No args to validate — request_resume carries no parameters.
             removeIntentionsByType("HOLD_TILE");
             removeIntentionsByType("PARK_TILE");
+            return { ok: true };
+        }
+
+        case PeerKind.HandpassCommit: {
+            const p = parseHandpassProposeArgs(rawArgs);
+            if ("error" in p) return p;
+            if (!beliefs.map.checkMapBounds(p.meet_x, p.meet_y)) return { error: "Coordinates out of map bounds" };
+            setGameStrategy({
+                strategy: StrategyType.Opportunistic,
+                role: StrategyRole.Receiver,
+                tiles: [{ x: p.meet_x, y: p.meet_y }],
+                maxDistance: config.handoff.zoneRadius,
+                partnerId: sourceId,
+                expiresAt: Date.now() + p.ttl_seconds * 1_000,
+            });
+            deps.disarmHandpass?.();
+            return { ok: true };
+        }
+
+        case PeerKind.HandpassAbort:
+            // No-op: no state was injected pre-commit, nothing to undo.
+            return { ok: true };
+
+        case PeerKind.SetHandpassMode: {
+            const args = rawArgs as Record<string, unknown>;
+            if (args.armed === true) {
+                const bonus = typeof args.bonus === "number" ? args.bonus : undefined;
+                const ttl_seconds = typeof args.ttl_seconds === "number" ? args.ttl_seconds : 120;
+                deps.armHandpass?.(bonus, ttl_seconds * 1_000);
+            } else {
+                deps.disarmHandpass?.();
+            }
             return { ok: true };
         }
 

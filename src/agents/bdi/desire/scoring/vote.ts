@@ -8,6 +8,7 @@ import { scoreDeliverDesire } from "./deliver_parcel.js";
 import { scoreHoldTile } from "./hold_tile.js";
 import { scoreReachTile } from "./reach_tile.js";
 import { generateReachParcelDesires, generateDeliverDesires } from "../desire_generator.js";
+import { config } from "../../../../config.js";
 
 function bestCurrentScore(beliefs: Beliefs, ctx: ScoringContext, ruleStore: RuleStore): number {
     const { meDist, enemyDists, carriedCount, carriedValue } = ctx;
@@ -142,6 +143,34 @@ export function evaluateRedLightVote(
     }
 
     return holdScore >= bestCurrentScore(beliefs, ctx, ruleStore);
+}
+
+/**
+ * Evaluate a handpass proposal on behalf of a BDI agent (this agent will become the RECEIVER).
+ *
+ * Returns `true` (accept) iff:
+ *   1. The meet zone is reachable (≥1 tile accessible from the agent's current position), AND
+ *   2. The agent has spare carry capacity (it will need to collect the dropped parcels).
+ */
+export function evaluateHandpassVote(
+    beliefs: Beliefs,
+    ruleStore: RuleStore,
+    rawArgs: unknown,
+): boolean {
+    if (typeof rawArgs !== "object" || rawArgs === null) return false;
+    const obj = rawArgs as Record<string, unknown>;
+    const meet_x = typeof obj.meet_x === "number" ? obj.meet_x : null;
+    const meet_y = typeof obj.meet_y === "number" ? obj.meet_y : null;
+    if (meet_x === null || meet_y === null) return false;
+
+    const ctx = buildScoringContext(beliefs, ruleStore);
+    if (!ctx) return false;
+
+    const tiles = beliefs.map.allRendezvousTiles(ctx.me.lastPosition, meet_x, meet_y, config.coordination.opportunisticMeetRadius);
+    if (tiles.length === 0) return false;
+
+    const carryCapacity = beliefs.agents.getCarryCapacity() ?? Infinity;
+    return ctx.carriedCount < carryCapacity;
 }
 
 /**

@@ -16,9 +16,11 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
             "  ZONAL_RELAY  — one agent (PICKUP) sweeps the full spawn region, drops at the " +
             "spawn-side edge tile. The other (DELIVER) waits there, ferries parcels to real " +
             "delivery tiles, returns. Best when spawns are clustered on one map side.\n" +
-            "  OPPORTUNISTIC — both agents roam freely. On a pickup, the carrier reactively " +
-            "proposes a meet point and drops there; the partner collects and delivers. Best when " +
-            "spawns are scattered and a cross-agent bonus is active. Set the bonus arg.\n" +
+            "  OPPORTUNISTIC — arms both agents for handpass mode. Both search autonomously. " +
+            "The first to pick up a parcel initiates a 2PC handshake: both converge on the " +
+            "midpoint between them and wait for each other; the initiator drops its parcels " +
+            "there; the partner collects and delivers. Disarms automatically after one cycle. " +
+            "Best when spawns are scattered and a cross-agent bonus is active. Set the bonus arg.\n" +
             "  NONE    — let agents run autonomously; current assignments lapse on their TTL.\n" +
             "The assignment refreshes automatically each coordination cycle.",
         parameters: {

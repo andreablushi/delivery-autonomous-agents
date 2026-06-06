@@ -2,7 +2,8 @@ import type { Position } from "./position.js";
 
 /** High-level cooperation strategy a GameStrategy belongs to. */
 export const StrategyType = {
-    ZonalRelay: "ZONAL_RELAY", // Pickup agent sweeps the full spawn region, drops at the spawn-side edge tile; deliver agent ferries to real delivery tiles.
+    ZonalRelay:   "ZONAL_RELAY",   // Pickup agent sweeps the full spawn region, drops at the spawn-side edge tile; deliver agent ferries to real delivery tiles.
+    Opportunistic: "OPPORTUNISTIC", // Handshake-driven handpass: first to pick up becomes PASSER, partner becomes RECEIVER.
 } as const;
 export type StrategyType = typeof StrategyType[keyof typeof StrategyType];
 
@@ -10,6 +11,8 @@ export type StrategyType = typeof StrategyType[keyof typeof StrategyType];
 export const StrategyRole = {
     PickupAgent:  "PICKUP_AGENT",  // ZONAL_RELAY: sweep spawn-region parcels, carry to edge tile, drop
     DeliverAgent: "DELIVER_AGENT", // ZONAL_RELAY: wait at edge tile, pick up grounded parcels, deliver, return
+    Passer:       "PASSER",        // OPPORTUNISTIC: carry parcels to meet tile, wait for receiver, drop
+    Receiver:     "RECEIVER",      // OPPORTUNISTIC: go to meet tile, collect dropped parcels, deliver
 } as const;
 export type StrategyRole = typeof StrategyRole[keyof typeof StrategyRole];
 
