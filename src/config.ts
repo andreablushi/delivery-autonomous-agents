@@ -61,6 +61,10 @@ export const config = {
         collectWindowMs: 750,   // Time to wait for belief reports before running the LLM pass
         cooldownMs: 5_000,      // Minimum gap between coordination rounds
         hotZonesLimit: 5,       // Max hot zones kept when merging teammate reports
+        // Opportunistic handoff (OPPORTUNISTIC posture)
+        opportunisticCooldownMs: 4_000,     // Minimum gap between opportunistic handoff proposals
+        opportunisticMeetRadius: 3,         // Manhattan radius around the live-computed meet center to snap to a reachable tile
+        opportunisticMinPartnerSaving: 3,   // Min steps the partner must be closer to delivery than the carrier to trigger
     },
 
     rendezvous: {

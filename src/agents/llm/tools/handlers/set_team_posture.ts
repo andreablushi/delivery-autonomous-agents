@@ -4,7 +4,7 @@ import { createLogger } from "../../../../utils/logger.js";
 
 const log = createLogger("coordination");
 
-const POSTURES = ["HANDOFF", "NONE"] as const;
+const POSTURES = ["ZONAL_RELAY", "OPPORTUNISTIC", "NONE"] as const;
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
@@ -13,10 +13,12 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
         description:
             "Choose the team's cooperation mode. The system deterministically assigns roles — " +
             "no coordinates needed from you.\n" +
-            "  HANDOFF — one agent (PICKUP) collects parcels in the spawn area, heads to the " +
-            "shared midpoint when its zone is empty or full, and drops the parcels there. The " +
-            "other agent (DELIVER) waits at the midpoint, picks up the grounded parcels, " +
-            "delivers them, and returns to wait. Set the bonus arg when you want extra incentive.\n" +
+            "  ZONAL_RELAY  — one agent (PICKUP) sweeps the full spawn region, drops at the " +
+            "spawn-side edge tile. The other (DELIVER) waits there, ferries parcels to real " +
+            "delivery tiles, returns. Best when spawns are clustered on one map side.\n" +
+            "  OPPORTUNISTIC — both agents roam freely. On a pickup, the carrier reactively " +
+            "proposes a meet point and drops there; the partner collects and delivers. Best when " +
+            "spawns are scattered and a cross-agent bonus is active. Set the bonus arg.\n" +
             "  NONE    — let agents run autonomously; current assignments lapse on their TTL.\n" +
             "The assignment refreshes automatically each coordination cycle.",
         parameters: {

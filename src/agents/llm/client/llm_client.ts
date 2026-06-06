@@ -220,7 +220,7 @@ export class LLMClient {
         this.promptLog.debug(`Coordination response: ${text}`);
 
         // Extract the first {...} block from the response and parse the posture.
-        const POSTURES = ["HANDOFF", "NONE"] as const;
+        const POSTURES = ["ZONAL_RELAY", "OPPORTUNISTIC", "NONE"] as const;
         type Posture = typeof POSTURES[number];
         let posture: Posture = "NONE";
         let bonus: number | undefined;

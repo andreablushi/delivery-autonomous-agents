@@ -32,6 +32,7 @@ export class BDIAgent {
         agentId?: string,
         teammateIds?: string[],
         commFactory?: (socket: any, beliefs: Beliefs, agentId?: string) => Communication,
+        onPickup?: () => void,
     ) {
         this.socket = socket;
         this.perceiveLog = createLogger("perceive", agentId);
@@ -40,7 +41,7 @@ export class BDIAgent {
         this.ruleStore = new RuleStore();
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
-        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
+        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId, onPickup);
         this.comm = commFactory
             ? commFactory(socket, this.beliefs, agentId)
             : new Communication(socket, this.beliefs, agentId);

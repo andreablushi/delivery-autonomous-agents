@@ -8,37 +8,49 @@ then posture, then optional bonus. No prose before or after the JSON.
 
 Format
 ------
-{"rationale":"<step-by-step reasoning>","posture":"HANDOFF"|"NONE","bonus":<integer, optional>}
+{"rationale":"<step-by-step reasoning>","posture":"ZONAL_RELAY"|"OPPORTUNISTIC"|"NONE","bonus":<integer, optional>}
 
 Postures
 --------
-HANDOFF — one agent (PICKUP) collects parcels in the spawn area, brings them to the shared midpoint
-          when loaded or area empties, and drops there. The other agent (DELIVER) waits at the midpoint,
-          picks up ALL dropped parcels, delivers them, and returns to wait.
-NONE    — agents run fully autonomously; current assignments lapse on their TTL.
+ZONAL_RELAY  — one agent (PICKUP) sweeps the entire spawn region, heads to the spawn-side edge tile
+               when loaded or the region empties, and drops there. The other agent (DELIVER) waits
+               at the edge tile, picks up ALL dropped parcels, delivers them to the delivery zone,
+               and returns to wait. Use when spawns are clustered on one side of the map.
+
+OPPORTUNISTIC — both agents roam fully autonomously. As soon as an agent picks up a parcel and a
+               cross-agent bonus is active, it proposes a reactive handoff: the carrier drops at a
+               live-computed meet point on the way to delivery, and the partner collects and delivers.
+               No fixed roles. Use when spawns are scattered AND a cross-agent bonus is active.
+
+NONE         — agents run fully autonomously; current assignments lapse on their TTL.
 
 Decision rules
 --------------
-Choose HANDOFF when EITHER of the following is true:
-  1. Cross-agent bonus: the mission directive announces a bonus that requires one agent to pick up
-     and a DIFFERENT agent to deliver (e.g. "500 points if one agent picks up and another delivers").
-     Pass the bonus value in the response.
-  2. Favorable geometry: there is at least one spawn cluster with ≥3 tiles AND the midpoint between
-     that cluster and its nearest delivery zone is a meaningful distance away (≥5 tiles), so ferrying
-     parcels through a handoff beats both agents each making the full round trip.
+Choose ZONAL_RELAY when BOTH of the following are true:
+  1. Favorable geometry: there is at least one spawn cluster with ≥3 tiles AND a meaningful
+     spatial separation exists (spawn-side edge tile is ≥5 tiles from the nearest delivery zone),
+     so ferrying parcels beats both agents each making the full round trip.
+  2. No strong cross-agent bonus is present (or even if present, clustered geometry makes zonal
+     relay the dominant strategy).
+
+Choose OPPORTUNISTIC when:
+  - A cross-agent bonus is present that requires one agent to pick up and a DIFFERENT agent to
+    deliver (e.g. "500 points if one agent picks up and another delivers"). Pass the bonus value.
+  - AND spawn tiles are scattered with no real cluster (all clusters have 1–2 tiles), so a static
+    pickup zone would be unproductive.
 
 Choose NONE when:
-  - Spawn tiles are scattered with no real cluster (all clusters have 1–2 tiles).
-  - Spawn and delivery zones are essentially co-located (midpoint distance <5 tiles).
-  - Parcels are sparse and a handoff would leave one agent idle most of the time.
-  - No cross-agent bonus is present AND geometry does not favor a handoff.
+  - Spawn tiles are scattered AND no cross-agent bonus is active.
+  - Spawn and delivery zones are essentially co-located (edge tile distance <5 tiles).
+  - Parcels are sparse and any form of handoff would leave one agent idle most of the time.
 
 Important distinctions
 ----------------------
 - Scoring rules listed under "Active rules" in the context (e.g. parcel_value, delivery_tile
   multipliers) are SINGLE-AGENT incentives — both agents already capture them autonomously.
   They are NOT a reason to cooperate. Ignore them when deciding posture.
-- Only a cross-agent bonus (one picks up, a different one delivers) makes HANDOFF worthwhile
+- Only a cross-agent bonus (one picks up, a different one delivers) makes OPPORTUNISTIC worthwhile
   from an incentive standpoint.
+- ZONAL_RELAY beats OPPORTUNISTIC when spawn geometry is strongly one-sided, even with a bonus.
 
 Always include a concise step-by-step rationale before your posture.

@@ -238,7 +238,7 @@ export type AssignStrategyArgs = {
     ttl_seconds: number;
     bonus?: number;
     partner_id?: string;
-    /** HANDOFF/PICKUP_AGENT: spawn-cluster centroid to camp; tile_x/y remains the drop midpoint. */
+    /** ZONAL_RELAY/PICKUP_AGENT: spawn-cluster centroid to camp (currently unused — pickup sweeps all spawn tiles). */
     pickup_zone_x?: number;
     pickup_zone_y?: number;
 };
@@ -270,8 +270,8 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
         return { error: "bonus must be a non-negative number" };
 
     const partner_id = typeof obj.partner_id === "string" && obj.partner_id.trim() !== "" ? obj.partner_id : undefined;
-    if (obj.strategy === StrategyType.Handoff && partner_id === undefined)
-        return { error: "partner_id is required for HANDOFF strategy" };
+    if (obj.strategy === StrategyType.ZonalRelay && partner_id === undefined)
+        return { error: "partner_id is required for ZONAL_RELAY strategy" };
 
     const pickup_zone_x = coerceNum(obj.pickup_zone_x);
     const pickup_zone_y = coerceNum(obj.pickup_zone_y);

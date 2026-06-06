@@ -147,8 +147,8 @@ export class Intentions {
 
         const strategy = this.currentStrategy;
 
-        // HANDOFF role: state-machine path — gated desires, bypasses autonomous generation.
-        if (strategy?.strategy === StrategyType.Handoff) {
+        // ZONAL_RELAY role: state-machine path — gated desires, bypasses autonomous generation.
+        if (strategy?.strategy === StrategyType.ZonalRelay) {
             this.controller.sync(strategy);
             this.controller.tick(beliefs, strategy);
             const desires = this.controller.buildDesires(beliefs, strategy);
@@ -158,9 +158,9 @@ export class Intentions {
                 ([...desires.entries()].map(([type, list]) => `${type}:${list.length}`).join(", ") || "none")
             );
 
-            const zoneCenter = strategy.pickupZoneCenter ?? strategy.tiles[0];
-            const zone = zoneCenter ? { center: zoneCenter, maxDistance: strategy.maxDistance } : null;
-            this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, zone, prevHoldTarget);
+            // No centroid zone — PICKUP sweeps the full spawn region (role handles spatial gating),
+            // DELIVER is driven by REACH_TILE / REACH_PARCEL desires from the role state machine.
+            this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, null, prevHoldTarget);
             const head = this.intentionsQueue[0];
             this.log.debug(
                 `Queue rebuilt (${this.intentionsQueue.length} items, role=${strategy.role})` +

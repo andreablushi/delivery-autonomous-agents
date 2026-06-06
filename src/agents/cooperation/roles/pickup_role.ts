@@ -2,9 +2,8 @@ import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { GeneratedDesires } from "../../../models/desires.js";
 import type { Logger } from "../../../utils/logger.js";
-import { manhattanDistance } from "../../../utils/metrics.js";
+import { manhattanDistance, posKey } from "../../../utils/metrics.js";
 import { generateReachParcelDesires } from "../../bdi/desire/desire_generator.js";
-import { config } from "../../../config.js";
 import { meetZoneTiles } from "./meet_zone_tiles.js";
 
 type PickupState = "COLLECT" | "TO_MIDPOINT" | "DROP";
@@ -33,17 +32,16 @@ export class PickupRole {
         switch (this.state) {
             case "COLLECT": {
                 const carryCapacity = beliefs.agents.getCarryCapacity() ?? Infinity;
-                const pickupZone = strategy.pickupZoneCenter ?? midpoint;
-                const inAreaParcels = beliefs.parcels.getAvailableParcels().filter(p =>
-                    p.lastPosition !== null &&
-                    manhattanDistance(p.lastPosition, pickupZone) <= config.handoff.pickupRadius
+                const spawnKeys = new Set(beliefs.map.getSpawnTiles().map(t => posKey(t)));
+                const inRegionParcels = beliefs.parcels.getAvailableParcels().filter(p =>
+                    p.lastPosition !== null && spawnKeys.has(posKey(p.lastPosition))
                 );
                 if (carried.length >= carryCapacity) {
                     this.state = "TO_MIDPOINT";
                     this.log.debug(`PICKUP: COLLECT → TO_MIDPOINT (at carry capacity)`);
-                } else if (carried.length > 0 && inAreaParcels.length === 0) {
+                } else if (carried.length > 0 && inRegionParcels.length === 0) {
                     this.state = "TO_MIDPOINT";
-                    this.log.debug(`PICKUP: COLLECT → TO_MIDPOINT (carrying=${carried.length}, area empty)`);
+                    this.log.debug(`PICKUP: COLLECT → TO_MIDPOINT (carrying=${carried.length}, spawn region empty)`);
                 }
                 break;
             }
@@ -77,17 +75,27 @@ export class PickupRole {
         if (!myPos) return desires;
         const midpoint = strategy.tiles[0];
         if (!midpoint) return desires;
-        const pickupZone = strategy.pickupZoneCenter ?? midpoint;
-
         switch (this.state) {
             case "COLLECT": {
-                const inArea = generateReachParcelDesires(beliefs).filter(d =>
-                    manhattanDistance(d.target, pickupZone) <= config.handoff.pickupRadius
+                // Filter to parcels whose last known position is a spawn tile (full region sweep).
+                const spawnKeys = new Set(beliefs.map.getSpawnTiles().map(t => posKey(t)));
+                const inRegion = generateReachParcelDesires(beliefs).filter(d =>
+                    spawnKeys.has(posKey(d.target))
                 );
-                if (inArea.length > 0) {
-                    desires.set("REACH_PARCEL", inArea);
+                if (inRegion.length > 0) {
+                    desires.set("REACH_PARCEL", inRegion);
                 } else {
-                    desires.set("REACH_TILE", meetZoneTiles(beliefs, myPos, pickupZone, strategy.maxDistance));
+                    // No visible in-region parcels — patrol spawn tiles so the agent spreads across the region.
+                    const spawnTiles = beliefs.map.getSpawnTiles();
+                    const expiresAt = Date.now() + 5_000; // short TTL; rebuilt every deliberation cycle
+                    const patrol = spawnTiles.map(t => ({
+                        type: "REACH_TILE" as const,
+                        target: { x: t.x, y: t.y },
+                        sourceId: "pickup-sweep",
+                        expiresAt,
+                        reward: 1,
+                    }));
+                    if (patrol.length > 0) desires.set("REACH_TILE", patrol);
                 }
                 break;
             }

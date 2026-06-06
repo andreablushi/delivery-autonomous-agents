@@ -19,7 +19,9 @@ export class LLMAgent {
         this.log = createLogger("llm", agentId);
         let comm!: LLMCommunication;
         this.bdi = new BDIAgent(socket, agentId, teammateIds,
-            (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; });
+            (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; },
+            // Lazy closure: coordinator is assigned after bdi in this constructor and is available by the time any pickup fires.
+            () => { void this.coordinator.maybeProposeOpportunisticHandoff(); });
         this.client = new LLMClient(
             entry => this.bdi.addInjectedIntention(entry),
             type => this.bdi.removeIntentionsByType(type),

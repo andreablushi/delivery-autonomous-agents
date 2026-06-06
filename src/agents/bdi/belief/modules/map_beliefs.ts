@@ -23,6 +23,7 @@ export class MapBeliefs {
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
     private clusters: Record<"spawn" | "delivery", ClusterInfo[]> = { spawn: [], delivery: [] }; // Connected-component clusters per tile role, built in updateMap
+    private spawnRegionEdgeTile: Position | null = null; // Spawn tile nearest to the delivery mass; precomputed in updateMap
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
     private llmTilePenalties = new Map<string, { id: string; tile: Position; cost: number }>();  // LLM-managed soft traversal costs, keyed by posKey; distinct from temporaryBlocked which is for collision avoidance
     private readonly log: Logger;
@@ -86,6 +87,19 @@ export class MapBeliefs {
             spawn: buildClusters(this.spawnTiles),
             delivery: buildClusters(this.deliveryTiles),
         };
+
+        // Spawn region edge tile: the spawn tile nearest to the delivery mass centroid.
+        // Used by the ZONAL_RELAY posture as the handoff meet point so PICKUP never leaves the spawn side.
+        if (this.spawnTiles.length > 0 && this.deliveryTiles.length > 0) {
+            const delCx = Math.round(this.deliveryTiles.reduce((s, t) => s + t.x, 0) / this.deliveryTiles.length);
+            const delCy = Math.round(this.deliveryTiles.reduce((s, t) => s + t.y, 0) / this.deliveryTiles.length);
+            const delCentroid = { x: delCx, y: delCy };
+            this.spawnRegionEdgeTile = this.spawnTiles.reduce((best, t) =>
+                manhattanDistance(t, delCentroid) < manhattanDistance(best, delCentroid) ? t : best
+            );
+        } else {
+            this.spawnRegionEdgeTile = null;
+        }
     }
 
 
@@ -245,6 +259,15 @@ export class MapBeliefs {
      */
     getDeliveryTiles(): Tile[] {
         return this.deliveryTiles;
+    }
+
+    /**
+     * The spawn tile nearest to the delivery mass centroid.
+     * Used by the ZONAL_RELAY posture as the handoff meet point so PICKUP never leaves the spawn side.
+     * Null before the first `updateMap` call or when spawn/delivery tiles are absent.
+     */
+    getSpawnRegionEdgeTile(): Position | null {
+        return this.spawnRegionEdgeTile;
     }
 
     /**

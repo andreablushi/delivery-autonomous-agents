@@ -13,6 +13,11 @@ export type TeamGeometry = {
     midpoints: { x: number; y: number }[];
     /** Top enemy hot zones merged from all teammate reports. */
     hotZones: { x: number; y: number; heat: number }[];
+    /**
+     * Spawn tile nearest to the delivery mass — used as the ZONAL_RELAY handoff meet point
+     * so PICKUP never leaves the spawn side of the map.
+     */
+    spawnEdge: { x: number; y: number } | null;
 };
 
 /**
@@ -51,5 +56,7 @@ export function buildTeamGeometry(
         .sort((a, b) => b.heat - a.heat)
         .slice(0, config.coordination.hotZonesLimit);
 
-    return { spawnClusters, deliveryClusters, midpoints, hotZones };
+    const spawnEdge = beliefs.map.getSpawnRegionEdgeTile();
+
+    return { spawnClusters, deliveryClusters, midpoints, hotZones, spawnEdge };
 }
