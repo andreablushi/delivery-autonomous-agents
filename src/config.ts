@@ -50,6 +50,7 @@ export const config = {
     },
 
     llm: {
+        model: "gpt-4o",
         maxHops: 5,             // Max consecutive tool-call rounds per LLM invocation
         timeoutMs: 15_000,      // HTTP timeout for OpenAI-compatible API calls
         replyMaxChars: 280,     // Character limit for the reply tool
@@ -64,6 +65,7 @@ export const config = {
 
     rendezvous: {
         commitWindowMs: 750,    // Time to wait for peer votes before committing or aborting
+        stickinessMargin: 0.15, // Incumbent hold tile must be beaten by this fraction to switch targets
     },
 
     handoff: {

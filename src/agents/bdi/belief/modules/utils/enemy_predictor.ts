@@ -119,3 +119,17 @@ function getFractionalMove(value: number): number | null {
     if (fraction <= config.beliefs.enemy.predictionFloorThreshold) return lower;
     return null;
 }
+
+/**
+ * True when the agent is at exactly `tile` (integer position match).
+ * Mid-move (fractional) agents are not matched here — their heading tile is determined
+ * by `predictAgentNextPosition`, which returns confidence 1.0 for fractional positions.
+ * @param agent The agent to check
+ * @param tile The tile to test
+ */
+export function agentOccupiesTile(agent: Agent, tile: Position): boolean {
+    const pos = agent.lastPosition;
+    if (!pos) return false;
+    return pos.x === tile.x && pos.y === tile.y;
+}
+

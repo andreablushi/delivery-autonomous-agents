@@ -1,10 +1,10 @@
-import { pathIgnoring, pathThroughPushableCrates } from "../../../plan/navigation/a_star.js";
-import { posKey } from "../../../../../utils/metrics.js";
-import type { Beliefs } from "../../beliefs.js";
-import type { Position } from "../../../../../models/position.js";
-import type { DesireType } from "../../../../../models/desires.js";
-import type { LocatedCrate } from "../../../../../models/crate.js";
-import type { CrateSegment } from "../../../../../models/plan.js";
+import { pathIgnoring, pathThroughPushableCrates } from "../navigation/a_star.js";
+import { posKey } from "../../../../utils/metrics.js";
+import type { Beliefs } from "../../belief/beliefs.js";
+import type { Position } from "../../../../models/position.js";
+import type { DesireType } from "../../../../models/desires.js";
+import type { LocatedCrate } from "../../../../models/crate.js";
+import type { CrateSegment } from "../../../../models/plan.js";
 
 /**
  * Check whether any currently believed crate blocks the direct path from `from` to `desire.target`.

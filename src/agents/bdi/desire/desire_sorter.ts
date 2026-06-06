@@ -44,6 +44,7 @@ export function getIntentionQueue(
     beliefs: Beliefs,
     ruleStore: RuleStore,
     zone: { center: Position; maxDistance: number } | null = null,
+    currentHoldTarget?: Position,
 ): IntentionQueue {
     const queue: IntentionQueue = [];
 
@@ -72,7 +73,7 @@ export function getIntentionQueue(
         // Committed rendezvous holds (releaseZone present) get tier 2 so they cannot be
         // preempted by parcels once committed; red-light holds (no releaseZone) stay tier 1.
         const priority = desire.releaseZone ? 2 : 1;
-        queue.push({ desire, score: scoreHoldTile(desire, meDist, beliefs, friendDists, carriedValue), priority });
+        queue.push({ desire, score: scoreHoldTile(desire, meDist, beliefs, friendDists, carriedValue, currentHoldTarget), priority });
     }
 
     const parkTiles = (desires.get("PARK_TILE") ?? []) as ParkTileDesire[];

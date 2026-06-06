@@ -1,7 +1,7 @@
 import { AStarPlanner, TERMINAL_STEP } from "./astar_planner.js";
 import { PddlPlanner } from "./pddl_planner.js";
 import { Intentions } from "../intention/intentions.js";
-import { detectCrateBlock, findCrateSegment } from "../belief/modules/utils/crate_block.js";
+import { detectCrateBlock, findCrateSegment } from "./utils/crate_block.js";
 import { stepsTo } from "./navigation/a_star.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Position } from "../../../models/position.js";

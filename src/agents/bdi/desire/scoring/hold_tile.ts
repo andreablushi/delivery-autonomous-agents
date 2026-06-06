@@ -1,7 +1,9 @@
 import type { Beliefs } from "../../belief/beliefs.js";
 import type { HoldTileDesire } from "../../../../models/desires.js";
+import type { Position } from "../../../../models/position.js";
 import { posKey } from "../../../../utils/metrics.js";
 import { penalizedDistance } from "./utils.js";
+import { config } from "../../../../config.js";
 
 /**
  * Score a HOLD_TILE desire.
@@ -24,6 +26,7 @@ export function scoreHoldTile(
     beliefs: Beliefs,
     friendDists: Map<string, number>[],
     carriedValue: number,
+    currentHoldTarget?: Position,
 ): number {
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return 0; // unreachable
@@ -36,7 +39,11 @@ export function scoreHoldTile(
         const maxFriendDist = Math.max(...friendDists.map(fd => fd.get(key) ?? Infinity));
         const meetingTime = Math.max(distance, maxFriendDist);
         if (!isFinite(meetingTime)) return 0; // a friend cannot reach this tile
-        return effectiveReward / meetingTime;
+        const base = effectiveReward / meetingTime;
+        // Give the incumbent hold tile a small bonus so the argmax only flips when a rival is
+        // meaningfully better — kills per-tick target oscillation as maxFriendDist jitters.
+        const isIncumbent = currentHoldTarget !== undefined && key === posKey(currentHoldTarget);
+        return isIncumbent ? base * (1 + config.rendezvous.stickinessMargin) : base;
     }
 
     return effectiveReward / penalizedDistance(distance, desire.target, beliefs);

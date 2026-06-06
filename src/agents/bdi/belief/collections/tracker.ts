@@ -1,6 +1,6 @@
-import { Observation } from "../../../../../models/memory.js";
-import { Position } from "../../../../../models/position.js";
-import { isHalfPosition } from "../../../../../utils/metrics.js";
+import { Observation } from "../../../../models/memory.js";
+import { Position } from "../../../../models/position.js";
+import { isHalfPosition } from "../../../../utils/metrics.js";
 
 type Positionable = { id: string; lastPosition: Position | null };
 

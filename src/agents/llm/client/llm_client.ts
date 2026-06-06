@@ -4,7 +4,7 @@ import type { InjectedIntention } from "../../../models/intentions.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/desire/rule_store.js";
-import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
+import { getTools, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
 import { buildCoordinationPrompt } from "../prompt/coordination/index.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
@@ -71,7 +71,7 @@ export class LLMClient {
             apiKey: process.env.LLM_API_KEY ?? "no-key",
             timeout: config.llm.timeoutMs,
         });
-        this.model = process.env.MODEL_NAME ?? "llama-3.3-70b-lmstudio";
+        this.model = config.llm.model;
         this.log = createLogger("llm", agentId);
         this.promptLog = createLogger("llm-prompt", agentId);
         this.addInjectedIntention = addInjectedIntention;
@@ -100,7 +100,7 @@ export class LLMClient {
             const response = await this.client.chat.completions.create({
                 model: this.model,
                 messages,
-                tools: TOOLS,
+                tools: getTools(ctx),
                 tool_choice: "auto",
                 temperature: 0.1,
             });

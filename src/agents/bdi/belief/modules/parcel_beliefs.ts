@@ -1,7 +1,7 @@
 import type { Parcel } from "../../../../models/parcel.js";
 import type { IOParcel } from "../../../../models/djs.js";
 import type { Position } from "../../../../models/position.js";
-import { Tracker } from "./utils/tracker.js";
+import { Tracker } from "../collections/tracker.js";
 import { ParcelSettings } from "../../../../models/game_configs.js";
 import { config } from "../../../../config.js";
 

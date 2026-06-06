@@ -141,6 +141,10 @@ export class Intentions {
         this.pruneInjectedIntentions();
         this.pruneSatisfiedInjectedIntentions(beliefs);
 
+        // Capture the previous cycle's HOLD_TILE target for hysteresis in the scorer.
+        const prevHead = this.intentionsQueue[0];
+        const prevHoldTarget = prevHead?.desire.type === "HOLD_TILE" ? prevHead.desire.target : undefined;
+
         const strategy = this.currentStrategy;
 
         // HANDOFF role: state-machine path — gated desires, bypasses autonomous generation.
@@ -156,7 +160,7 @@ export class Intentions {
 
             const zoneCenter = strategy.pickupZoneCenter ?? strategy.tiles[0];
             const zone = zoneCenter ? { center: zoneCenter, maxDistance: strategy.maxDistance } : null;
-            this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, zone);
+            this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, zone, prevHoldTarget);
             const head = this.intentionsQueue[0];
             this.log.debug(
                 `Queue rebuilt (${this.intentionsQueue.length} items, role=${strategy.role})` +
@@ -178,7 +182,7 @@ export class Intentions {
             return;
         }
 
-        this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, null);
+        this.intentionsQueue = getIntentionQueue(desires, beliefs, ruleStore, null, prevHoldTarget);
         const head = this.intentionsQueue[0];
         this.log.debug(
             `Queue rebuilt (${this.intentionsQueue.length} items)` +

@@ -1,7 +1,7 @@
 import type { Crate } from "../../../../models/crate.js";
 import type { IOCrate } from "../../../../models/djs.js";
 import type { Position } from "../../../../models/position.js";
-import { Tracker } from "./utils/tracker.js";
+import { Tracker } from "../collections/tracker.js";
 
 /**
  * Beliefs about dynamic crate positions in the environment.

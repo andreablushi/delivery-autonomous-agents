@@ -22,8 +22,7 @@ export class MapBeliefs {
     private crateSpaceTiles: Tile[] = [];            // Precomputed list of all tiles that can hold crates, used for PDDL problem generation
     private spawnTilesSensingTimes = new Map<string, number>();      // Keep track of when spawn tiles were last sensed, keyed as "x,y"
     private spawnTilesClusterWeights = new Map<string, number>();    // Keep track of how many spawn tiles are in the cluster of each spawn tile, keyed as "x,y"
-    private spawnClusters: ClusterInfo[] | null = null;              // Connected-component clusters of spawn tiles, computed lazily after updateMap
-    private deliveryClusters: ClusterInfo[] | null = null;           // Connected-component clusters of delivery tiles, computed lazily after updateMap
+    private clusters: Record<"spawn" | "delivery", ClusterInfo[]> = { spawn: [], delivery: [] }; // Connected-component clusters per tile role, built in updateMap
     private temporaryBlocked = new Map<string, number>();            // Temporary blockers for pathfinding, e.g. tiles that are currently occupied by other agents or crates but may become free soon
     private llmTilePenalties = new Map<string, { id: string; tile: Position; cost: number }>();  // LLM-managed soft traversal costs, keyed by posKey; distinct from temporaryBlocked which is for collision avoidance
     private readonly log: Logger;
@@ -49,17 +48,19 @@ export class MapBeliefs {
         for (const t of normalizedTiles) {
             matrix[t.y][t.x] = t.type;
         }
-
-        const deliveryPositions = normalizedTiles
-            .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
-            .map(t => ({ x: t.x, y: t.y }));
-        const spawnPositions = normalizedTiles
+        
+        // Precompute spawn/delivery tile lists once — reused for reachability, clusters, and cached state.
+        this.spawnTiles = normalizedTiles
             .filter(t => t.type === TILE_TYPE.SPAWN_POINT)
-            .map(t => ({ x: t.x, y: t.y }));
+            .map(t => ({ x: t.x, y: t.y, type: t.type }));
+        this.deliveryTiles = normalizedTiles
+            .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
+            .map(t => ({ x: t.x, y: t.y, type: t.type }));
+
         // Seal off conveyor sinks and dead zones: only tiles in SCCs that contain BOTH a
         // spawn and a delivery (a complete pickup-and-deliver loop) survive; everything else
         // is treated as a wall for pathfinding purposes.
-        const safeKeys = computeSafeTiles(width, height, matrix, deliveryPositions, spawnPositions, MapBeliefs.isStaticWalkable);
+        const safeKeys = computeSafeTiles(width, height, matrix, this.deliveryTiles, this.spawnTiles, MapBeliefs.isStaticWalkable);
 
         // Any tile which is not safe can be treated as a wall
         let sealed = 0;
@@ -75,56 +76,18 @@ export class MapBeliefs {
         this.map = { width, height, tiles: matrix };
         this.logMap();
 
-        // Precompute static tile lists — map never changes after this point.
-        // Filter spawn / crate-space tiles through the safe set so callers never see sealed tiles.
-        this.spawnTiles = normalizedTiles
-            .filter(t => t.type === TILE_TYPE.SPAWN_POINT && safeKeys.has(posKey(t)))
-            .map(t => ({ x: t.x, y: t.y, type: t.type }));
-        this.deliveryTiles = normalizedTiles
-            .filter(t => t.type === TILE_TYPE.DELIVERY_POINT)
-            .map(t => ({ x: t.x, y: t.y, type: t.type }));
+        // Crate-space tiles must be filtered through the safe set so callers never see sealed tiles.
         this.crateSpaceTiles = normalizedTiles
             .filter(t => (t.type === TILE_TYPE.CRATE_SPACE || t.type === TILE_TYPE.CRATE_OCCUPIED) && safeKeys.has(posKey(t)))
             .map(t => ({ x: t.x, y: t.y, type: t.type }));
 
-        // Pre-compute connected-component clusters for spawn and delivery tiles (map is static).
-        this.spawnClusters = buildClusters(this.spawnTiles);
-        this.deliveryClusters = buildClusters(this.deliveryTiles);
-    }
-
-
-    /**
-     * Log the current map layout to the console with y=0 at the bottom, matching the
-     * coordinate system used in the game.
-     * Symbols: W=wall, .=floor, S=spawn, D=delivery, C=crate space, <>^v=conveyors, ?=unknown.
-     */
-    logMap(): void {
-        if (!this.map) {
-            this.log.debug('map not initialized');
-            return;
-        }
-        const { tiles, width, height } = this.map;
-        const symbol = (t: TileType): string => {
-            switch (t) {
-                case TILE_TYPE.WALL: return ' ';
-                case TILE_TYPE.FLOOR: return '.';
-                case TILE_TYPE.SPAWN_POINT: return 'S';
-                case TILE_TYPE.DELIVERY_POINT: return 'D';
-                case TILE_TYPE.CRATE_SPACE:
-                case TILE_TYPE.CRATE_OCCUPIED: return 'C';
-                case TILE_TYPE.DIRECTIONAL_LEFT: return '<';
-                case TILE_TYPE.DIRECTIONAL_RIGHT: return '>';
-                case TILE_TYPE.DIRECTIONAL_UP: return '^';
-                case TILE_TYPE.DIRECTIONAL_DOWN: return 'v';
-                default: return '?';
-            }
+        // Pre-compute connected-component clusters for spawn and delivery tiles.
+        this.clusters = {
+            spawn: buildClusters(this.spawnTiles),
+            delivery: buildClusters(this.deliveryTiles),
         };
-        const rows = tiles.map(row => row.map(symbol).join(' ')).reverse();
-        this.log.debug(
-            `${width}x${height} layout (W=wall, .=floor, S=spawn, D=delivery, C=crate, <>^v=conveyors), y=0 at bottom:\n` +
-            rows.join('\n')
-        );
     }
+
 
     /**
      * Width and height of the loaded map, or null if the map has not been received yet.
@@ -165,7 +128,7 @@ export class MapBeliefs {
      * @returns True if the position is walkable, false otherwise.
      */
     isWalkable(from: Position, to: Position): boolean {
-        // Only adjacent tiles can be walked to, to avoid inconsistencies in a sensing
+        // Only adjacent tiles can be walked to, to avoid inconsistencies in sensing
         if (manhattanDistance(from, to) !== 1) return false;
 
         const tile = this.getTileAt(to);
@@ -264,7 +227,7 @@ export class MapBeliefs {
      * Available after the first `updateMap` call; returns [] before that.
      */
     getSpawnClusters(): ClusterInfo[] {
-        return this.spawnClusters ?? [];
+        return this.clusters.spawn;
     }
 
     /**
@@ -273,7 +236,7 @@ export class MapBeliefs {
      * Available after the first `updateMap` call; returns [] before that.
      */
     getDeliveryClusters(): ClusterInfo[] {
-        return this.deliveryClusters ?? [];
+        return this.clusters.delivery;
     }
 
     /**
@@ -414,6 +377,40 @@ export class MapBeliefs {
         }
         return results.sort((a, b) => a.d - b.d).map(r => r.pos);
     }
+    
+    /**
+     * Log the current map layout to the console with y=0 at the bottom, matching the
+     * coordinate system used in the game.
+     * Symbols: W=wall, .=floor, S=spawn, D=delivery, C=crate space, <>^v=conveyors, ?=unknown.
+     */
+    private logMap(): void {
+        if (!this.map) {
+            this.log.debug('map not initialized');
+            return;
+        }
+        const { tiles, width, height } = this.map;
+        const symbol = (t: TileType): string => {
+            switch (t) {
+                case TILE_TYPE.WALL: return ' ';
+                case TILE_TYPE.FLOOR: return '.';
+                case TILE_TYPE.SPAWN_POINT: return 'S';
+                case TILE_TYPE.DELIVERY_POINT: return 'D';
+                case TILE_TYPE.CRATE_SPACE:
+                case TILE_TYPE.CRATE_OCCUPIED: return 'C';
+                case TILE_TYPE.DIRECTIONAL_LEFT: return '<';
+                case TILE_TYPE.DIRECTIONAL_RIGHT: return '>';
+                case TILE_TYPE.DIRECTIONAL_UP: return '^';
+                case TILE_TYPE.DIRECTIONAL_DOWN: return 'v';
+                default: return '?';
+            }
+        };
+        const rows = tiles.map(row => row.map(symbol).join(' ')).reverse();
+        this.log.debug(
+            `${width}x${height} layout (W=wall, .=floor, S=spawn, D=delivery, C=crate, <>^v=conveyors), y=0 at bottom:\n` +
+            rows.join('\n')
+        );
+    }
+
 }
 
 /**

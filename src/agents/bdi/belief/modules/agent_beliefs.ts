@@ -3,9 +3,9 @@ import type { PlayerSettings } from "../../../../models/game_configs.js";
 import type { IOAgent } from "../../../../models/djs.js";
 import { Position } from "../../../../models/position.js";
 import { isHalfPosition, manhattanDistance } from "../../../../utils/metrics.js";
-import { Memory } from "./utils/memory.js";
-import { Tracker } from "./utils/tracker.js";
-import { predictAgentNextPosition } from "./utils/enemy_predictor.js";
+import { Memory } from "../collections/memory.js";
+import { Tracker } from "../collections/tracker.js";
+import { predictAgentNextPosition, agentOccupiesTile } from "./utils/enemy_predictor.js";
 import { config } from "../../../../config.js";
 
 /**
@@ -24,9 +24,10 @@ export class AgentBeliefs {
         config.beliefs.enemy.memoryTtlMs,
         config.beliefs.enemy.memorySizeEntries
     );
+    // List of teammate IDs, used to classify observed agents as friends or enemies and to filter position beacons
+    private readonly teammateIds: ReadonlySet<string>;
 
     private playerSettings: PlayerSettings | null = null;
-    private readonly teammateIds: ReadonlySet<string>;
     private lastEvict = 0;
 
     constructor(teammateIds: ReadonlySet<string> = new Set()) {
@@ -53,6 +54,7 @@ export class AgentBeliefs {
     updateMe(sensedMe: IOAgent): void {
         // Ignore half position
         if (isHalfPosition(sensedMe)) return;
+        
         this.me = {
             id: sensedMe.id,
             name: sensedMe.name,
@@ -89,9 +91,12 @@ export class AgentBeliefs {
                 penalty: agent.penalty ?? 0,
                 lastPosition: (agent.x != null && agent.y != null) ? { x: agent.x, y: agent.y } : null,
             };
+            // Classify the agent as a friend or enemy based on whether their ID is in the teammateIds set.
+            // Update the corresponding tracker and memory.
             if (this.teammateIds.has(agent.id)) {
                 this.friends.update(agent.id, data);
-            } else {
+            } 
+            else {
                 this.enemies.update(agent.id, data);
                 this.enemiesMemory.update(agent.id, data);
             }
@@ -160,49 +165,49 @@ export class AgentBeliefs {
      * @param next The next tile of our current path
      * @param isWalkable Optional callback used to filter impossible predictions
      */
-    isNextBlockedByAgents(next: Position, isWalkable?: (from: Position, to: Position) => boolean): boolean {
+    isNextBlockedByAgents(next_tile: Position, isWalkable?: (from: Position, to: Position) => boolean): boolean {
         // Only consider agents whose last known position was observed recently — stale positions
         // belong to agents that left our sensing range and may no longer be at that tile.
         const now = Date.now();
+        // Get the list of fresh agents
         const freshAgents = (list: Agent[], tracker: Tracker<Agent>) =>
-            list.filter(a => {
-                const ts = tracker.getLastTimestamp(a.id);
-                return ts !== undefined && (now - ts) <= config.beliefs.positionStaleThresholdMs;
+            list.filter(agent => {
+                const delta_observation = tracker.getLastTimestamp(agent.id);
+                return delta_observation !== undefined && (now - delta_observation) <= config.beliefs.positionStaleThresholdMs;
             });
-        const agents = [
-            ...freshAgents(this.getCurrentEnemies(), this.enemies),
-            ...freshAgents(this.getCurrentFriends(), this.friends),
-        ];
-
-        // Check if any currently observed enemy is on the next tile, considering half positions as well
-        for (const agent of agents) {
-            const pos = agent.lastPosition;
-            if (!pos) continue;
-
-            // Retrieve the last known position of the agent and if it's not an integer coordinate, it means the agent is in between two tiles
-            const xs = Number.isInteger(pos.x) ? [pos.x] : [Math.floor(pos.x), Math.ceil(pos.x)];
-            const ys = Number.isInteger(pos.y) ? [pos.y] : [Math.floor(pos.y), Math.ceil(pos.y)];
-
-            // If the next tile is one of the tiles corresponding to the agent's last known position (including half positions), consider it blocked
-            if (xs.includes(next.x) && ys.includes(next.y)) {
-                return true;
-            }
-
-            // Retrieve a prediction for the agent's next position based on its movement history
+        
+        /**
+         * Check if the given agent is currently occupying the next tile, either by direct observation or by a confident prediction.
+         * @param agent The agent to check
+         * @returns True if the agent is believed to be on the next tile, false otherwise
+         */
+        const checkAgent = (agent: Agent): boolean => {
+            // If the agent is currently observed on the next tile, it's an immediate block
+            if (agentOccupiesTile(agent, next_tile)) return true;
+            // Otherwise, check if a confident prediction indicates the agent will be on the next tile next tick
             const predicted = predictAgentNextPosition(agent, this.enemiesMemory.getHistory(agent.id), isWalkable);
-
-            // If the predicted next position of the enemy has a confidence above the threshold and matches the next tile, consider it blocked
-            if (
-                predicted &&
+            return (
+                predicted !== null &&
                 predicted.confidence >= config.beliefs.enemy.confidenceThreshold &&
-                predicted.position.x === next.x &&
-                predicted.position.y === next.y
-            ) {
-                return true;
-            }
+                predicted.position.x === next_tile.x &&
+                predicted.position.y === next_tile.y
+            );
+        };
+
+        // Enemies are always hard obstacles
+        for (const agent of freshAgents(this.getCurrentEnemies(), this.enemies)) {
+            if (checkAgent(agent)) return true;
         }
 
-        // Otherwise, consider the next tile unblocked by enemies
+        // Friends use a deterministic yield: the higher-id agent keeps moving while the
+        // lower-id one waits, so converging teammates resolve in one tick instead of both
+        // blocking, wiping their plans, and replanning indefinitely.
+        const myId = this.getCurrentMe()?.id;
+        for (const agent of freshAgents(this.getCurrentFriends(), this.friends)) {
+            // If we know our id and it is greater, we yield to this friend — don't block.
+            if (myId !== undefined && myId > agent.id) continue;
+            if (checkAgent(agent)) return true;
+        }
         return false;
     }
 

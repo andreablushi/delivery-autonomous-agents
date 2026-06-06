@@ -37,7 +37,12 @@ const modules: Record<string, ToolModule> = {
     set_team_posture: setTeamPosture,
 };
 
-export const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = Object.values(modules).map(m => m.definition);
+/** Returns the tool definitions available in the given context. Coordination-only tools are excluded when not in a coordinator pass. */
+export function getTools(ctx: ToolContext): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    return Object.entries(modules)
+        .filter(([name]) => name !== "set_team_posture" || ctx.assignPosture !== undefined)
+        .map(([, m]) => m.definition);
+}
 
 export const FOLLOWUP_TOOLS = new Set(["calculate"]);
 
