@@ -215,6 +215,21 @@ export class AgentBeliefs {
     }
 
     /**
+     * True when `tile` is currently occupied by a friend we outrank (our id is greater).
+     * Used by the planner so the higher-id "holder" waits patiently for the lower-id friend
+     * to vacate a head-on tile instead of ramming it (which fails and escalates to a replan),
+     * keeping the yield asymmetric: the lower-id friend replans, the higher-id one holds.
+     * Only confirmed occupancy counts — predicted positions are ignored, so the holder keeps
+     * its right of way and still grabs a tile the friend has not yet entered.
+     * @param tile The next tile of our current path.
+     */
+    isTileHeldByOutrankedFriend(tile: Position): boolean {
+        const myId = this.getCurrentMe()?.id;
+        if (myId === undefined) return false;
+        return this.getCurrentFriends().some(f => myId > f.id && agentOccupiesTile(f, tile));
+    }
+
+    /**
      * Get the confidence level of the belief about a specific enemy agent
      * @param id Enemy agent ID
      * @returns Confidence score between 0 and 1

@@ -7,7 +7,7 @@ export const config = {
     beliefs: {
         positionStaleThresholdMs: 2_000,    // Discard agent positions not refreshed within this window
         evictIntervalMs: 1_000,             // Minimum gap between stale-belief eviction passes
-        positionBeaconIntervalMs: 2_000,    // How often each agent sends its own position to each configured teammate
+        positionBeaconIntervalMs: 1_000,    // How often each agent sends its own position to each configured teammate
         enemy: {
             memoryTtlMs: 1_000,             // How long an enemy observation stays in memory
             memorySizeEntries: 20,          // Max observations kept per enemy

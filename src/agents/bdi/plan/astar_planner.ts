@@ -53,7 +53,14 @@ export class AStarPlanner {
         if (step.kind !== "move") return step;
 
         const walkable = (a: Position, b: Position) => this.beliefs.map.isWalkable(a, b);
-        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
+        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) {
+            // We outrank this friend, so isNextBlockedByAgents waved us through — but it is
+            // physically on our next tile. Wait for it to vacate instead of ramming the tile
+            // (which would fail and escalate to mark-blocked + replan). Keeps our path; the
+            // lower-id friend is the one that yields and replans around.
+            if (this.beliefs.agents.isTileHeldByOutrankedFriend(step.to)) return "wait";
+            return step;
+        }
 
         if (this.collision.tryDetour(plan, currentPosition, step.to)) {
             return plan.steps[plan.cursor] ?? null;
