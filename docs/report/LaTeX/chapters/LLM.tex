@@ -63,30 +63,27 @@ without completely forbidding the option of traversing the tile if it becomes ne
 \paragraph{Beacon Communication:}
 To handle the critical need for up-to-date position information in coordination maneuvers, each agent continuously broadcasts its current position 
 to all configured teammates as a \texttt{position\_beacon} message at a fixed interval.
-This ensures that every team member maintains an up-to-date position estimate for its peers regardless of the game's sensing radius, 
-which only reveals agents within a limited Manhattan distance.
 
 \paragraph{Peer Communication:}
 Simple team-level commands (navigation goals, scoring rules, traversal penalties) follow a uniform two-step pattern: the injection is applied to the issuing agent locally, then packaged as a peer-injection message and broadcast to all teammates.
-Commands that carry stronger team-synchronisation requirements — rendezvous and traffic control — instead use a two-phase commit protocol described below.
+Commands that carry stronger team-synchronisation requirements (rendezvous and traffic control) instead use a two-phase commit protocol described below.
 
-\paragraph{Rendezvous and Traffic Control:}
-Both \texttt{request\_rendezvous} and \texttt{request\_red\_light} employ a two-phase commit (2PC) protocol before any agent holds, ensuring the team only stops when it is collectively optimal to do so.
+\paragraph{Two Phase Protocol:}
+Both \texttt{request\_rendezvous} and \texttt{request\_red\_light} make an agent hold, i.e. inject a \texttt{HOLD\_TILE} desire that anchors it on a tile.
+Before any hold, they employ a two-phase commit (2PC) protocol, ensuring the team only stops when it is collectively optimal to do so.
 
 In Phase~1, the proposing agent broadcasts a \emph{propose} message carrying a unique round identifier (\texttt{rid}) and the command parameters.
-Each receiving teammate independently evaluates whether accepting is beneficial: it computes the best hold-tile score achievable under the proposal and compares it against its current best \texttt{REACH\_PARCEL} or \texttt{DELIVER\_PARCEL} score.
-For rendezvous this uses the joint-bottleneck formula (Section~\ref{sec:desires}); for traffic control it uses the standard hold-tile rate score.
-The teammate replies with a \emph{vote} message containing the \texttt{rid} and its accept/reject decision.
+Each command offers a set of candidate hold tiles: for rendezvous, the tiles around the meeting point; for traffic control, the tiles lying on alternate rows or columns.
+Each teammate scores these candidates, keeps the best \texttt{HOLD\_TILE} score, and compares it against its current best \texttt{REACH\_PARCEL} or \texttt{DELIVER\_PARCEL} score.
+This score reuses the same reward-over-distance form as the desires of Section~\ref{sec:desires}: traffic control divides by the agent's own distance, while rendezvous divides by the joint bottleneck (the slowest teammate's distance), so both agents converge on the same meeting tile.
+The teammate then replies with a \emph{vote} carrying the \texttt{rid} and its accept/reject decision.
 
-In Phase~2, after a fixed collection window of $750 \text{ ms}$, the proposer checks for unanimity.
+In Phase~2, after a fixed collection window, the proposer checks for unanimity.
 If every expected teammate voted \emph{accept} for the current \texttt{rid}, the proposer broadcasts a \emph{commit} message; each agent (including the proposer) then injects the \texttt{HOLD\_TILE} desires into its intention pool.
 If any vote is missing or negative, the proposer broadcasts \emph{abort} and no holds are injected on any agent.
 
-Upon commit, rendezvous holds carry a \texttt{releaseZone} that triggers automatic release once position beacons confirm all teammates are within the designated Manhattan radius — no green-light command is needed.
-Traffic-control holds have no release zone and persist until their TTL expires or \texttt{request\_green\_light} is issued, which clears all active \texttt{HOLD\_TILE} intentions on both agents immediately via a fire-and-forget broadcast.
-By default agents hold on the nearest odd-row tile, but the command accepts optional \texttt{axis} (\texttt{row}/\texttt{column}) and \texttt{parity} (\texttt{odd}/\texttt{even}) parameters to stagger agents across any row or column alignment, enabling flexible traffic separation strategies.
+A rendezvous hold releases itself once the position beacons confirm all teammates have gathered within the agreed radius, with no further message needed.
+A traffic-control hold instead persists until its time limit expires or the controller issues an explicit green-light command that releases the whole team at once.
 
 \paragraph{Coordinator:}
-A centralized \texttt{Coordinator} periodically executes team assignment rounds.
-During each round, a \texttt{request\_beliefs} envelope is broadcast to all teammates. After a short collection window, the coordinator constructs a geometric summary of the team's state (including agent positions, payloads, and high-value zones) and feeds it to \texttt{LLMClient.coordinate}. This triggers \texttt{assign\_goto} commands to optimally distribute the agents.
-The mission controller can also trigger this process on demand via the \texttt{request\_team\_status} tool.
+

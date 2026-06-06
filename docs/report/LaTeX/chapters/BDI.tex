@@ -49,7 +49,7 @@ from which it can never return to a spawn tile, or from which no delivery tile i
 
 To detect these dead zones, the map is modelled as a directed walkability graph where conveyors enforce one-way edges.
 Tarjan's algorithm is then applied to find all Strongly Connected Components (SCCs).
-An SCC is considered \emph{safe} only if it contains at least one spawn tile \emph{and} at least one delivery tile — i.e.\ it supports the full pickup-and-deliver cycle.
+An SCC is considered \emph{safe} only if it contains at least one spawn tile \emph{and} at least one delivery tile (i.e.\ it supports the full pickup-and-deliver cycle).
 All walkable tiles outside a safe SCC are reclassified as walls, preventing the planner from ever routing the agent into an unrecoverable region.
 
 
