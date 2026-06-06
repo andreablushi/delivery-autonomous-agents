@@ -1,5 +1,6 @@
 import type { Position } from "../../../models/position.js";
 import type { ScoringRule } from "../../../models/rules.js";
+import { SCORING_AXIS } from "../../../models/rules.js";
 import { posKey } from "../../../utils/metrics.js";
 
 /**
@@ -42,11 +43,16 @@ export class RuleStore {
      * Returns an empty string when no rules are active (safe to filter out).
      */
     format(): string {
-        const rules = this.list();
-        if (rules.length === 0) return "";
-        const ruleLines = rules.map(r => {
+        // If there are no active rules, return an empty string
+        if (this.rules.length === 0) return "";
+        
+        // Otherwise, format each rule into a readable string and join them with newlines
+        const ruleLines = this.rules.map(r => {
+            // Format the effect part of the rule
             const eff = `mult=${r.effect.multiplier ?? 1} add=${r.effect.additive ?? 0}`;
-            if (r.conditioned_axis === "stack_count") {
+            
+            // Format the condition part of the rule based on its conditioned_axis
+            if (r.conditioned_axis === SCORING_AXIS.STACK_COUNT) {
                 const pred = [
                     r.predicate.equals !== undefined ? `equals=${r.predicate.equals}` : null,
                     r.predicate.min    !== undefined ? `min=${r.predicate.min}`       : null,
@@ -54,8 +60,12 @@ export class RuleStore {
                 ].filter(Boolean).join(",");
                 return `  [${r.id}] stack_count(${pred}) → ${eff}`;
             }
-            if (r.conditioned_axis === "delivery_tile")
+            
+            // For delivery_tile rules, include the tile coordinates
+            if (r.conditioned_axis === SCORING_AXIS.DELIVERY_TILE)
                 return `  [${r.id}] delivery_tile(${r.tile.x},${r.tile.y}) → ${eff}`;
+            
+            // For parcel_value rules, include the reward range
             const pred = [
                 r.predicate.minReward !== undefined ? `min=${r.predicate.minReward}` : null,
                 r.predicate.maxReward !== undefined ? `max=${r.predicate.maxReward}` : null,
@@ -70,7 +80,7 @@ export class RuleStore {
      */
     hasPositiveStackRule(): boolean {
         return this.rules.some(
-            r => r.conditioned_axis === "stack_count" &&
+            r => r.conditioned_axis === SCORING_AXIS.STACK_COUNT &&
                 ((r.effect.multiplier ?? 1) > 1 || (r.effect.additive ?? 0) > 0)
         );
     }
@@ -82,8 +92,8 @@ export class RuleStore {
      */
     stackCountEffect(carriedCount: number): { multiplier: number; additive: number } {
         const matching = this.rules
-            .filter((r): r is Extract<ScoringRule, { conditioned_axis: "stack_count" }> =>
-                r.conditioned_axis === "stack_count" && this.matchesCarriedParcelCount(r.predicate, carriedCount))
+            .filter((r): r is Extract<ScoringRule, { conditioned_axis: typeof SCORING_AXIS.STACK_COUNT }> =>
+                r.conditioned_axis === SCORING_AXIS.STACK_COUNT && this.matchesCarriedParcelCount(r.predicate, carriedCount))
             .sort((a, b) => b.registeredAt - a.registeredAt);
         return this.applyEffect(matching[0]);
     }
@@ -96,8 +106,8 @@ export class RuleStore {
     deliveryTileEffect(target: Position): { multiplier: number; additive: number } {
         const key = posKey(target);
         const matching = this.rules
-            .filter((r): r is Extract<ScoringRule, { conditioned_axis: "delivery_tile" }> =>
-                r.conditioned_axis === "delivery_tile" && posKey(r.tile) === key)
+            .filter((r): r is Extract<ScoringRule, { conditioned_axis: typeof SCORING_AXIS.DELIVERY_TILE }> =>
+                r.conditioned_axis === SCORING_AXIS.DELIVERY_TILE && posKey(r.tile) === key)
             .sort((a, b) => b.registeredAt - a.registeredAt);
         return this.applyEffect(matching[0]);
     }
@@ -109,8 +119,8 @@ export class RuleStore {
      */
     parcelValueEffect(reward: number): { multiplier: number; additive: number } {
         const matching = this.rules
-            .filter((r): r is Extract<ScoringRule, { conditioned_axis: "parcel_value" }> =>
-                r.conditioned_axis === "parcel_value" && this.matchesParcelValue(r.predicate, reward))
+            .filter((r): r is Extract<ScoringRule, { conditioned_axis: typeof SCORING_AXIS.PARCEL_VALUE }> =>
+                r.conditioned_axis === SCORING_AXIS.PARCEL_VALUE && this.matchesParcelValue(r.predicate, reward))
             .sort((a, b) => b.registeredAt - a.registeredAt);
         return this.applyEffect(matching[0]);
     }

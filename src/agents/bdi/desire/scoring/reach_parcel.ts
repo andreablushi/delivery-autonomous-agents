@@ -52,6 +52,9 @@ export function scoreReachDesire(
         raceFactor = Math.min(1, closestEnemyDist / distancePickup);
     }
 
+    // HANDOFF/PICKUP_AGENT: soft-bias toward the assigned spawn zone so the agent collects
+    // in-zone parcels first instead of chasing any parcel on the map. Parcels inside the zone
+    // are unaffected (factor = 1); each tile beyond maxDistance halves the score progressively.
     let zoneFactor = 1;
     if (zone) {
         const distFromCenter = manhattanDistance(desire.target, zone.center);

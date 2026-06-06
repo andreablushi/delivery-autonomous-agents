@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { applyInjection } from "../../../../models/apply_injection.js";
 import { PeerKind } from "../../../../models/message_injection.js";
+import { SCORING_AXIS } from "../../../../models/rules.js";
 
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -13,7 +14,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
             type: "object",
             properties: {
                 id:               { type: "string",  description: "Unique identifier for this rule. Re-registering with the same id replaces the previous rule." },
-                conditioned_axis: { type: "string",  enum: ["stack_count", "delivery_tile", "parcel_value"], description: "Which dimension this rule applies to." },
+                conditioned_axis: { type: "string",  enum: Object.values(SCORING_AXIS), description: "Which dimension this rule applies to." },
                 equals:      { type: "integer", description: "(stack_count only) Exact carried-parcel count to match." },
                 min:         { type: "integer", description: "(stack_count only) Minimum carried-parcel count to match." },
                 max:         { type: "integer", description: "(stack_count only) Maximum carried-parcel count to match." },

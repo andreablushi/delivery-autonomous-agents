@@ -92,7 +92,7 @@ export function evaluateRendezvousVote(
             type: "HOLD_TILE", target: tile, sourceId: "vote", reward,
             releaseZone: { center: { x, y }, maxDistance: max_distance },
         };
-        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, ctx.friendDists, adjustedCarriedValue));
+        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, adjustedCarriedValue));
     }
 
     return holdScore >= bestCurrentScore(beliefs, ctx, ruleStore);
@@ -138,7 +138,7 @@ export function evaluateRedLightVote(
     let holdScore = 0;
     for (const tile of tiles) {
         const hold: HoldTileDesire = { type: "HOLD_TILE", target: tile, sourceId: "vote", reward };
-        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, ctx.friendDists, adjustedCarriedValue));
+        holdScore = Math.max(holdScore, scoreHoldTile(hold, ctx.meDist, beliefs, adjustedCarriedValue));
     }
 
     return holdScore >= bestCurrentScore(beliefs, ctx, ruleStore);

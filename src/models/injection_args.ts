@@ -1,4 +1,5 @@
 import { StrategyType, StrategyRole } from "./game_strategy.js";
+import { SCORING_AXIS, type ScoringAxis } from "./rules.js";
 
 /** Coerce string-encoded numbers to actual numbers; leave all other values untouched. */
 function coerceNum(v: unknown): unknown {
@@ -39,7 +40,7 @@ export function parseGotoArgs(json: unknown): GotoArgs | { error: string } {
 /** Arguments for `register_scoring_rule`. */
 export type ScoringRuleArgs = {
     id: string;
-    conditioned_axis: "stack_count" | "delivery_tile" | "parcel_value";
+    conditioned_axis: ScoringAxis;
     // stack_count predicate
     equals?: number;
     min?: number;
@@ -69,8 +70,8 @@ export function parseScoringRuleArgs(json: unknown): ScoringRuleArgs | { error: 
     if (typeof id !== "string" || id.trim() === "") return { error: "id must be a non-empty string" };
 
     const conditioned_axis = obj.conditioned_axis;
-    if (conditioned_axis !== "stack_count" && conditioned_axis !== "delivery_tile" && conditioned_axis !== "parcel_value")
-        return { error: "conditioned_axis must be one of: stack_count, delivery_tile, parcel_value" };
+    if (conditioned_axis !== SCORING_AXIS.STACK_COUNT && conditioned_axis !== SCORING_AXIS.DELIVERY_TILE && conditioned_axis !== SCORING_AXIS.PARCEL_VALUE)
+        return { error: `conditioned_axis must be one of: ${Object.values(SCORING_AXIS).join(", ")}` };
 
     const multiplier = coerceNum(obj.multiplier);
     const additive   = coerceNum(obj.additive);
@@ -81,7 +82,7 @@ export function parseScoringRuleArgs(json: unknown): ScoringRuleArgs | { error: 
     if (multiplier === undefined && additive === undefined)
         return { error: "at least one of multiplier or additive is required" };
 
-    if (conditioned_axis === "stack_count") {
+    if (conditioned_axis === SCORING_AXIS.STACK_COUNT) {
         const equals = coerceNum(obj.equals);
         const min    = coerceNum(obj.min);
         const max    = coerceNum(obj.max);
@@ -96,7 +97,7 @@ export function parseScoringRuleArgs(json: unknown): ScoringRuleArgs | { error: 
         return { id, conditioned_axis, equals: equals as number | undefined, min: min as number | undefined, max: max as number | undefined, multiplier: multiplier as number | undefined, additive: additive as number | undefined };
     }
 
-    if (conditioned_axis === "delivery_tile") {
+    if (conditioned_axis === SCORING_AXIS.DELIVERY_TILE) {
         const tile_x = coerceNum(obj.tile_x);
         const tile_y = coerceNum(obj.tile_y);
         if (typeof tile_x !== "number" || !Number.isInteger(tile_x)) return { error: "tile_x must be an integer" };

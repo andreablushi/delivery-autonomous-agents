@@ -28,28 +28,37 @@ export function scoreExplore(
     now: number,
     hasPositiveStack: boolean,
 ): { score: number; priority: number } {
+
     const distance = meDist.get(posKey(desire.target));
     if (distance === undefined) return { score: 0, priority: 0 };
-
+    
+    // Retrieve spawn interval from beliefs
     const settings = beliefs.parcels.getSettings();
     const spawnInterval = settings?.parcel_spawn_interval;
 
+    // Calculate ageNormalized based on the time since the last sensing of the spawn tile
+    // normalized by spawnInterval
     const lastSensing = beliefs.map.getSpawnTileSensingTime(desire.target);
     const age = lastSensing !== undefined ? now - lastSensing : Infinity;
-    // Cap at 1: tiles unseen for ≥ one spawn cycle are equally "ripe".
     const ageNormalized = (spawnInterval && isFinite(spawnInterval) && spawnInterval > 0)
         ? Math.min(1, age / spawnInterval)
         : 1;
 
+    // Compute the cluster weight for the target tile
     const clusterWeight = beliefs.map.getSpawnTileClusterWeight(desire.target);
     const weight = clusterWeight > 0 ? clusterWeight : 1;
+    
+    // Incorporate enemy heat at the target tile to penalize risky exploration
     const heat = beliefs.agents.getEnemyHeatAt(desire.target);
+    
+    // If there are no positive stack rules, return the legacy score with priority 0
     const legacyScore = weight * ageNormalized / (penalizedDistance(distance, desire.target, beliefs) + 1) / (1 + heat);
-
     if (!hasPositiveStack) {
         return { score: legacyScore, priority: 0 };
     }
 
+    // Otherwise, calculate the expected stack reward for picking up a parcel at the target tile 
+    // and returning it to a delivery tile, and use that to determine the score and priority
     const me = beliefs.agents.getCurrentMe();
     const carried = me ? beliefs.parcels.getCarriedByAgent(me.id) : [];
     const targetCount = carried.length + 1;

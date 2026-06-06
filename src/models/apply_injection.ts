@@ -3,6 +3,7 @@ import type { RuleStore } from "../agents/bdi/desire/rule_store.js";
 import type { InjectedIntention } from "./intentions.js";
 import type { DesireType } from "./desires.js";
 import type { ScoringRule } from "./rules.js";
+import { SCORING_AXIS } from "./rules.js";
 import type { GameStrategy } from "./game_strategy.js";
 import { PeerKind } from "./message_injection.js";
 import {
@@ -101,16 +102,16 @@ export function applyInjection(
             if ("error" in p) return p;
             const effect = { multiplier: p.multiplier, additive: p.additive };
             let rule: ScoringRule;
-            if (p.conditioned_axis === "stack_count") {
-                rule = { id: p.id, conditioned_axis: "stack_count", registeredAt: 0,
+            if (p.conditioned_axis === SCORING_AXIS.STACK_COUNT) {
+                rule = { id: p.id, conditioned_axis: SCORING_AXIS.STACK_COUNT, registeredAt: 0,
                     predicate: { equals: p.equals, min: p.min, max: p.max }, effect };
-            } else if (p.conditioned_axis === "delivery_tile") {
+            } else if (p.conditioned_axis === SCORING_AXIS.DELIVERY_TILE) {
                 if (!beliefs.map.getMap()) return { error: "Map not yet loaded" };
                 if (!beliefs.map.checkMapBounds(p.tile_x!, p.tile_y!)) return { error: "Coordinates out of map bounds" };
-                rule = { id: p.id, conditioned_axis: "delivery_tile", registeredAt: 0,
+                rule = { id: p.id, conditioned_axis: SCORING_AXIS.DELIVERY_TILE, registeredAt: 0,
                     tile: { x: p.tile_x!, y: p.tile_y! }, effect };
             } else {
-                rule = { id: p.id, conditioned_axis: "parcel_value", registeredAt: 0,
+                rule = { id: p.id, conditioned_axis: SCORING_AXIS.PARCEL_VALUE, registeredAt: 0,
                     predicate: { minReward: p.min_reward, maxReward: p.max_reward }, effect };
             }
             ruleStore.upsert(rule);
