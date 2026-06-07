@@ -12,12 +12,12 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
     function: {
         name: "assign_strategy",
-        description: "Assign a HANDOFF role to an agent (yourself or a teammate). For yourself it is applied locally; for a teammate an assign_strategy message is sent. PICKUP_AGENT collects parcels in its spawn zone, travels to the midpoint, and drops them. DELIVER_AGENT waits at the midpoint, picks up the grounded parcels, delivers them, and returns. Use set_team_posture for automatic role assignment.",
+        description: "Assign a cooperation role to an agent (yourself or a teammate). For yourself it is applied locally; for a teammate an assign_strategy message is sent. PICKUP_AGENT collects parcels in its spawn zone, travels to the midpoint, and drops them. DELIVER_AGENT waits at the midpoint, picks up the grounded parcels, delivers them, and returns.",
         parameters: {
             type: "object",
             properties: {
                 agent_id:     { type: "string",  description: "ID of the agent to assign (use your own id to assign yourself)." },
-                strategy:     { type: "string",  enum: Object.values(StrategyType), description: "Only HANDOFF is supported." },
+                strategy:     { type: "string",  enum: Object.values(StrategyType), description: "Strategy to assign." },
                 role:         { type: "string",  enum: Object.values(StrategyRole), description: "PICKUP_AGENT or DELIVER_AGENT." },
                 tile_x:       { type: "integer", description: "X of the HANDOFF midpoint tile (meet zone center)." },
                 tile_y:       { type: "integer", description: "Y of the HANDOFF midpoint tile (meet zone center)." },

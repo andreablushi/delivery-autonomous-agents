@@ -6,6 +6,7 @@ export const config = {
 
     beliefs: {
         positionStaleThresholdMs: 2_000,    // Discard agent positions not refreshed within this window
+        confidenceHalfLifeMs: 2_000,        // τ for tracker confidence decay (parcels + enemies)
         evictIntervalMs: 1_000,             // Minimum gap between stale-belief eviction passes
         positionBeaconIntervalMs: 1_000,    // How often each agent sends its own position to each configured teammate
         enemy: {
@@ -14,7 +15,6 @@ export const config = {
             heatSigma: 3,                   // Spatial spread (tiles) of the heat Gaussian
             heatTau: 5_000,                 // Time decay constant (ms) of the heat signal
             confidenceThreshold: 0.5,       // Min confidence to treat a predicted enemy position as blocking
-            confidenceHalfLifeMs: 2_000,    // Half-life for the enemy tracker confidence score
             predictionCeilThreshold: 0.6,   // Fractional coord above which agent is committed to the upper tile
             predictionFloorThreshold: 0.4,  // Fractional coord below which agent is committed to the lower tile
         },
@@ -74,7 +74,6 @@ export const config = {
 
     handoff: {
         zoneRadius: 2,    // Meet-zone Manhattan radius around the midpoint
-        pickupRadius: 4,  // Manhattan radius around the pickup zone center to consider parcels
     },
 
     report: {

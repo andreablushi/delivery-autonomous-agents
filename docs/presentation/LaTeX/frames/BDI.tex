@@ -81,11 +81,12 @@
     \item Priority 1: competes directly with DeliverParcel
   \end{itemize}
   \begin{block}{Score}
-    \[ S = \frac{r_p + \sum_{c \in C} r_c}{d} \cdot \gamma, \qquad
+    \[ S = c_p \cdot \frac{r_p + \sum_{c \in C} r_c}{d} \cdot \gamma, \qquad
        \gamma = \min\!\left(1,\, \frac{d_{enemy}}{d}\right) \]
     \begin{itemize}
         \item $r_p$: parcel reward;
         \item $\sum_{c \in C} r_c$: value of carried stack;
+        \item $c_p$: confidence that parcel is still at its last known position;
         \item $\gamma$: race factor that penalizes parcels where enemies have advantage;
     \end{itemize}
   \end{block}
@@ -125,10 +126,10 @@
     $OST$: spawn tiles within observation range; \quad $\delta(x, y)$: BFS distance from $x$ to $y$
   \end{block}
   \begin{block}{Enemy heat $h$}
-    \[ h = \sum_{e \in E}
+    \[ h = \sum_{e \in E} c_e
          \exp\!\left(-\frac{d_e^2}{2\sigma^2}\right)
          \exp\!\left(-\frac{\Delta t_e}{\tau_h}\right) \]
-    Spatial $\times$ temporal decay over all tracked enemy observations
+    Spatial $\times$ temporal decay, weighted by enemy track confidence $c_e$
   \end{block}
 \end{frame}
 

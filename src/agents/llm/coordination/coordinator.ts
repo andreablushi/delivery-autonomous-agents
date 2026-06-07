@@ -21,7 +21,7 @@ import { findApproachPair } from "../../cooperation/roles/handoff_geometry.js";
  *  1. Broadcasts a `request_beliefs` message to all sensed friends.
  *  2. Waits COLLECT_WINDOW_MS for `beliefs_report` replies.
  *  3. Computes team geometry deterministically.
- *  4. Calls `LLMClient.coordinate` so the LLM assigns roles via `assign_goto`.
+ *  4. Calls `LLMClient.coordinate` so the LLM picks a cooperation posture.
  */
 export class Coordinator {
     private readonly reports = new Map<string, { report: BeliefsReport; at: number }>();
@@ -247,7 +247,7 @@ export class Coordinator {
                 return;
             }
 
-            await this.client.coordinate(freshReports, geometry, this.beliefs, () => void this.runRound(), this.getMissionNote());
+            await this.client.coordinate(freshReports, geometry, this.beliefs, this.getMissionNote());
         } catch (err) {
             this.log.error("Coordination round failed:", err);
         } finally {
@@ -322,47 +322,6 @@ export class Coordinator {
     }
 
     /**
-     * Anchor value = base (e.g. spawn tileCount) minus enemy heat at the anchor tile.
-     * Uses the same Gaussian heat model as the EXPLORE scorer for consistency.
-     * Higher value → more attractive anchor for greedy matching.
-     */
-    private anchorValue(anchor: Position, baseValue: number): number {
-        return baseValue - this.beliefs.agents.getEnemyHeatAt(anchor);
-    }
-
-    /**
-     * Greedy max-weight bipartite matching: each agent gets at most one anchor.
-     * Score for pair (a, b) = anchor.value − 0.5 * BFS-distance(a→b).
-     * Returns assignments in greedy order (best score first).
-     */
-    private greedyMatch(
-        agents: Array<{ id: string; bfs: Map<string, number> }>,
-        anchors: Array<{ pos: Position; value: number }>,
-    ): Array<{ agentId: string; anchor: { pos: Position; value: number }; dist: number }> {
-        const remAgents = agents.map((a, i) => ({ i, a }));
-        const remAnchors = [...anchors.map((a, j) => ({ j, a }))];
-        const result: Array<{ agentId: string; anchor: { pos: Position; value: number }; dist: number }> = [];
-
-        while (remAgents.length > 0 && remAnchors.length > 0) {
-            let best = -Infinity, ba = 0, bb = 0;
-            for (let a = 0; a < remAgents.length; a++) {
-                for (let b = 0; b < remAnchors.length; b++) {
-                    const dist = remAgents[a].a.bfs.get(posKey(remAnchors[b].a.pos)) ?? Infinity;
-                    const score = remAnchors[b].a.value - 0.5 * dist;
-                    if (score > best) { best = score; ba = a; bb = b; }
-                }
-            }
-            const { a: agent } = remAgents[ba];
-            const { a: anchor } = remAnchors[bb];
-            const dist = agent.bfs.get(posKey(anchor.pos)) ?? Infinity;
-            result.push({ agentId: agent.id, anchor, dist });
-            remAgents.splice(ba, 1);
-            remAnchors.splice(bb, 1);
-        }
-        return result;
-    }
-
-    /**
      * Compute the relay meet tile as the midpoint between the chosen pickup spawn anchor and the
      * nearest delivery cluster centroid, snapped to the nearest reachable tile via BFS from
      * `reachableOrigin`. Falls back to `reachableOrigin` when delivery clusters are absent or no
@@ -411,7 +370,8 @@ export class Coordinator {
 
         const spawnAnchors = geometry.spawnClusters.map(c => ({
             pos: c.centroid,
-            value: this.anchorValue(c.centroid, c.tileCount),
+            // Anchor score: tile density minus enemy heat (same Gaussian model as EXPLORE scorer).
+            value: c.tileCount - this.beliefs.agents.getEnemyHeatAt(c.centroid),
         }));
 
         if (spawnAnchors.length === 0) {
@@ -419,7 +379,16 @@ export class Coordinator {
         }
 
         // Agent closest to the spawn mass → PICKUP; other → DELIVER.
-        const [pickupMatch] = this.greedyMatch(roster, spawnAnchors);
+        // Pick the (agent, anchor) pair that maximises: anchor.value − 0.5 * bfs-distance.
+        let pickupMatch: { agentId: string; anchor: typeof spawnAnchors[0] } | null = null;
+        let bestScore = -Infinity;
+        for (const agent of roster) {
+            for (const anchor of spawnAnchors) {
+                const dist = agent.bfs.get(posKey(anchor.pos)) ?? Infinity;
+                const score = anchor.value - 0.5 * dist;
+                if (score > bestScore) { bestScore = score; pickupMatch = { agentId: agent.id, anchor }; }
+            }
+        }
         if (!pickupMatch) return JSON.stringify({ error: "Could not assign PICKUP_AGENT" });
         const deliverAgent = roster.find(a => a.id !== pickupMatch.agentId);
         if (!deliverAgent) return JSON.stringify({ error: "No remaining agent for DELIVER_AGENT" });
@@ -468,7 +437,6 @@ export class Coordinator {
             strategy: StrategyType; role: StrategyRole;
             tile_x: number; tile_y: number; max_distance: number; ttl_seconds: number;
             bonus?: number; partner_id?: string;
-            pickup_zone_x?: number; pickup_zone_y?: number;
             approach_x?: number; approach_y?: number;
         },
     ): Promise<string> {
@@ -490,14 +458,10 @@ export class Coordinator {
         strategy: StrategyType; role: StrategyRole;
         tile_x: number; tile_y: number; max_distance: number; ttl_seconds: number;
         bonus?: number; partner_id?: string;
-        pickup_zone_x?: number; pickup_zone_y?: number;
         approach_x?: number; approach_y?: number;
     }): void {
         const expiresAt = Date.now() + args.ttl_seconds * 1_000;
         const center = { x: args.tile_x, y: args.tile_y };
-        const pickupZoneCenter = (args.pickup_zone_x !== undefined && args.pickup_zone_y !== undefined)
-            ? { x: args.pickup_zone_x, y: args.pickup_zone_y }
-            : undefined;
         const approachTile = (args.approach_x !== undefined && args.approach_y !== undefined)
             ? { x: args.approach_x, y: args.approach_y }
             : undefined;
@@ -506,7 +470,6 @@ export class Coordinator {
             strategy: args.strategy,
             role: args.role,
             tiles: [center],
-            pickupZoneCenter,
             approachTile,
             maxDistance: args.max_distance,
             bonus: args.bonus,

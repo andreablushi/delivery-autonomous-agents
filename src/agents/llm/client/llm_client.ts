@@ -27,15 +27,6 @@ function tryParseTextToolCall(text: string): { name: string; args: unknown } | n
     return null;
 }
 
-/**
- * In the coordination pass the model emits one tool call per response, so multi-agent assignment
- * requires looping. Treat assign_goto / assign_strategy as follow-up tools ONLY in the coordinator
- * context, so the loop continues until the LLM stops assigning (then emits a final rationale text).
- */
-function isCoordAssign(ctx: import("../tools/context.js").ToolContext, name: string): boolean {
-    return ctx.sourceId === "coordinator" && (name === "assign_goto" || name === "assign_strategy");
-}
-
 export class LLMClient {
     private readonly client: OpenAI;
     private readonly model: string;
@@ -88,12 +79,11 @@ export class LLMClient {
     }
 
     /**
-     * Shared multi-hop tool-call loop used by both processMessage and coordinate.
+     * Shared multi-hop tool-call loop used by processMessage.
      */
     private async runHops(
         messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
         ctx: import("../tools/context.js").ToolContext,
-        onNoToolText?: (text: string) => void,
     ): Promise<void> {
         for (let hop = 0; hop < config.llm.maxHops; hop++) {
             this.log.debug(`LLM call, hop ${hop}...`);
@@ -119,15 +109,10 @@ export class LLMClient {
                     this.log.debug(`Text tool call [hop ${hop}]: ${textCall.name}(${JSON.stringify(textCall.args)})`);
                     const result = await executeToolCall(textCall.name, textCall.args, ctx);
                     this.log.debug(`Tool result [hop ${hop}]: ${result}`);
-                    if (!FOLLOWUP_TOOLS.has(textCall.name) && !isCoordAssign(ctx, textCall.name)) break;
+                    if (!FOLLOWUP_TOOLS.has(textCall.name)) break;
                     messages.push({ role: "assistant", content: text });
                     messages.push({ role: "user", content: `Tool result: ${result}` });
                     continue;
-                }
-                if (onNoToolText) {
-                    // Coordination: the model declined to assign — log its rationale, don't broadcast.
-                    onNoToolText(text);
-                    break;
                 }
                 this.log.debug(`No tool calls — sending model text as chat reply`);
                 await executeToolCall("reply", { text: text.slice(0, config.llm.replyMaxChars) }, ctx);
@@ -149,9 +134,7 @@ export class LLMClient {
                 const result = await executeToolCall(call.function.name, args, ctx);
                 this.log.debug(`Tool result [hop ${hop}]: ${result}`);
                 messages.push({ role: "tool", tool_call_id: call.id, content: result });
-                // In coordination, assign one agent per hop and loop until the LLM stops — this
-                // model emits a single tool call per response, so parallel calls never happen.
-                if (FOLLOWUP_TOOLS.has(call.function.name) || isCoordAssign(ctx, call.function.name)) needsFollowUp = true;
+                if (FOLLOWUP_TOOLS.has(call.function.name)) needsFollowUp = true;
             }
 
             if (!needsFollowUp) break;
@@ -201,7 +184,6 @@ export class LLMClient {
         reports: Map<string, BeliefsReport>,
         geometry: TeamGeometry,
         beliefs: Readonly<Beliefs>,
-        requestTeamStatus: () => void,
         missionNote = "",
     ): Promise<void> {
         const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote);

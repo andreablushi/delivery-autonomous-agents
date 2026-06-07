@@ -27,11 +27,6 @@ export type GameStrategy = {
     role: StrategyRole;
     /** ZONAL_RELAY: the spawn-region edge tile where PICKUP drops and DELIVER picks up. */
     tiles: Position[];
-    /**
-     * Unused for ZONAL_RELAY (pickup sweeps all spawn tiles via region membership).
-     * Kept for forward compatibility.
-     */
-    pickupZoneCenter?: Position;
     /** Hold-zone radius around the assigned tile (Manhattan). */
     maxDistance: number;
     /** Cross-agent delivery bonus used by the handshake heuristic and drop priority. */

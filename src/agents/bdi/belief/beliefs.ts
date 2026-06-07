@@ -96,9 +96,6 @@ export class Beliefs {
      */
     setSettings(config: IOConfig): void {
         this.settings = {
-            title: config.GAME.title,
-            description: config.GAME.description,
-            max_player: config.GAME.maxPlayers,
             clock: config.CLOCK,
         };
         // Distribute relevant config slices to sub-systems
@@ -108,11 +105,9 @@ export class Beliefs {
             carry_capacity: config.GAME.player.capacity,
         });
         this.parcels.setSettings({
-                parcel_spawn_interval: parseTimeInterval(config.GAME.parcels.generation_event),
-                reward_decay_interval: parseTimeInterval(config.GAME.parcels.decaying_event),
-                max_concurrent_parcels: config.GAME.parcels.max,
-                reward_avg: config.GAME.parcels.reward_avg,
-                reward_variance: config.GAME.parcels.reward_variance,
+            parcel_spawn_interval: parseTimeInterval(config.GAME.parcels.generation_event),
+            reward_decay_interval: parseTimeInterval(config.GAME.parcels.decaying_event),
+            reward_avg: config.GAME.parcels.reward_avg,
         })
     }
 }

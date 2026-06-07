@@ -137,14 +137,6 @@ export class BDIAgent {
     }
 
     /**
-     * Expose the communication module for external use (e.g. by LLMAgent to register hooks).
-     * @returns The agent's Communication instance.
-     */
-    getCommunication(): Communication {
-        return this.comm;
-    }
-
-    /**
      * Register socket listeners that update beliefs and drive the deliberation cycle.
      * Each sensing event is one deliberation tick.
      */

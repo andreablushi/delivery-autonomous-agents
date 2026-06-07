@@ -14,18 +14,10 @@ export interface ToolContext {
     comm: Communication;
     sourceId: string;
     ruleStore: RuleStore;
-    /** Trigger an immediate team coordination round (no-op if no coordinator is active). */
-    requestTeamStatus?: () => void;
     /** Run the two-phase rendezvous commit protocol; returns a JSON result string. */
     proposeRendezvous?: (rawArgs: unknown) => Promise<string>;
     /** Run the two-phase red-light commit protocol; returns a JSON result string. */
     proposeRedLight?: (rawArgs: unknown) => Promise<string>;
     /** Run the two-phase goto commit protocol for a specific teammate; returns a JSON result string. */
     proposeGoto?: (agentId: string, rawArgs: unknown) => Promise<string>;
-    /**
-     * Deterministically assign all agents to anchor zones based on a chosen posture.
-     * Only available in the coordination context (sourceId === "coordinator").
-     * Returns a JSON result string.
-     */
-    assignPosture?: (posture: string, opts?: { bonus?: number }) => Promise<string>;
 }

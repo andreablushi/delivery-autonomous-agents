@@ -94,7 +94,8 @@ export class HandpassInitiator {
 
         this.lastInitiateAt = now;
         this.inFlight = true;
-        this.pendingVote = null;
+        // pendingVote is NOT cleared here: rid + timestamp checks below are sufficient
+        // to reject any vote from a previous round.
 
         try {
             this.log.debug(`Handpass propose ${rid} to ${partnerId} @ (${geo.meetTile.x},${geo.meetTile.y}), reward=${reward}`);
@@ -104,9 +105,7 @@ export class HandpassInitiator {
 
             await new Promise<void>(r => setTimeout(r, config.rendezvous.commitWindowMs));
 
-            // Cast prevents TypeScript's control-flow narrowing from freezing the type at null
-            // (set above) and ignoring the handleVote() update that occurred during the awaits.
-            const vote = this.pendingVote as ({ rid: string; accept: boolean; at: number } | null);
+            const vote = this.pendingVote;
             const accepted = vote !== null && vote.rid === rid && vote.accept && vote.at >= now;
 
             if (accepted) {

@@ -133,6 +133,17 @@ export class ParcelBeliefs {
     }
 
     /**
+     * Confidence that the target parcel is still at its last known position.
+     * Uses exponential time-decay (τ = confidenceHalfLifeMs) on the last observation timestamp.
+     * Returns 1 (full confidence) when the parcel was just sensed, decaying toward 0 as time passes.
+     * @param id Parcel ID
+     * @returns Confidence in [0, 1], or undefined if the parcel is not tracked
+     */
+    getConfidence(id: string): number | undefined {
+        return this.parcels.getConfidence(id, config.beliefs.confidenceHalfLifeMs);
+    }
+
+    /**
      * Get the current believed positions of all parcels.
      * @returns An array of all parcels with their current believed state
      */

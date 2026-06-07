@@ -9,6 +9,12 @@ import type { GameStrategy } from "../../models/game_strategy.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 
+/** Extract `rid` from a proposal args object, defaulting to "" on parse failure. */
+function extractRid(args: unknown): string {
+    const obj = args as Record<string, unknown>;
+    return typeof obj.rid === "string" ? obj.rid : "";
+}
+
 /** Dependencies for handling incoming peer-injection messages. */
 export type IncomingDeps = {
     beliefs: Beliefs;
@@ -121,9 +127,7 @@ export class Communication {
 
                     case PeerKind.RendezvousPropose: {
                         const accept = evaluateRendezvousVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
-                            ? (msg.args as Record<string, unknown>).rid as string
-                            : "";
+                        const rid = extractRid(msg.args);
                         this.log.debug(`rendezvous_propose from ${senderName}: accept=${accept} (rid=${rid})`);
                         await this.send(senderId, PeerKind.RendezvousVote, { rid, accept });
                         return;
@@ -131,9 +135,7 @@ export class Communication {
 
                     case PeerKind.RedLightPropose: {
                         const accept = evaluateRedLightVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
-                            ? (msg.args as Record<string, unknown>).rid as string
-                            : "";
+                        const rid = extractRid(msg.args);
                         this.log.debug(`red_light_propose from ${senderName}: accept=${accept} (rid=${rid})`);
                         await this.send(senderId, PeerKind.RedLightVote, { rid, accept });
                         return;
@@ -141,9 +143,7 @@ export class Communication {
 
                     case PeerKind.GotoPropose: {
                         const accept = evaluateGotoVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
-                            ? (msg.args as Record<string, unknown>).rid as string
-                            : "";
+                        const rid = extractRid(msg.args);
                         this.log.debug(`goto_propose from ${senderName}: accept=${accept} (rid=${rid})`);
                         await this.send(senderId, PeerKind.GotoVote, { rid, accept });
                         return;
@@ -151,9 +151,7 @@ export class Communication {
 
                     case PeerKind.HandpassPropose: {
                         const accept = evaluateHandpassVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = typeof (msg.args as Record<string, unknown>).rid === "string"
-                            ? (msg.args as Record<string, unknown>).rid as string
-                            : "";
+                        const rid = extractRid(msg.args);
                         this.log.debug(`handpass_propose from ${senderName}: accept=${accept} (rid=${rid})`);
                         await this.send(senderId, PeerKind.HandpassVote, { rid, accept });
                         return;
@@ -161,7 +159,7 @@ export class Communication {
 
                     case PeerKind.HandpassVote: {
                         const args = msg.args as Record<string, unknown>;
-                        const rid = typeof args.rid === "string" ? args.rid : "";
+                        const rid = extractRid(args);
                         const accept = typeof args.accept === "boolean" ? args.accept : false;
                         this.handpassVoteHook?.(senderId, rid, accept);
                         return;

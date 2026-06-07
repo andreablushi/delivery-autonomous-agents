@@ -11,8 +11,6 @@ import * as reply from "./handlers/reply.js";
 import * as calculate from "./handlers/calculate.js";
 import * as assignGoto from "./handlers/assign_goto.js";
 import * as assignStrategy from "./handlers/assign_strategy.js";
-import * as requestTeamStatus from "./handlers/request_team_status.js";
-import * as setTeamPosture from "./handlers/set_team_posture.js";
 
 export type { ToolContext };
 
@@ -33,15 +31,11 @@ const modules: Record<string, ToolModule> = {
     calculate,
     assign_goto: assignGoto,
     assign_strategy: assignStrategy,
-    request_team_status: requestTeamStatus,
-    set_team_posture: setTeamPosture,
 };
 
-/** Returns the tool definitions available in the given context. Coordination-only tools are excluded when not in a coordinator pass. */
-export function getTools(ctx: ToolContext): OpenAI.Chat.Completions.ChatCompletionTool[] {
-    return Object.entries(modules)
-        .filter(([name]) => name !== "set_team_posture" || ctx.assignPosture !== undefined)
-        .map(([, m]) => m.definition);
+/** Returns the tool definitions available in the given context. */
+export function getTools(_ctx: ToolContext): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    return Object.values(modules).map(m => m.definition);
 }
 
 export const FOLLOWUP_TOOLS = new Set(["calculate"]);

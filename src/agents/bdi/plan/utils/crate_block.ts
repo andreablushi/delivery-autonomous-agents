@@ -94,26 +94,3 @@ export function findCrateSegment(
 
     return { entry, exit, clusterCrates };
 }
-
-/**
- * Check whether at least one believed crate still lies on the path from `from` to `target`.
- * Used to verify whether a crate-blocked route is still obstructed after a belief update.
- * @param beliefs Current agent beliefs.
- * @param from Agent's current position.
- * @param target The target position the agent wants to reach.
- * @returns true if a crate is still on the path, false otherwise.
- */
-export function hasCrateOnPath(
-    beliefs: Beliefs,
-    from: Position,
-    target: Position,
-): boolean {
-    const crates = beliefs.crates.getCurrentCrates().flatMap(c =>
-        c.lastPosition ? [{ position: c.lastPosition }] : [],
-    );
-    if (crates.length === 0) return false;
-
-    const crateKeys = new Set(crates.map(c => posKey(c.position)));
-    const path = pathIgnoring(beliefs, from, target, crateKeys);
-    return !!path && path.some(pos => crateKeys.has(posKey(pos)));
-}

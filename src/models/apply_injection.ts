@@ -55,9 +55,6 @@ export function applyInjection(
             if (!beliefs.map.getMap()) return { error: "Map not yet loaded" };
             if (!beliefs.map.checkMapBounds(p.tile_x, p.tile_y)) return { error: "Coordinates out of map bounds" };
 
-            const pickupZoneCenter = (p.pickup_zone_x !== undefined && p.pickup_zone_y !== undefined)
-                ? { x: p.pickup_zone_x, y: p.pickup_zone_y }
-                : undefined;
             const approachTile = (p.approach_x !== undefined && p.approach_y !== undefined)
                 ? { x: p.approach_x, y: p.approach_y }
                 : undefined;
@@ -65,7 +62,6 @@ export function applyInjection(
                 strategy: p.strategy,
                 role: p.role,
                 tiles: [{ x: p.tile_x, y: p.tile_y }],
-                pickupZoneCenter,
                 approachTile,
                 maxDistance: p.max_distance,
                 bonus: p.bonus,

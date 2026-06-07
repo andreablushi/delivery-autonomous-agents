@@ -152,18 +152,6 @@ export function parseRendezvousProposeArgs(json: unknown): RendezvousProposeArgs
     return { ...base, rid: obj.rid };
 }
 
-/** Wire args for `rendezvous_vote`. */
-export type RendezvousVoteArgs = { rid: string; accept: boolean };
-
-export function parseRendezvousVoteArgs(json: unknown): RendezvousVoteArgs | { error: string } {
-    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
-    const obj = json as Record<string, unknown>;
-    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
-    if (typeof obj.accept !== "boolean") return { error: "accept must be a boolean" };
-    return { rid: obj.rid, accept: obj.accept };
-}
-
-
 /** Arguments for `request_red_light`. */
 export type RedLightArgs = {
     ttl_seconds: number;
@@ -278,9 +266,6 @@ export type AssignStrategyArgs = {
     ttl_seconds: number;
     bonus?: number;
     partner_id?: string;
-    /** ZONAL_RELAY/PICKUP_AGENT: spawn-cluster centroid to camp (currently unused — pickup sweeps all spawn tiles). */
-    pickup_zone_x?: number;
-    pickup_zone_y?: number;
     /** This agent's exact wait cell adjacent to the exchange tile (tile_x, tile_y). */
     approach_x?: number;
     approach_y?: number;
@@ -316,14 +301,6 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
     if (obj.strategy === StrategyType.ZonalRelay && partner_id === undefined)
         return { error: "partner_id is required for ZONAL_RELAY strategy" };
 
-    const pickup_zone_x = coerceNum(obj.pickup_zone_x);
-    const pickup_zone_y = coerceNum(obj.pickup_zone_y);
-    const hasPickupZone = pickup_zone_x !== undefined && pickup_zone_y !== undefined;
-    if (hasPickupZone && (typeof pickup_zone_x !== "number" || !Number.isInteger(pickup_zone_x)))
-        return { error: "pickup_zone_x must be an integer" };
-    if (hasPickupZone && (typeof pickup_zone_y !== "number" || !Number.isInteger(pickup_zone_y)))
-        return { error: "pickup_zone_y must be an integer" };
-
     const approach_x = coerceNum(obj.approach_x);
     const approach_y = coerceNum(obj.approach_y);
     const hasApproach = approach_x !== undefined && approach_y !== undefined;
@@ -338,8 +315,6 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
         tile_x, tile_y, max_distance, ttl_seconds,
         bonus: bonus as number | undefined,
         partner_id,
-        pickup_zone_x: hasPickupZone ? pickup_zone_x as number : undefined,
-        pickup_zone_y: hasPickupZone ? pickup_zone_y as number : undefined,
         approach_x: hasApproach ? approach_x as number : undefined,
         approach_y: hasApproach ? approach_y as number : undefined,
     };

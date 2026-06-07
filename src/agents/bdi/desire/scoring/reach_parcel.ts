@@ -62,5 +62,6 @@ export function scoreReachDesire(
         zoneFactor = 1 / (1 + excess);
     }
 
-    return (effectiveScore / penalizedDistance(distancePickup, desire.target, beliefs)) * raceFactor * zoneFactor;
+    const confidence = beliefs.parcels.getConfidence(desireParcel.id) ?? 1;
+    return confidence * (effectiveScore / penalizedDistance(distancePickup, desire.target, beliefs)) * raceFactor * zoneFactor;
 }

@@ -98,13 +98,16 @@ We will refer to this distance as $d$ throughout the rest of the section. (Note:
 Let $r_p$ denote the current estimated reward of a target parcel $p$, and $C$ the set of parcels the agent is currently carrying.
 The score $S$ for a \texttt{ReachParcel} desire targeting parcel $p$ is calculated as:
 \begin{equation*}
-  S = \frac{r_p + \sum_{c \in C} r_c}{d} \cdot \gamma
+  S = c_p \cdot \frac{r_p + \sum_{c \in C} r_c}{d} \cdot \gamma
 \end{equation*}
-Where $\gamma$ is a race factor that de-prioritizes parcels likely to be collected by competitors. It is computed as:
+where $c_p$ is the confidence in the target parcel's last known position (Eq.~\ref{eq:confidence}, with $\tau = \tau_c$), reflecting how stale the parcel observation is.
+A parcel that was just sensed has $c_p \approx 1$ and is scored at full value; one that has been out of sight for several half-lives is discounted accordingly.
+
+$\gamma$ is a race factor that de-prioritizes parcels likely to be collected by competitors. It is computed as:
 \[ \gamma = \min\left(1, \frac{d_{\text{enemy}}}{d}\right) \]
 where $d_{\text{enemy}}$ is the distance from the nearest tracked enemy to the parcel.
 
-Incorporating the total reward of currently carried parcels ($\sum_{c \in C} r_c$) into the score allows the agent to evaluate the utility of 
+Incorporating the total reward of currently carried parcels ($\sum_{c \in C} r_c$) into the score allows the agent to evaluate the utility of
 picking up a new parcel against the potential value of delivering existing ones. This effectively balances the agent's acquisition and delivery goals.
 
 \paragraph{DeliverParcel}
@@ -126,12 +129,12 @@ The cluster weight $w$ quantifies the structural density of the target's surroun
 \end{equation*}
 where $OST$ is the set of spawn tiles such that their Manhattan distance $\delta(x, y) \le R_{\text{obs}}$.
 
-The enemy heat $h$ actively steers the agent away from sectors currently crowded by competitors. 
-It is accumulated from the history of tracked enemy observations $E$, combining spatial and temporal decay:
+The enemy heat $h$ actively steers the agent away from sectors currently crowded by competitors.
+It is accumulated from the history of tracked enemy observations $E$, combining spatial and temporal decay, and weighted by each enemy's track confidence $c_e$ (Eq.~\ref{eq:confidence}):
 \begin{equation*}
-  h = \sum_{e \in E} \exp\left(-\frac{d_e^2}{2\sigma^2}\right) \exp\left(-\frac{\Delta t_e}{\tau_h}\right)
+  h = \sum_{e \in E} c_e \exp\left(-\frac{d_e^2}{2\sigma^2}\right) \exp\left(-\frac{\Delta t_e}{\tau_h}\right)
 \end{equation*}
-where $d_e$ is the spatial distance to the past enemy observation, $\Delta t_e$ is the observation's age, $\sigma$ controls the spatial spread, and $\tau_h$ is the temporal decay rate.
+where $d_e$ is the spatial distance to the past enemy observation, $\Delta t_e$ is the observation's age, $\sigma$ controls the spatial spread, $\tau_h$ is the temporal decay rate, and $c_e = \exp(-(t - t_{seen,e})/\tau_c)$ is the confidence in the enemy's last known position.
 
 Finally, the score for an \texttt{Explore} desire is computed as:
 \begin{equation*}

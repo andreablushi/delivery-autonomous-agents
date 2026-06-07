@@ -71,6 +71,22 @@ export class Tracker<T extends Positionable> {
     }
 
     /**
+     * Confidence that the tracked item's last known position is still current, based on observation age.
+     * Uses exponential decay: confidence = e^(-age / halfLife), giving 1.0 when just observed and approaching 0.0 as time passes.
+     * Returns 0 if the position is already known to be invalid (lastPosition is null).
+     * @param key id of the object being tracked
+     * @param halfLife time in milliseconds after which confidence drops to ~0.37 (1/e).
+     * @returns confidence in [0, 1], or undefined if the key is not tracked
+     */
+    getConfidence(key: string, halfLife: number): number | undefined {
+        const entry = this.store.get(key);
+        if (!entry) return undefined;
+        if (!entry.value.lastPosition) return 0;
+        const age = Date.now() - entry.seenAt;
+        return Math.exp(-age / halfLife);
+    }
+
+    /**
      * Delete the entry for a given key from the tracker.
      * @param key id of the object to be deleted from the tracker
      */
@@ -95,20 +111,4 @@ export class Tracker<T extends Positionable> {
         });
     }
 
-    /**
-     * Confidence that the tracked item's last known position is still current, based on observation age.
-     * Uses exponential decay: confidence = e^(-age / halfLife), giving 1.0 when just observed and approaching 0.0 as time passes.
-     * Returns 0 if the position is already known to be invalid (lastPosition is null).
-     * @param key id of the object being tracked
-     * @param halfLife time in milliseconds after which confidence drops to ~0.37 (1/e). For example, pass 5000 if you expect
-     *                 the item's position to remain accurate for roughly 5 seconds before becoming unreliable.
-     * @returns confidence in [0, 1], or undefined if the key is not tracked
-     */
-    getConfidence(key: string, halfLife: number): number | undefined {
-        const entry = this.store.get(key);
-        if (!entry) return undefined;
-        if (!entry.value.lastPosition) return 0;
-        const age = Date.now() - entry.seenAt;
-        return Math.exp(-age / halfLife);
-    }
 }

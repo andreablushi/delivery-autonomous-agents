@@ -126,11 +126,6 @@ export class Intentions {
         this.injectedIntentions = this.injectedIntentions.filter(e => e.desire.type !== type);
     }
 
-    /** Remove all injected intentions matching `predicate`. */
-    removeInjectedIntentions(predicate: (e: InjectedIntention) => boolean): void {
-        this.injectedIntentions = this.injectedIntentions.filter(e => !predicate(e));
-    }
-
     /**
      * Rebuild the intention queue from current beliefs, live injected intentions, and active scoring rules.
      * @param beliefs Current beliefs, used by the generator and sorter.
@@ -211,11 +206,4 @@ export class Intentions {
         return this.intentionsQueue.length > 0 ? this.intentionsQueue[0] : null;
     }
 
-    /**
-     * Returns true if `desire` is present in the current intention queue (by reference).
-     * @param desire The desire to search for.
-     */
-    hasIntention(desire: DesireType): boolean {
-        return this.intentionsQueue.some((intention) => intention.desire === desire);
-    }
 }
