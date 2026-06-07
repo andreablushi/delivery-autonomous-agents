@@ -1,28 +1,28 @@
 \section{BDI Agent}
-The agent operates on a continuous cycle driven by the \texttt{sensing} socket event emitted by the server. 
-Rather than relying on a static script, the agent dynamically reacts to the environment through a strict, four-stage pipeline. 
+The agent operates on a continuous cycle driven by the \texttt{sensing} socket event emitted by the server.
+Rather than relying on a static script, the agent dynamically reacts to the environment through a strict, four-stage pipeline.
 Upon receiving a \texttt{sensing} event, the following sequence executes:
 \begin{enumerate}
     \item \textbf{Perception (\texttt{perceive()}):} The agent integrates the new sensory data into its belief state trough a Belief Revision process (detailed in Section~\ref{sec:belief}).
     The actions we perform that modify the belief state automatically updates the beliefs, without having to wait for the next sensing event.
-    
-    \item \textbf{Deliberation (\texttt{deliberate()}):} Using its updated beliefs, the agent generates potential goals (desires) and calculates a score for each. 
+
+    \item \textbf{Deliberation (\texttt{deliberate()}):} Using its updated beliefs, the agent generates potential goals (desires) and calculates a score for each.
     It then rebuilds its intention queue, prioritizing the most valuable task (detailed in Section~\ref{sec:desires}).
-    
-    \item \textbf{Planning (\texttt{Planner.plan()}):} The planner extracts the highest-ranked intention from the queue and translates it into a concrete sequence of 
+
+    \item \textbf{Planning (\texttt{Planner.plan()}):} The planner extracts the highest-ranked intention from the queue and translates it into a concrete sequence of
     executable, typed steps (detailed in Section~\ref{sec:planning}).
-    
-    \item \textbf{Execution (\texttt{Executor}):} Finally, the planned actions are asynchronously emitted to the server via socket events. 
+
+    \item \textbf{Execution (\texttt{Executor}):} Finally, the planned actions are asynchronously emitted to the server via socket events.
     To maintain responsiveness, the executor triggers an action at each server clock tick, instead of waiting for a perception update or an acknowledgment from the server.
 \end{enumerate}
 
 \subsection{Belief Revision}
 \label{sec:belief}
-The agent's belief state relies on two foundational utility data structures to manage temporal observations, 
+The agent's belief state relies on two foundational utility data structures to manage temporal observations,
 which in turn feed into three specialized sub-systems: \texttt{AgentBeliefs}, \texttt{MapBeliefs}, \texttt{ParcelBeliefs}.
 
-\paragraph{Tracker} \texttt{Tracker} stores a single latest observation $\langle v, t_{seen} \rangle$ per entity \texttt{e}. 
-On each sensing report, \texttt{update(e, v)} overwrites the existing entry. 
+\paragraph{Tracker} \texttt{Tracker} stores a single latest observation $\langle v, t_{seen} \rangle$ per entity \texttt{e}.
+On each sensing report, \texttt{update(e, v)} overwrites the existing entry.
 The confidence of a tracked observation decays exponentially over time:
 \begin{equation}
 c(t) = \exp \left(-\frac{t - t_{seen}}{\tau}\right)
@@ -30,7 +30,7 @@ c(t) = \exp \left(-\frac{t - t_{seen}}{\tau}\right)
 \end{equation}
 where $\tau$ is the exponential time constant (the duration after which confidence drops significantly).
 
-When the current sensing window covers an entity's last-known position, but the entity is absent from the report, 
+When the current sensing window covers an entity's last-known position, but the entity is absent from the report,
 \texttt{invalidateAtSensedPositions} nullifies that position without removing the record entirely.
 
 \paragraph{Memory}
@@ -44,7 +44,7 @@ It also maintains a spatial heat field over the map, aggregating enemy presence 
 \texttt{MapBeliefs} stores the static tile layout, a set of transient blocked tiles each with a configurable TTL, and soft traversal penalties on individual tiles.
 
 Upon map receipt, it identifies and permanently seals \emph{sink tiles}: tiles that an agent can enter but from which no valid pickup-and-deliver loop exists.
-This situation arises on maps where directional conveyor tiles create one-way corridors: an agent may be carried into a region 
+This situation arises on maps where directional conveyor tiles create one-way corridors: an agent may be carried into a region
 from which it can never return to a spawn tile, or from which no delivery tile is reachable.
 
 To detect these dead zones, the map is modelled as a directed walkability graph where conveyors enforce one-way edges.
@@ -54,10 +54,10 @@ All walkable tiles outside a safe SCC are reclassified as walls, preventing the 
 
 
 \subsubsection{Parcel beliefs}
-This component tracks the availability and value of delivery targets. 
-Parcels within the current sensing window receive their authoritative reward from the server. 
+This component tracks the availability and value of delivery targets.
+Parcels within the current sensing window receive their authoritative reward from the server.
 Once out of sight, parcel rewards decay linearly at $-1$ per server-defined interval $\Delta_t$.
-Each parcel maintains an independent decay clock to prevent drift accumulation. 
+Each parcel maintains an independent decay clock to prevent drift accumulation.
 Given a parcel last observed at time $t_0$ with reward $r_0$, its estimated reward at time $t$ is:
 \begin{equation}
 r(t) = r_0 - \left\lfloor\frac{t - t_0}{\Delta_t}\right\rfloor.
@@ -67,7 +67,7 @@ When $r(t) \leq 0$, the parcel is considered expired and is deleted from the age
 
 \subsubsection{Crate beliefs}
 \texttt{CrateBeliefs} uses the same \texttt{Tracker} utility described above to store the latest known position for each crate.
-On every sensing update, observed crate positions are registered and \texttt{invalidateAtSensedPositions} nullifies any entry whose tile falls within 
+On every sensing update, observed crate positions are registered and \texttt{invalidateAtSensedPositions} nullifies any entry whose tile falls within
 the current sensing window but is absent from the report, reflecting that the crate has been pushed.
 
 \subsection{Desires and Intention Selection}
@@ -144,22 +144,24 @@ Finally, the score for an \texttt{Explore} desire is computed as:
 \subsection{Planning: A* Navigation and Collision Handling}
 \label{sec:planning}
 
-For pathfinding, the agent employs a standard A* search algorithm with a Manhattan distance heuristic, which is admissible in our grid-based environment. 
+For pathfinder, the agent employs a standard A* search algorithm with a Manhattan distance heuristic, which is admissible in our grid-based environment.
 The planner incorporates dynamic walkability checks based on the agent's current beliefs, treating temporarily blocked tiles as impassable.
 Statically, walls and out-of-bounds tiles are always rejected; conveyor tiles are additionally direction-sensitive, blocking movement against their flow.
 
-Plans generated by the A* algorithm are defined as sequences of typed actions: directional \texttt{move} steps followed by a terminal \texttt{pickup} or \texttt{putdown} step. 
+Plans generated by the A* algorithm are defined as sequences of typed actions: directional \texttt{move} steps followed by a terminal \texttt{pickup} or \texttt{putdown} step.
 An existing plan is reused across deliberation steps as long as the active desire type and target remain unchanged, and all remaining steps successfully pass walkability re-validation.
 
 \paragraph{Collision Handling}
-Prior to executing a move step, the agent verifies the availability of the target tile. A tile is considered occupied, and thus temporarily blocked, under two conditions: 
+Prior to executing a move step, the agent verifies the availability of the target tile. A tile is considered occupied, and thus temporarily blocked, under two conditions:
 either an enemy is currently observed on it, or an enemy's predicted next position matches it with sufficient confidence.
 
 When the next planned tile is occupied, the collision manager applies a three-stage escalation:
 \begin{enumerate}[noitemsep]
-  \item \textbf{Detour}: replan with the blocked tile treated as a wall. 
+  \item \textbf{Detour}: replan with the blocked tile treated as a wall.
   This is accepted only if the detour adds at most a predefined threshold of $\Delta_\text{th}$ steps over the remaining plan.
   \item \textbf{Wait}: if no acceptable detour exists, pause execution for a random duration drawn from a predefined uniform distribution.
-  \item \textbf{Block and replan}: after the wait expires, or after a specified limit $L$ of repeated invalidations, 
+  \item \textbf{Block and replan}: after the wait expires, or after a specified limit $L$ of repeated invalidations,
   mark the tile as temporarily blocked for a randomized time-to-live (TTL) duration and completely replan toward the same goal.
 \end{enumerate}
+
+This escalation applies only to enemies; teammate collisions are resolved deterministically by agent ID, with the lower ID conceding.
