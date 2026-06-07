@@ -90,7 +90,7 @@ export class MapBeliefs {
         };
 
         // Spawn region edge tile: the spawn tile nearest to the delivery mass centroid.
-        // Used by the ZONAL_RELAY posture as the handoff meet point so PICKUP never leaves the spawn side.
+        // Used by the ZONAL_RELAY strategy as the handoff meet point so PICKUP never leaves the spawn side.
         if (this.spawnTiles.length > 0 && this.deliveryTiles.length > 0) {
             const delCx = Math.round(this.deliveryTiles.reduce((s, t) => s + t.x, 0) / this.deliveryTiles.length);
             const delCy = Math.round(this.deliveryTiles.reduce((s, t) => s + t.y, 0) / this.deliveryTiles.length);
@@ -287,7 +287,7 @@ export class MapBeliefs {
 
     /**
      * The spawn tile nearest to the delivery mass centroid.
-     * Used by the ZONAL_RELAY posture as the handoff meet point so PICKUP never leaves the spawn side.
+     * Used by the ZONAL_RELAY strategy as the handoff meet point so PICKUP never leaves the spawn side.
      * Null before the first `updateMap` call or when spawn/delivery tiles are absent.
      */
     getSpawnRegionEdgeTile(): Position | null {

@@ -5,8 +5,9 @@ import { buildTeamGeometry } from "../../cooperation/geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
 import type { PeerInbox } from "../../coordination/peer_inbox.js";
-import type { PostureAssigner } from "../../cooperation/posture/posture_assigner.js";
-import type { PerformanceTracker } from "../../cooperation/posture/performance_tracker.js";
+import type { TeamStrategyAssigner } from "../../cooperation/strategy/strategy_assigner.js";
+import type { PerformanceTracker } from "../../cooperation/strategy/performance_tracker.js";
+import { StrategyType } from "../../../models/game_strategy.js";
 import type { LLMClient } from "../client/llm_client.js";
 
 /**
@@ -16,8 +17,8 @@ import type { LLMClient } from "../client/llm_client.js";
  *  1. Broadcasts a `request_beliefs` message to all sensed friends.
  *  2. Waits COLLECT_WINDOW_MS for `beliefs_report` replies.
  *  3. Samples strategy performance and computes team geometry.
- *  4. Calls `LLMClient.chooseCooperationPosture` so the LLM picks a cooperation posture.
- *  5. Applies the chosen posture via PostureAssigner and records it in PerformanceTracker.
+ *  4. Calls `LLMClient.chooseTeamStrategy` so the LLM picks a team strategy.
+ *  5. Applies the chosen strategy via TeamStrategyAssigner and records it in PerformanceTracker.
  */
 export class CooperationLoop {
     private coordinating = false;
@@ -29,7 +30,7 @@ export class CooperationLoop {
         private readonly comm: Communication,
         private readonly client: LLMClient,
         private readonly inbox: PeerInbox,
-        private readonly postureAssigner: PostureAssigner,
+        private readonly strategyAssigner: TeamStrategyAssigner,
         private readonly performanceTracker: PerformanceTracker,
         private readonly getMissionNote: () => string = () => "",
     ) {
@@ -83,17 +84,17 @@ export class CooperationLoop {
                 this.log.debug(
                     `Single-file corridor (sep=${geometry.spawnDeliverySeparation}) — forcing ZONAL_RELAY, skipping LLM`,
                 );
-                await this.postureAssigner.assignPosture("ZONAL_RELAY", { geometry, reports: freshReports });
-                this.performanceTracker.markActive("ZONAL_RELAY");
+                await this.strategyAssigner.applyTeamStrategy(StrategyType.ZonalRelay, { geometry, reports: freshReports });
+                this.performanceTracker.markActive(StrategyType.ZonalRelay);
                 return;
             }
 
-            const { posture, bonus } = await this.client.chooseCooperationPosture(
+            const { strategy, bonus } = await this.client.chooseTeamStrategy(
                 freshReports, geometry, this.beliefs, this.getMissionNote(), performance,
             );
-            const result = await this.postureAssigner.assignPosture(posture, { geometry, reports: freshReports, bonus });
-            this.performanceTracker.markActive(posture);
-            this.log.debug(`Coordination assignPosture(${posture}) → ${result}`);
+            const result = await this.strategyAssigner.applyTeamStrategy(strategy, { geometry, reports: freshReports, bonus });
+            this.performanceTracker.markActive(strategy);
+            this.log.debug(`Coordination applyTeamStrategy(${strategy}) → ${result}`);
         } catch (err) {
             this.log.error("Coordination round failed:", err);
         } finally {

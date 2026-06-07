@@ -1,26 +1,24 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
+import { TEAM_STRATEGIES, type TeamStrategy } from "../../../models/game_strategy.js";
 import { config } from "../../../config.js";
 
-export const POSTURES = ["ZONAL_RELAY", "OPPORTUNISTIC", "NONE"] as const;
-export type Posture = typeof POSTURES[number];
-
 /**
- * Tracks team score gains per cooperation posture using a bounded sliding window.
+ * Tracks team score gains per team strategy using a bounded sliding window.
  * Called once per cooperation round to sample performance and expose it to the LLM prompt.
  */
 export class PerformanceTracker {
-    private readonly recentGains = new Map<Posture, number[]>(POSTURES.map(p => [p, []]));
-    private lastPosture: Posture | null = null;
+    private readonly recentGains = new Map<TeamStrategy, number[]>(TEAM_STRATEGIES.map(s => [s, []]));
+    private lastStrategy: TeamStrategy | null = null;
     private lastTeamScore: number | null = null;
 
-    /** Record which posture was just applied so the next sample can attribute the delta to it. */
-    markActive(posture: Posture): void {
-        this.lastPosture = posture;
+    /** Record which strategy was just applied so the next sample can attribute the delta to it. */
+    markActive(strategy: TeamStrategy): void {
+        this.lastStrategy = strategy;
     }
 
     /**
-     * Sample the current team score and attribute the delta to the posture that was active
+     * Sample the current team score and attribute the delta to the strategy that was active
      * during the elapsed interval. Call once per round, after fresh reports are collected.
      */
     sample(freshReports: Map<string, BeliefsReport>, beliefs: Readonly<Beliefs>): void {
@@ -28,30 +26,30 @@ export class PerformanceTracker {
         const teammateScore = Array.from(freshReports.values()).reduce((s, r) => s + r.score, 0);
         const teamScore = myScore + teammateScore;
 
-        if (this.lastTeamScore !== null && this.lastPosture !== null) {
+        if (this.lastTeamScore !== null && this.lastStrategy !== null) {
             const delta = teamScore - this.lastTeamScore;
-            const window = this.recentGains.get(this.lastPosture)!;
+            const window = this.recentGains.get(this.lastStrategy)!;
             window.push(delta);
             if (window.length > config.coordination.perfWindowRounds) window.shift();
         }
         this.lastTeamScore = teamScore;
     }
 
-    /** Format per-posture stats for injection into the LLM cooperation prompt. */
+    /** Format per-strategy stats for injection into the LLM cooperation prompt. */
     format(): string {
         const lines: string[] = [];
-        for (const posture of POSTURES) {
-            const gains = this.recentGains.get(posture)!;
+        for (const strategy of TEAM_STRATEGIES) {
+            const gains = this.recentGains.get(strategy)!;
             if (gains.length === 0) {
-                lines.push(`${posture}: no data yet`);
+                lines.push(`${strategy}: no data yet`);
             } else {
                 const avg = gains.reduce((s, g) => s + g, 0) / gains.length;
                 const latest = gains[gains.length - 1];
                 const sign = (n: number) => n >= 0 ? `+${n.toFixed(1)}` : n.toFixed(1);
-                lines.push(`${posture}: avg ${sign(avg)}/round (last ${gains.length}, latest ${sign(latest)})`);
+                lines.push(`${strategy}: avg ${sign(avg)}/round (last ${gains.length}, latest ${sign(latest)})`);
             }
         }
-        lines.push(`Current: ${this.lastPosture ?? "none"}`);
+        lines.push(`Current: ${this.lastStrategy ?? "none"}`);
         return lines.join("\n");
     }
 }

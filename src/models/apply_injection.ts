@@ -79,7 +79,7 @@ export function applyInjection(
             if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             addInjectedDesire({
-                desire: { type: "PARK_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
+                desire: { type: "REACH_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
                 expiresAt,
                 sourceId,
             });
@@ -177,7 +177,7 @@ export function applyInjection(
             if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             addInjectedDesire({
-                desire: { type: "PARK_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
+                desire: { type: "REACH_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
                 expiresAt,
                 sourceId,
             });
@@ -192,7 +192,7 @@ export function applyInjection(
         case PeerKind.RequestResume: {
             // No args to validate — request_resume carries no parameters.
             removeInjectedDesiresByType("HOLD_TILE");
-            removeInjectedDesiresByType("PARK_TILE");
+            removeInjectedDesiresByType("REACH_TILE");
             return { ok: true };
         }
 

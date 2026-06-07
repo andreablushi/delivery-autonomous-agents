@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { InjectedDesire } from "../../../models/desires.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
+import { TEAM_STRATEGIES, NO_STRATEGY, type TeamStrategy } from "../../../models/game_strategy.js";
 import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/desire/rule_store.js";
 import { getTools, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
@@ -9,7 +10,6 @@ import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
 import { buildCooperationPrompt } from "../prompt/cooperation/index.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
 import type { TeamGeometry } from "../../cooperation/geometry.js";
-import { POSTURES, type Posture } from "../../cooperation/posture/performance_tracker.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
 
@@ -176,16 +176,16 @@ export class LLMClient {
 
     /**
      * Run a team cooperation pass: the LLM is given teammate reports + map geometry
-     * and responds with a single JSON posture decision. No tool-calling loop — one completion.
-     * Returns the chosen posture and optional bonus; the caller applies it via PostureAssigner.
+     * and responds with a single JSON strategy decision. No tool-calling loop — one completion.
+     * Returns the chosen strategy and optional bonus; the caller applies it via TeamStrategyAssigner.
      */
-    async chooseCooperationPosture(
+    async chooseTeamStrategy(
         reports: Map<string, BeliefsReport>,
         geometry: TeamGeometry,
         beliefs: Readonly<Beliefs>,
         missionNote = "",
         performance = "",
-    ): Promise<{ posture: Posture; bonus?: number }> {
+    ): Promise<{ strategy: TeamStrategy; bonus?: number }> {
         const { system, user } = buildCooperationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote, performance);
         this.log.debug("Running cooperation pass");
 
@@ -201,28 +201,28 @@ export class LLMClient {
         const text = response.choices[0]?.message.content?.trim() ?? "";
         this.promptLog.debug(`Cooperation response: ${text}`);
 
-        // Extract the first {...} block from the response and parse the posture.
-        let posture: Posture = "NONE";
+        // Extract the first {...} block from the response and parse the strategy.
+        let strategy: TeamStrategy = NO_STRATEGY;
         let bonus: number | undefined;
 
         const match = text.match(/\{[\s\S]*?\}/);
         if (match) {
             try {
                 const obj = JSON.parse(match[0]) as Record<string, unknown>;
-                const p = obj.posture;
-                if (typeof p === "string" && (POSTURES as readonly string[]).includes(p)) {
-                    posture = p as Posture;
+                const s = obj.strategy;
+                if (typeof s === "string" && (TEAM_STRATEGIES as readonly string[]).includes(s)) {
+                    strategy = s as TeamStrategy;
                 }
                 if (typeof obj.bonus === "number") bonus = Math.round(obj.bonus);
                 const rationale = typeof obj.rationale === "string" ? obj.rationale.trim() : "";
                 if (rationale) this.coordLog.debug(`cooperation rationale: ${rationale}`);
             } catch {
-                this.coordLog.debug(`cooperation: could not parse posture JSON — defaulting to NONE. text=${text}`);
+                this.coordLog.debug(`cooperation: could not parse strategy JSON — defaulting to NONE. text=${text}`);
             }
         } else {
             this.coordLog.debug(`cooperation: no JSON found in response — defaulting to NONE. text=${text}`);
         }
 
-        return { posture, bonus };
+        return { strategy, bonus };
     }
 }

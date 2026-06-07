@@ -4,8 +4,8 @@ import { LLMClient } from "./client/llm_client.js";
 import { CooperationLoop } from "./cooperation/cooperation_loop.js";
 import { PeerInbox } from "../coordination/peer_inbox.js";
 import { Negotiator } from "../coordination/negotiator.js";
-import { PostureAssigner } from "../cooperation/posture/posture_assigner.js";
-import { PerformanceTracker } from "../cooperation/posture/performance_tracker.js";
+import { TeamStrategyAssigner } from "../cooperation/strategy/strategy_assigner.js";
+import { PerformanceTracker } from "../cooperation/strategy/performance_tracker.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 
 export class LLMAgent {
@@ -31,7 +31,7 @@ export class LLMAgent {
             peerInbox,
             entry => this.bdi.addInjectedDesire(entry),
         );
-        const postureAssigner = new PostureAssigner(
+        const strategyAssigner = new TeamStrategyAssigner(
             beliefs,
             comm,
             entry => this.bdi.addInjectedDesire(entry),
@@ -59,7 +59,7 @@ export class LLMAgent {
             comm,
             this.client,
             peerInbox,
-            postureAssigner,
+            strategyAssigner,
             performanceTracker,
             () => this.missionNote,
         );
@@ -69,7 +69,7 @@ export class LLMAgent {
         comm.onCoordination((senderId, msg) => peerInbox.record(senderId, msg));
 
         // Handler for mission chat messages from the mission emitter. Passed to the LLM client.
-        // Also triggers an immediate cooperation round so posture changes take effect right away.
+        // Also triggers an immediate cooperation round so strategy changes take effect right away.
         comm.onMission((senderId, senderName, content) => {
             if (!this.isValidMessage(senderId, senderName, content)) return;
             this.missionNote = content;

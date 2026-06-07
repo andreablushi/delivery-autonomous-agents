@@ -6,7 +6,6 @@ import type {
     ReachParcelDesire,
     DeliverParcelDesire,
     ReachTileDesire,
-    ParkTileDesire,
     HoldTileDesire,
     GeneratedDesires,
     DesireQueue,
@@ -16,7 +15,6 @@ import { buildScoringContext } from "../desire/scoring/utils.js";
 import { scoreReachDesire } from "../desire/scoring/reach_parcel.js";
 import { scoreDeliverDesire } from "../desire/scoring/deliver_parcel.js";
 import { scoreReachTile } from "../desire/scoring/reach_tile.js";
-import { scoreParkTile } from "../desire/scoring/park_tile.js";
 import { scoreHoldTile } from "../desire/scoring/hold_tile.js";
 import { scoreExplore } from "../desire/scoring/explore.js";
 
@@ -28,7 +26,6 @@ import { scoreExplore } from "../desire/scoring/explore.js";
  *   2   — HOLD_TILE with releaseZone (committed rendezvous): non-preemptible once committed.
  *   1   — REACH_PARCEL, DELIVER_PARCEL, REACH_TILE, HOLD_TILE (red-light), and EXPLORE when a
  *         positive stack rule is active and the expected stack reward is positive.
- *   0.5 — PARK_TILE (LLM-injected station goal): settles on tile, yields to parcels, beats explore.
  *   0   — EXPLORE (fallback): always yields to goal desires.
  *
  * All tier-1 scores use the same unit — (value preserved/gained) / distance — so desires
@@ -74,11 +71,6 @@ export function rankDesires(
         // preempted by parcels once committed; red-light holds (no releaseZone) stay tier 1.
         const priority = desire.releaseZone ? 2 : 1;
         queue.push({ desire, score: scoreHoldTile(desire, meDist, beliefs, carriedValue, currentHoldTarget), priority });
-    }
-
-    const parkTiles = (desires.get("PARK_TILE") ?? []) as ParkTileDesire[];
-    for (const desire of parkTiles) {
-        queue.push({ desire, score: scoreParkTile(desire, meDist, beliefs), priority: 0.5 });
     }
 
     const explores = (desires.get("EXPLORE") ?? []) as ExploreDesire[];

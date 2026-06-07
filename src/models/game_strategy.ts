@@ -7,6 +7,12 @@ export const StrategyType = {
 } as const;
 export type StrategyType = typeof StrategyType[keyof typeof StrategyType];
 
+/** Sentinel team strategy meaning "no cooperation; active GameStrategies lapse on TTL". */
+export const NO_STRATEGY = "NONE" as const;
+/** The team-level cooperation choice made each round: a StrategyType, or NONE. */
+export type TeamStrategy = StrategyType | typeof NO_STRATEGY;
+export const TEAM_STRATEGIES = [...Object.values(StrategyType), NO_STRATEGY] as const;
+
 /** Role assigned to an agent within a GameStrategy. */
 export const StrategyRole = {
     PickupAgent:  "PICKUP_AGENT",  // ZONAL_RELAY: sweep spawn-region parcels, carry to edge tile, drop

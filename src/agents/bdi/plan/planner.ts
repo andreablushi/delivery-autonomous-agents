@@ -100,8 +100,8 @@ export class Planner {
         for (let head = this.intentionManager.getIntentionHead(); head; head = this.intentionManager.getIntentionHead()) {
             const desire = head.desire;
             // Already at target: keep the head (don't drop) and return null so the executor idles
-            // until the hold/park expires or is cancelled via request_resume / request_green_light.
-            if ((desire.type === "HOLD_TILE" || desire.type === "PARK_TILE")
+            // until the hold expires or is cancelled via request_resume / request_green_light.
+            if (desire.type === "HOLD_TILE"
                 && from.x === desire.target.x && from.y === desire.target.y) {
                 return null;
             }

@@ -5,7 +5,7 @@ import type { InjectedDesire } from "../../../models/desires.js";
 import type { TeamGeometry } from "../geometry.js";
 import type { Position } from "../../../models/position.js";
 import { PeerKind } from "../../../models/message_injection.js";
-import { StrategyType, StrategyRole, type GameStrategy } from "../../../models/game_strategy.js";
+import { StrategyType, StrategyRole, NO_STRATEGY, type TeamStrategy, type GameStrategy } from "../../../models/game_strategy.js";
 import { bfsDistancesFrom, posKey, manhattanDistance } from "../../../utils/metrics.js";
 import { MapBeliefs } from "../../bdi/belief/modules/map_beliefs.js";
 import { buildHolds } from "../holds.js";
@@ -14,9 +14,9 @@ import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
 
 /**
- * Deterministically assigns all agents to roles based on the chosen posture.
+ * Deterministically assigns all agents to roles based on the chosen team strategy.
  *
- * Postures:
+ * Team strategies:
  *   ZONAL_RELAY  — one PICKUP_AGENT (sweeps the full spawn region, drops at the spawn-side edge tile)
  *                  + one DELIVER_AGENT (waits at the edge tile, ferries parcels to real deliveries).
  *                  Requires ≥2 agents and a valid spawnEdge; otherwise assigns nothing.
@@ -24,7 +24,7 @@ import { config } from "../../../config.js";
  *                   to pick up initiates a handshake handpass via the BDI-layer HandpassInitiator.
  *   NONE          — disarms handpass on both agents; active strategies lapse on their TTL.
  */
-export class PostureAssigner {
+export class TeamStrategyAssigner {
     private readonly log: Logger;
 
     constructor(
@@ -38,23 +38,23 @@ export class PostureAssigner {
         this.log = createLogger("coordination");
     }
 
-    async assignPosture(posture: string, ctx: { geometry: TeamGeometry; reports: Map<string, BeliefsReport>; bonus?: number }): Promise<string> {
-        if (posture === "NONE") {
+    async applyTeamStrategy(strategy: TeamStrategy, ctx: { geometry: TeamGeometry; reports: Map<string, BeliefsReport>; bonus?: number }): Promise<string> {
+        if (strategy === NO_STRATEGY) {
             this.disarmHandpass();
             await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: false });
-            this.log.debug("assignPosture: NONE — strategies will lapse on TTL");
-            return JSON.stringify({ ok: true, posture: "NONE" });
+            this.log.debug("applyTeamStrategy: NONE — strategies will lapse on TTL");
+            return JSON.stringify({ ok: true, strategy: NO_STRATEGY });
         }
 
-        if (posture === "OPPORTUNISTIC") {
+        if (strategy === StrategyType.Opportunistic) {
             const ttlSeconds = Math.min(120, Math.ceil(config.coordination.intervalMs / 1000) * 2);
             this.armHandpass(ctx.bonus, ttlSeconds * 1_000);
             await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: true, bonus: ctx.bonus ?? null, ttl_seconds: ttlSeconds });
-            this.log.debug(`assignPosture: OPPORTUNISTIC armed, bonus=${ctx.bonus ?? 0}, ttl=${ttlSeconds}s`);
-            return JSON.stringify({ ok: true, posture: "OPPORTUNISTIC", bonus: ctx.bonus });
+            this.log.debug(`applyTeamStrategy: OPPORTUNISTIC armed, bonus=${ctx.bonus ?? 0}, ttl=${ttlSeconds}s`);
+            return JSON.stringify({ ok: true, strategy: StrategyType.Opportunistic, bonus: ctx.bonus });
         }
 
-        if (posture !== "ZONAL_RELAY") return JSON.stringify({ error: `Unknown posture: ${posture}` });
+        if (strategy !== StrategyType.ZonalRelay) return JSON.stringify({ error: `Unknown strategy: ${strategy}` });
 
         // Disarm opportunistic mode when switching to ZONAL_RELAY
         this.disarmHandpass();
@@ -128,7 +128,7 @@ export class PostureAssigner {
     ): Promise<string> {
         if (roster.length < 2) {
             this.log.debug("ZONAL_RELAY: not enough agents — skipping assignment");
-            return JSON.stringify({ ok: true, posture: "ZONAL_RELAY", assignments: [] });
+            return JSON.stringify({ ok: true, strategy: StrategyType.ZonalRelay, assignments: [] });
         }
 
         // spawnEdge is the BFS-reachable reference point used for snapping and as a fallback.
@@ -190,7 +190,7 @@ export class PostureAssigner {
         }));
 
         this.log.debug(`ZONAL_RELAY: meet=(${meetTile.x},${meetTile.y})${geo ? ` approach=(${geo.carrierApproach.x},${geo.carrierApproach.y})|(${geo.receiverApproach.x},${geo.receiverApproach.y})` : " (no approach pair)"} | ${results.join(" | ")}`);
-        return JSON.stringify({ ok: true, posture: "ZONAL_RELAY", assignments: results });
+        return JSON.stringify({ ok: true, strategy: StrategyType.ZonalRelay, assignments: results });
     }
 
     /**
@@ -218,7 +218,7 @@ export class PostureAssigner {
     }
 
     /**
-     * Mirror of apply_injection.ts AssignStrategy case, but called locally by the posture assigner.
+     * Mirror of apply_injection.ts AssignStrategy case, but called locally by the strategy assigner.
      * Calls setGameStrategy; the RoleController in Intentions generates gated desires each cycle.
      */
     private applyLocalStrategy(args: {
