@@ -15,6 +15,7 @@ export function buildCoordinationPrompt(
     beliefs: Readonly<Beliefs>,
     ruleStore: RuleStore,
     missionNote = "",
+    performance = "",
 ): { system: string; user: string } {
     const me = beliefs.agents.getCurrentMe();
     const myId = me?.id ?? "unknown";
@@ -61,6 +62,6 @@ export function buildCoordinationPrompt(
 
     return {
         system: render(DIR, "system", {}),
-        user: render(DIR, "user", { roster, geometry: geometryStr, context, missionNote: missionLine }),
+        user: render(DIR, "user", { roster, geometry: geometryStr, context, missionNote: missionLine, performance }),
     };
 }

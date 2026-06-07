@@ -38,6 +38,7 @@ const VALID_TOOLS: ReadonlySet<string> = new Set(Object.values(PeerKind));
 export type BeliefsReport = {
     pos: Position | null;
     carrying: number;
+    score: number;
     enemies: Position[];
     hotTiles: { x: number; y: number; heat: number }[];
     nearestDelivery: Position | null;

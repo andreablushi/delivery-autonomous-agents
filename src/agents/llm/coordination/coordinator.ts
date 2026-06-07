@@ -23,6 +23,10 @@ import { findApproachPair } from "../../cooperation/roles/handoff_geometry.js";
  *  3. Computes team geometry deterministically.
  *  4. Calls `LLMClient.coordinate` so the LLM picks a cooperation posture.
  */
+/** Valid posture strings, used as keys in the per-posture stats tables. */
+const POSTURES = ["ZONAL_RELAY", "OPPORTUNISTIC", "NONE"] as const;
+type Posture = typeof POSTURES[number];
+
 export class Coordinator {
     private readonly reports = new Map<string, { report: BeliefsReport; at: number }>();
     private readonly votes = new Map<string, { rid: string; accept: boolean; at: number }>();
@@ -33,6 +37,14 @@ export class Coordinator {
     /** Fresh reports collected in the last coordination round — used by assignPosture. */
     private lastReports: Map<string, BeliefsReport> = new Map();
     private readonly log: Logger;
+
+    // ─── Strategy performance tracking ───────────────────────────────────────
+    /** Sliding window of team-score gains (Δscore/round) per posture. */
+    private readonly recentGains = new Map<Posture, number[]>(POSTURES.map(p => [p, []]));
+    /** Posture that was active during the interval just elapsed (set by assignPosture). */
+    private lastPosture: Posture | null = null;
+    /** Team score snapshot at the end of the previous round, for delta computation. */
+    private lastTeamScore: number | null = null;
 
     constructor(
         private readonly beliefs: Readonly<Beliefs>,
@@ -229,6 +241,11 @@ export class Coordinator {
             }
 
             this.log.debug(`Collected ${freshReports.size} fresh report(s), running LLM coordinate pass`);
+
+            // Sample team score and attribute the delta to the just-elapsed posture.
+            this.sampleStrategyPerformance(freshReports);
+            const performance = this.formatStrategyStats();
+
             const geometry = buildTeamGeometry(this.beliefs, freshReports);
             // Stash for use by assignPosture (called synchronously inside client.coordinate).
             this.lastGeometry = geometry;
@@ -247,7 +264,7 @@ export class Coordinator {
                 return;
             }
 
-            await this.client.coordinate(freshReports, geometry, this.beliefs, this.getMissionNote());
+            await this.client.coordinate(freshReports, geometry, this.beliefs, this.getMissionNote(), performance);
         } catch (err) {
             this.log.error("Coordination round failed:", err);
         } finally {
@@ -271,6 +288,7 @@ export class Coordinator {
      */
     async assignPosture(posture: string, opts: { bonus?: number } = {}): Promise<string> {
         if (posture === "NONE") {
+            this.lastPosture = "NONE";
             this.disarmHandpass();
             await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: false });
             this.log.debug("assignPosture: NONE — strategies will lapse on TTL");
@@ -278,6 +296,7 @@ export class Coordinator {
         }
 
         if (posture === "OPPORTUNISTIC") {
+            this.lastPosture = "OPPORTUNISTIC";
             const ttlSeconds = Math.min(120, Math.ceil(config.coordination.intervalMs / 1000) * 2);
             this.armHandpass(opts.bonus, ttlSeconds * 1_000);
             await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: true, bonus: opts.bonus ?? null, ttl_seconds: ttlSeconds });
@@ -286,6 +305,7 @@ export class Coordinator {
         }
 
         if (posture !== "ZONAL_RELAY") return JSON.stringify({ error: `Unknown posture: ${posture}` });
+        this.lastPosture = "ZONAL_RELAY";
 
         // Disarm opportunistic mode when switching to ZONAL_RELAY
         this.disarmHandpass();
@@ -478,6 +498,43 @@ export class Coordinator {
         });
 
         // The RoleController in Intentions generates gated desires each cycle — nothing to inject here.
+    }
+
+    /**
+     * Sample the current team score and attribute the delta to the posture that was active
+     * during the elapsed interval (`lastPosture`). Maintains a bounded sliding window per posture.
+     * Call this once per round, after fresh reports have been collected.
+     */
+    private sampleStrategyPerformance(freshReports: Map<string, BeliefsReport>): void {
+        const myScore = this.beliefs.agents.getCurrentMe()?.score ?? 0;
+        const teammateScore = Array.from(freshReports.values()).reduce((s, r) => s + r.score, 0);
+        const teamScore = myScore + teammateScore;
+
+        if (this.lastTeamScore !== null && this.lastPosture !== null) {
+            const delta = teamScore - this.lastTeamScore;
+            const window = this.recentGains.get(this.lastPosture)!;
+            window.push(delta);
+            if (window.length > config.coordination.perfWindowRounds) window.shift();
+        }
+        this.lastTeamScore = teamScore;
+    }
+
+    /** Format the per-posture performance stats for injection into the LLM coordination prompt. */
+    private formatStrategyStats(): string {
+        const lines: string[] = [];
+        for (const posture of POSTURES) {
+            const gains = this.recentGains.get(posture)!;
+            if (gains.length === 0) {
+                lines.push(`${posture}: no data yet`);
+            } else {
+                const avg = gains.reduce((s, g) => s + g, 0) / gains.length;
+                const latest = gains[gains.length - 1];
+                const sign = (n: number) => n >= 0 ? `+${n.toFixed(1)}` : n.toFixed(1);
+                lines.push(`${posture}: avg ${sign(avg)}/round (last ${gains.length}, latest ${sign(latest)})`);
+            }
+        }
+        lines.push(`Current: ${this.lastPosture ?? "none"}`);
+        return lines.join("\n");
     }
 
     /** Start the periodic coordination interval. */

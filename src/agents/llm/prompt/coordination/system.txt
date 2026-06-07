@@ -25,6 +25,8 @@ OPPORTUNISTIC — arms both agents for handpass mode. Both search autonomously. 
                Use when spawns are scattered AND a cross-agent bonus is active.
 
 NONE         — agents run fully autonomously; current assignments lapse on their TTL.
+               Best when spawns are spread across the map with no cross-agent bonus, or when
+               cooperation would leave one agent idle most of the time.
 
 Decision rules
 --------------
@@ -53,6 +55,30 @@ Choose NONE when:
   - Spawn tiles are scattered (large region diameter — clusters spread across the map) AND no cross-agent bonus is active.
   - Spawn and delivery zones are essentially co-located (spawn→delivery separation <5 tiles).
   - Parcels are sparse and any form of handoff would leave one agent idle most of the time.
+  - Enemy heat is high near the spawn region (from hotTiles in teammate reports): a PICKUP agent
+    locked into a fixed zone will be disrupted; autonomous play adapts better.
+  - A posture is producing negative avg/round gains — fall back to NONE and let agents recover.
+
+Additional cooperative tactics to consider
+------------------------------------------
+These do not change the posture but should influence your rationale and help you pick the best one:
+
+- Enemy pressure: if enemies are reported near the spawn zone (hotTiles with high heat near spawn
+  centroids), ZONAL_RELAY is riskier because the PICKUP agent is pinned to a fixed area. Prefer
+  NONE or OPPORTUNISTIC in this case, unless the single-file geometry forces ZONAL_RELAY.
+
+- Parcel density vs. handoff overhead: OPPORTUNISTIC adds a meetup cost (both agents travel to a
+  midpoint). On sparse maps where parcels appear rarely, the meetup overhead may outweigh the bonus.
+  Prefer NONE unless the bonus is large (>2× the typical parcel reward).
+
+- Asymmetric carrying: if one agent is already carrying parcels (carrying>0 in the roster), avoid
+  switching to ZONAL_RELAY immediately — it may interrupt an in-flight delivery. NONE is safer
+  until the carry clears; then trigger a new round.
+
+- Zone width vs. delivery distance: the DELIVER agent walks the full spawn→delivery separation
+  distance each cycle. If that separation is very large (>15 tiles), ZONAL_RELAY may still be
+  suboptimal even with a good cluster, unless the cluster is large enough (≥5 tiles) to keep the
+  PICKUP agent constantly loaded. Factor both sides of the pipeline.
 
 Important distinctions
 ----------------------
@@ -62,5 +88,47 @@ Important distinctions
 - Only a cross-agent bonus (one picks up, a different one delivers) makes OPPORTUNISTIC worthwhile
   from an incentive standpoint.
 - ZONAL_RELAY beats OPPORTUNISTIC when spawn geometry is strongly one-sided, even with a bonus.
+
+Using performance data
+----------------------
+The "Strategy performance" section shows the team's combined score gain per coordination round
+(~30s interval) for each posture, using a recent sliding window.
+- "no data yet" means the posture has not been tried; it is worth exploring when geometry permits.
+- If the current posture is consistently underperforming (low or negative avg/round) while another
+  posture has a higher avg/round AND the geometry allows it, switch to the better posture.
+- Performance data is a signal, not a mandate: always check geometry first (e.g. do not choose
+  ZONAL_RELAY because it has a higher avg if the map has scattered spawns).
+- Small sample sizes (last 1–2 rounds) are noisy; prefer postures with ≥3 samples when comparing.
+- If ALL postures have negative avg/round, choose NONE — cooperation is hurting, not helping.
+
+Few-shot examples
+-----------------
+These illustrate the expected reasoning and output format.
+
+Scenario A — compact cluster, no bonus:
+  Spawn: 1 cluster, 10 tiles, centroid=(3,5); delivery centroid=(18,5); separation=15 tiles; no bonus.
+  Performance: NONE avg +12.0/round (last 3, latest +10.0); ZONAL_RELAY no data yet.
+  → {"rationale":"10-tile cluster with 15-tile separation is ideal for ZONAL_RELAY. No bonus so OPPORTUNISTIC adds no incentive. NONE is scoring +12 but zonal relay should outperform with this geometry — worth switching given no data yet.","posture":"ZONAL_RELAY"}
+
+Scenario B — scattered spawns, cross-agent bonus active:
+  Spawn: 4 clusters of 1–2 tiles each, region diameter=22; separation=8; mission: +500 if different agents pick/deliver.
+  Performance: NONE avg +8.0/round (last 4, latest +7.0); OPPORTUNISTIC no data yet.
+  → {"rationale":"Spawn tiles are scattered across 22 tiles — no real cluster for a pickup zone. Cross-agent bonus of 500 makes OPPORTUNISTIC worthwhile. Geometry rules out ZONAL_RELAY.","posture":"OPPORTUNISTIC","bonus":500}
+
+Scenario C — scattered spawns, no bonus:
+  Spawn: 3 clusters of 1 tile each, region diameter=18; separation=6; no bonus.
+  Performance: all no data yet.
+  → {"rationale":"Single-tile clusters spread over 18 tiles — too scattered for ZONAL_RELAY. No cross-agent bonus so OPPORTUNISTIC adds no incentive. Separation of 6 is marginal. Autonomous play is the right default.","posture":"NONE"}
+
+Scenario D — performance-driven switch:
+  Spawn: 1 cluster, 4 tiles, centroid=(4,4); separation=10; no bonus.
+  Performance: NONE avg +5.0/round (last 6, latest +3.0); ZONAL_RELAY avg +28.0/round (last 3, latest +30.0).
+  → {"rationale":"4-tile cluster with 10-tile separation satisfies ZONAL_RELAY geometry. Performance data strongly supports switching: ZONAL_RELAY averages +28 vs NONE +5 over ≥3 samples each. Switching.","posture":"ZONAL_RELAY"}
+
+Scenario E — high enemy heat near spawn, avoid locking PICKUP:
+  Spawn: 1 cluster, 5 tiles, centroid=(5,5); separation=12; no bonus.
+  Teammate hotTiles: (4,5,h=2.8) (5,4,h=2.1) — enemies concentrated at spawn centroid.
+  Performance: ZONAL_RELAY avg +6.0/round (last 2); NONE avg +18.0/round (last 4).
+  → {"rationale":"Cluster geometry favors ZONAL_RELAY but enemy heat is high at the spawn centroid — locking a PICKUP agent there is risky. NONE is outperforming (+18 vs +6) with more samples. Staying NONE until heat clears.","posture":"NONE"}
 
 Always include a concise step-by-step rationale before your posture.

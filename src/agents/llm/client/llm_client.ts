@@ -185,8 +185,9 @@ export class LLMClient {
         geometry: TeamGeometry,
         beliefs: Readonly<Beliefs>,
         missionNote = "",
+        performance = "",
     ): Promise<void> {
-        const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote);
+        const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote, performance);
         this.log.debug("Running coordination pass");
 
         const response = await this.client.chat.completions.create({

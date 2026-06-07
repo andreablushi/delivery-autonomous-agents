@@ -7,4 +7,6 @@
 --- Your current state ---
 {{context}}
 {{missionNote}}
-Think step by step: Are spawn points clustered or scattered? Is there a cross-agent delivery bonus in the mission directive? Would a handoff genuinely beat both agents playing autonomously? Then output ONLY the JSON object.
+--- Strategy performance (team score gained per coordination round, recent window) ---
+{{performance}}
+Think step by step: Are spawn points clustered or scattered? Is there a cross-agent delivery bonus in the mission directive? Would a handoff genuinely beat both agents playing autonomously? Does the performance data suggest the current posture is underperforming? Then output ONLY the JSON object.

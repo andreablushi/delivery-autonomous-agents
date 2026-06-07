@@ -59,7 +59,8 @@ export class Beliefs {
             ? nearestByManhattan(pos, deliveryTiles) ?? null
             : null;
 
-        return { pos, carrying, enemies, hotTiles, nearestDelivery };
+        const score = me?.score ?? 0;
+        return { pos, carrying, score, enemies, hotTiles, nearestDelivery };
     }
 
     /**

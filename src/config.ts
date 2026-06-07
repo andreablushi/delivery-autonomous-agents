@@ -57,11 +57,12 @@ export const config = {
     },
 
     coordination: {
-        intervalMs: 5_000,     // How often the LLM coordinator runs a team assignment round
+        intervalMs: 30_000,    // How often the LLM coordinator runs a team assignment round
         collectWindowMs: 750,   // Time to wait for belief reports before running the LLM pass
-        cooldownMs: 5_000,      // Minimum gap between coordination rounds
+        cooldownMs: 30_000,     // Minimum gap between coordination rounds
         hotZonesLimit: 5,       // Max hot zones kept when merging teammate reports
         corridorSeparationMin: 5,           // Min spawn→delivery separation to force ZONAL_RELAY on single-file maps
+        perfWindowRounds: 6,               // Number of recent rounds kept per posture for the LLM strategy-stats summary (≈3min at 30s interval)
         // Opportunistic handoff (OPPORTUNISTIC posture)
         opportunisticCooldownMs: 4_000,     // Minimum gap between opportunistic handoff proposals
         opportunisticMeetRadius: 3,         // Manhattan radius around the agent-midpoint to snap to a reachable meet tile
