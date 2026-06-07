@@ -60,8 +60,8 @@ without completely forbidding the option of traversing the tile if it becomes ne
 \subsection{Coordination}
 \label{sec:coordination}
 
-Coordination in our system is fully decentralized and message-driven: there is no central authority, and every joint decision emerges from peer-to-peer exchanges layered on top of each agent's BDI loop.
-Since only the LLM-driven agent is wired to the mission controller, it is the one that interprets admin queries and is therefore the sole agent able to issue proposals; purely reactive BDI teammates only evaluate the proposals they receive and vote on them.
+Coordination in our system is fully decentralized and message-driven: there is no central authority, and every joint decision emerges from peer-to-peer exchanges.
+Since only the LLM-driven agent is wired to the mission controller, it is the one that interprets admin queries and is therefore the sole agent able to issue proposals.
 
 \paragraph{Beacon Communication:}
 To handle the critical need for up-to-date position information in coordination maneuvers, each agent continuously broadcasts its current position 
