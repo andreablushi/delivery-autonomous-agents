@@ -12,6 +12,7 @@ import { bfsDistancesFrom, posKey, manhattanDistance } from "../../../utils/metr
 import { MapBeliefs } from "../../bdi/belief/modules/map_beliefs.js";
 import type { Position } from "../../../models/position.js";
 import { buildRendezvousHolds, buildHolds } from "../../cooperation/holds.js";
+import { findApproachPair } from "../../cooperation/roles/handoff_geometry.js";
 
 /**
  * Owns the team-coordination loop for the LLM agent.
@@ -428,26 +429,31 @@ export class Coordinator {
         // relay — PICKUP owns spawn→midpoint, DELIVER owns midpoint→delivery.
         const meetTile = this.computeRelayMeetTile(pickupMatch.anchor.pos, spawnEdge, geometry);
 
+        // Compute distinct adjacent approach cells so each agent waits one step from M.
+        const pickupAgent = roster.find(a => a.id === pickupMatch.agentId)!;
+        const geo = findApproachPair(this.beliefs, pickupAgent.pos, deliverAgent.pos, meetTile);
+
         const results: string[] = [];
 
-        // PICKUP_AGENT: sweeps full spawn region, drops at dynamic midpoint.
-        // No pickup_zone_x/y → PickupRole sweeps all spawn tiles via region membership filter.
+        // PICKUP_AGENT: sweeps full spawn region, drops exactly at M.
         results.push(await this.emitStrategyAssignment(pickupMatch.agentId, {
             strategy: StrategyType.ZonalRelay, role: StrategyRole.PickupAgent,
             tile_x: meetTile.x, tile_y: meetTile.y,
             max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
             bonus, partner_id: deliverAgent.id,
+            approach_x: geo?.carrierApproach.x, approach_y: geo?.carrierApproach.y,
         }));
 
-        // DELIVER_AGENT: waits at the dynamic midpoint, ferries received parcels to real delivery tiles, returns.
+        // DELIVER_AGENT: waits at the approach cell, ferries received parcels to real delivery tiles, returns.
         results.push(await this.emitStrategyAssignment(deliverAgent.id, {
             strategy: StrategyType.ZonalRelay, role: StrategyRole.DeliverAgent,
             tile_x: meetTile.x, tile_y: meetTile.y,
             max_distance: config.handoff.zoneRadius, ttl_seconds: ttlSeconds,
             bonus, partner_id: pickupMatch.agentId,
+            approach_x: geo?.receiverApproach.x, approach_y: geo?.receiverApproach.y,
         }));
 
-        this.log.debug(`ZONAL_RELAY: meet=(${meetTile.x},${meetTile.y}) | ${results.join(" | ")}`);
+        this.log.debug(`ZONAL_RELAY: meet=(${meetTile.x},${meetTile.y})${geo ? ` approach=(${geo.carrierApproach.x},${geo.carrierApproach.y})|(${geo.receiverApproach.x},${geo.receiverApproach.y})` : " (no approach pair)"} | ${results.join(" | ")}`);
         return JSON.stringify({ ok: true, posture: "ZONAL_RELAY", assignments: results });
     }
 
@@ -463,6 +469,7 @@ export class Coordinator {
             tile_x: number; tile_y: number; max_distance: number; ttl_seconds: number;
             bonus?: number; partner_id?: string;
             pickup_zone_x?: number; pickup_zone_y?: number;
+            approach_x?: number; approach_y?: number;
         },
     ): Promise<string> {
         const me = this.beliefs.agents.getCurrentMe();
@@ -484,11 +491,15 @@ export class Coordinator {
         tile_x: number; tile_y: number; max_distance: number; ttl_seconds: number;
         bonus?: number; partner_id?: string;
         pickup_zone_x?: number; pickup_zone_y?: number;
+        approach_x?: number; approach_y?: number;
     }): void {
         const expiresAt = Date.now() + args.ttl_seconds * 1_000;
         const center = { x: args.tile_x, y: args.tile_y };
         const pickupZoneCenter = (args.pickup_zone_x !== undefined && args.pickup_zone_y !== undefined)
             ? { x: args.pickup_zone_x, y: args.pickup_zone_y }
+            : undefined;
+        const approachTile = (args.approach_x !== undefined && args.approach_y !== undefined)
+            ? { x: args.approach_x, y: args.approach_y }
             : undefined;
 
         this.setGameStrategy({
@@ -496,6 +507,7 @@ export class Coordinator {
             role: args.role,
             tiles: [center],
             pickupZoneCenter,
+            approachTile,
             maxDistance: args.max_distance,
             bonus: args.bonus,
             partnerId: args.partner_id,

@@ -4,10 +4,20 @@ import type { GeneratedDesires } from "../../../models/desires.js";
 import type { Logger } from "../../../utils/logger.js";
 import { manhattanDistance, posKey } from "../../../utils/metrics.js";
 import { generateReachParcelDesires } from "../../bdi/desire/desire_generator.js";
-import { meetZoneTiles } from "./meet_zone_tiles.js";
+import { approachDesire } from "./handoff_geometry.js";
 
-type PickupState = "COLLECT" | "TO_MIDPOINT" | "DROP";
+type PickupState = "COLLECT" | "TO_APPROACH" | "DROP_ENTER" | "LEAVE";
 
+/**
+ * ZONAL_RELAY/PICKUP_AGENT role FSM.
+ *
+ * Sweeps the spawn region for parcels and then executes a deterministic handoff:
+ *
+ *   COLLECT     — gather parcels from spawn tiles (all-region sweep + patrol).
+ *   TO_APPROACH — navigate to the approach cell adjacent to exchange tile M; wait until the deliver agent is also adjacent to M.
+ *   DROP_ENTER  — step onto M and drop (DELIVER_PARCEL targeting M).
+ *   LEAVE       — step back to the approach cell, then repeat from COLLECT.
+ */
 export class PickupRole {
     private state: PickupState = "COLLECT";
 
@@ -22,12 +32,11 @@ export class PickupRole {
         if (!me) return;
         const myPos = beliefs.agents.getCurrentPosition();
         if (!myPos) return;
-        const midpoint = strategy.tiles[0];
-        if (!midpoint) return;
+        const M = strategy.tiles[0];
+        const approachTile = strategy.approachTile;
+        if (!M || !approachTile) return;
 
         const carried = beliefs.parcels.getCarriedByAgent(me.id);
-        const inMeetZone = (p: { x: number; y: number }) =>
-            manhattanDistance(p, midpoint) <= strategy.maxDistance;
 
         switch (this.state) {
             case "COLLECT": {
@@ -37,32 +46,41 @@ export class PickupRole {
                     p.lastPosition !== null && spawnKeys.has(posKey(p.lastPosition))
                 );
                 if (carried.length >= carryCapacity) {
-                    this.state = "TO_MIDPOINT";
-                    this.log.debug(`PICKUP: COLLECT → TO_MIDPOINT (at carry capacity)`);
+                    this.state = "TO_APPROACH";
+                    this.log.debug(`PICKUP: COLLECT → TO_APPROACH (at carry capacity)`);
                 } else if (carried.length > 0 && inRegionParcels.length === 0) {
-                    this.state = "TO_MIDPOINT";
-                    this.log.debug(`PICKUP: COLLECT → TO_MIDPOINT (carrying=${carried.length}, spawn region empty)`);
+                    this.state = "TO_APPROACH";
+                    this.log.debug(`PICKUP: COLLECT → TO_APPROACH (carrying=${carried.length}, spawn region empty)`);
                 }
                 break;
             }
-            case "TO_MIDPOINT": {
+            case "TO_APPROACH": {
                 if (carried.length === 0) {
                     this.state = "COLLECT";
-                    this.log.debug(`PICKUP: TO_MIDPOINT → COLLECT (not carrying)`);
+                    this.log.debug(`PICKUP: TO_APPROACH → COLLECT (not carrying)`);
                     break;
                 }
                 const partnerPos = beliefs.agents.getCurrentFriends()
                     .find(f => f.id === strategy.partnerId)?.lastPosition ?? null;
-                if (inMeetZone(myPos) && partnerPos !== null && inMeetZone(partnerPos)) {
-                    this.state = "DROP";
-                    this.log.debug(`PICKUP: TO_MIDPOINT → DROP (partner in zone)`);
+                const atApproach = myPos.x === approachTile.x && myPos.y === approachTile.y;
+                const partnerReady = partnerPos !== null && manhattanDistance(partnerPos, M) === 1;
+                if (atApproach && partnerReady) {
+                    this.state = "DROP_ENTER";
+                    this.log.debug(`PICKUP: TO_APPROACH → DROP_ENTER (both at approach cells)`);
                 }
                 break;
             }
-            case "DROP": {
+            case "DROP_ENTER": {
                 if (carried.length === 0) {
+                    this.state = "LEAVE";
+                    this.log.debug(`PICKUP: DROP_ENTER → LEAVE (drop done)`);
+                }
+                break;
+            }
+            case "LEAVE": {
+                if (myPos.x === approachTile.x && myPos.y === approachTile.y) {
                     this.state = "COLLECT";
-                    this.log.debug(`PICKUP: DROP → COLLECT (drop complete)`);
+                    this.log.debug(`PICKUP: LEAVE → COLLECT (back at approach cell)`);
                 }
                 break;
             }
@@ -73,8 +91,10 @@ export class PickupRole {
         const desires: GeneratedDesires = new Map();
         const myPos = beliefs.agents.getCurrentPosition();
         if (!myPos) return desires;
-        const midpoint = strategy.tiles[0];
-        if (!midpoint) return desires;
+        const M = strategy.tiles[0];
+        const approachTile = strategy.approachTile;
+        if (!M || !approachTile) return desires;
+
         switch (this.state) {
             case "COLLECT": {
                 // Filter to parcels whose last known position is a spawn tile (full region sweep).
@@ -99,11 +119,13 @@ export class PickupRole {
                 }
                 break;
             }
-            case "TO_MIDPOINT":
-                desires.set("REACH_TILE", meetZoneTiles(beliefs, myPos, midpoint, strategy.maxDistance));
+            case "TO_APPROACH":
+            case "LEAVE":
+                desires.set("REACH_TILE", [approachDesire(approachTile)]);
                 break;
-            case "DROP":
-                desires.set("DELIVER_PARCEL", [{ type: "DELIVER_PARCEL", target: myPos }]);
+            case "DROP_ENTER":
+                // Route to M and append a putdown terminal step — drops exactly at M.
+                desires.set("DELIVER_PARCEL", [{ type: "DELIVER_PARCEL", target: M }]);
                 break;
         }
 

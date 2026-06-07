@@ -228,13 +228,16 @@ export function parseTraversalPenaltyArgs(json: unknown): TraversalPenaltyArgs |
 }
 
 
-/** Wire args for `handpass_propose` and `handpass_commit` (same shape, includes rid). */
+/** Wire args for `handpass_propose` and `handpass_commit` (same shape, includes rid).
+ *  `approach_x`/`approach_y` carry the receiver's approach cell and are present only in commit. */
 export type HandpassProposeArgs = {
     rid: string;
     meet_x: number;
     meet_y: number;
     reward: number;
     ttl_seconds: number;
+    approach_x?: number;
+    approach_y?: number;
 };
 
 export function parseHandpassProposeArgs(json: unknown): HandpassProposeArgs | { error: string } {
@@ -250,7 +253,18 @@ export function parseHandpassProposeArgs(json: unknown): HandpassProposeArgs | {
     if (typeof reward !== "number" || reward <= 0) return { error: "reward must be a positive number" };
     if (typeof ttl_seconds !== "number" || !Number.isInteger(ttl_seconds) || ttl_seconds < 5 || ttl_seconds > 120)
         return { error: "ttl_seconds must be an integer in [5, 120]" };
-    return { rid: obj.rid, meet_x, meet_y, reward, ttl_seconds };
+    const approach_x = coerceNum(obj.approach_x);
+    const approach_y = coerceNum(obj.approach_y);
+    const hasApproach = approach_x !== undefined && approach_y !== undefined;
+    if (hasApproach && (typeof approach_x !== "number" || !Number.isInteger(approach_x)))
+        return { error: "approach_x must be an integer" };
+    if (hasApproach && (typeof approach_y !== "number" || !Number.isInteger(approach_y)))
+        return { error: "approach_y must be an integer" };
+    return {
+        rid: obj.rid, meet_x, meet_y, reward, ttl_seconds,
+        approach_x: hasApproach ? approach_x as number : undefined,
+        approach_y: hasApproach ? approach_y as number : undefined,
+    };
 }
 
 
@@ -267,6 +281,9 @@ export type AssignStrategyArgs = {
     /** ZONAL_RELAY/PICKUP_AGENT: spawn-cluster centroid to camp (currently unused — pickup sweeps all spawn tiles). */
     pickup_zone_x?: number;
     pickup_zone_y?: number;
+    /** This agent's exact wait cell adjacent to the exchange tile (tile_x, tile_y). */
+    approach_x?: number;
+    approach_y?: number;
 };
 
 const STRATEGY_TYPES: ReadonlySet<string> = new Set(Object.values(StrategyType));
@@ -307,6 +324,14 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
     if (hasPickupZone && (typeof pickup_zone_y !== "number" || !Number.isInteger(pickup_zone_y)))
         return { error: "pickup_zone_y must be an integer" };
 
+    const approach_x = coerceNum(obj.approach_x);
+    const approach_y = coerceNum(obj.approach_y);
+    const hasApproach = approach_x !== undefined && approach_y !== undefined;
+    if (hasApproach && (typeof approach_x !== "number" || !Number.isInteger(approach_x)))
+        return { error: "approach_x must be an integer" };
+    if (hasApproach && (typeof approach_y !== "number" || !Number.isInteger(approach_y)))
+        return { error: "approach_y must be an integer" };
+
     return {
         strategy: obj.strategy as StrategyType,
         role: obj.role as StrategyRole,
@@ -315,5 +340,7 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
         partner_id,
         pickup_zone_x: hasPickupZone ? pickup_zone_x as number : undefined,
         pickup_zone_y: hasPickupZone ? pickup_zone_y as number : undefined,
+        approach_x: hasApproach ? approach_x as number : undefined,
+        approach_y: hasApproach ? approach_y as number : undefined,
     };
 }

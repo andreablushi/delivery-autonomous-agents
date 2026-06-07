@@ -4,6 +4,7 @@ import { StrategyType, StrategyRole } from "../../models/game_strategy.js";
 import { PeerKind, type PeerInjectionKind } from "../../models/message_injection.js";
 import type { Logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
+import { computeHandoffGeometry } from "./roles/handoff_geometry.js";
 
 /**
  * Owned by every BDIAgent. When armed (by the coordinator), fires a handpass handshake
@@ -76,12 +77,14 @@ export class HandpassInitiator {
         const partnerPos = this.beliefs.agents.getCurrentFriends().find(f => f.id === partnerId)?.lastPosition ?? null;
         if (!partnerPos) return;
 
-        // Compute meet tile = midpoint between agents, snapped to nearest reachable tile.
+        // Compute the exchange tile M and distinct adjacent approach cells for both agents.
         const cx = Math.round((myPos.x + partnerPos.x) / 2);
         const cy = Math.round((myPos.y + partnerPos.y) / 2);
-        const reachable = this.beliefs.map.allRendezvousTiles(myPos, cx, cy, config.coordination.opportunisticMeetRadius);
-        if (reachable.length === 0) return;
-        const meetTile = reachable[0]!;
+        const geo = computeHandoffGeometry(
+            this.beliefs, myPos, partnerPos,
+            { x: cx, y: cy }, config.coordination.opportunisticMeetRadius,
+        );
+        if (!geo) return; // no valid geometry — skip this handshake attempt
 
         const bonus = this.armed!.bonus ?? 0;
         const carriedValue = carried.reduce((sum, p) => sum + p.reward, 0);
@@ -94,9 +97,9 @@ export class HandpassInitiator {
         this.pendingVote = null;
 
         try {
-            this.log.debug(`Handpass propose ${rid} to ${partnerId} @ (${meetTile.x},${meetTile.y}), reward=${reward}`);
+            this.log.debug(`Handpass propose ${rid} to ${partnerId} @ (${geo.meetTile.x},${geo.meetTile.y}), reward=${reward}`);
             await this.send(partnerId, PeerKind.HandpassPropose, {
-                rid, meet_x: meetTile.x, meet_y: meetTile.y, reward, ttl_seconds: ttlSeconds,
+                rid, meet_x: geo.meetTile.x, meet_y: geo.meetTile.y, reward, ttl_seconds: ttlSeconds,
             });
 
             await new Promise<void>(r => setTimeout(r, config.rendezvous.commitWindowMs));
@@ -109,12 +112,16 @@ export class HandpassInitiator {
             if (accepted) {
                 this.log.debug(`Handpass ${rid}: partner accepted — committing (PASSER)`);
                 await this.send(partnerId, PeerKind.HandpassCommit, {
-                    rid, meet_x: meetTile.x, meet_y: meetTile.y, reward, ttl_seconds: ttlSeconds,
+                    rid,
+                    meet_x: geo.meetTile.x, meet_y: geo.meetTile.y,
+                    reward, ttl_seconds: ttlSeconds,
+                    approach_x: geo.receiverApproach.x, approach_y: geo.receiverApproach.y,
                 });
                 this.setGameStrategy({
                     strategy: StrategyType.Opportunistic,
                     role: StrategyRole.Passer,
-                    tiles: [meetTile],
+                    tiles: [geo.meetTile],
+                    approachTile: geo.carrierApproach,
                     maxDistance: config.handoff.zoneRadius,
                     partnerId,
                     expiresAt: now + ttlSeconds * 1_000,

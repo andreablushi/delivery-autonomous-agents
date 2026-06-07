@@ -52,19 +52,21 @@ export function applyInjection(
         case PeerKind.AssignStrategy: {
             const p = parseAssignStrategyArgs(rawArgs);
             if ("error" in p) return p;
-            // The tile is the CENTER of a hold zone — it need not be walkable itself.
-            // Only require it to be in bounds.
             if (!beliefs.map.getMap()) return { error: "Map not yet loaded" };
             if (!beliefs.map.checkMapBounds(p.tile_x, p.tile_y)) return { error: "Coordinates out of map bounds" };
 
             const pickupZoneCenter = (p.pickup_zone_x !== undefined && p.pickup_zone_y !== undefined)
                 ? { x: p.pickup_zone_x, y: p.pickup_zone_y }
                 : undefined;
+            const approachTile = (p.approach_x !== undefined && p.approach_y !== undefined)
+                ? { x: p.approach_x, y: p.approach_y }
+                : undefined;
             setGameStrategy({
                 strategy: p.strategy,
                 role: p.role,
                 tiles: [{ x: p.tile_x, y: p.tile_y }],
                 pickupZoneCenter,
+                approachTile,
                 maxDistance: p.max_distance,
                 bonus: p.bonus,
                 partnerId: p.partner_id,
@@ -202,10 +204,14 @@ export function applyInjection(
             const p = parseHandpassProposeArgs(rawArgs);
             if ("error" in p) return p;
             if (!beliefs.map.checkMapBounds(p.meet_x, p.meet_y)) return { error: "Coordinates out of map bounds" };
+            const approachTile = (p.approach_x !== undefined && p.approach_y !== undefined)
+                ? { x: p.approach_x, y: p.approach_y }
+                : undefined;
             setGameStrategy({
                 strategy: StrategyType.Opportunistic,
                 role: StrategyRole.Receiver,
                 tiles: [{ x: p.meet_x, y: p.meet_y }],
+                approachTile,
                 maxDistance: config.handoff.zoneRadius,
                 partnerId: sourceId,
                 expiresAt: Date.now() + p.ttl_seconds * 1_000,

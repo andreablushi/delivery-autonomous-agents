@@ -38,6 +38,8 @@ export type GameStrategy = {
     bonus?: number;
     /** ZONAL_RELAY: the teammate this strategy pairs with. */
     partnerId?: string;
+    /** This agent's exact wait cell, one step adjacent to the exchange tile tiles[0]. */
+    approachTile?: Position;
     /** TTL as ms epoch; omitted ⇒ no expiry. */
     expiresAt?: number;
 };
