@@ -1,18 +1,19 @@
 import { BDIAgent } from "../bdi/bdi_agent.js";
 import { LLMCommunication } from "../communication/llm_communication.js";
 import { LLMClient } from "./client/llm_client.js";
-import { Coordinator } from "./coordination/coordinator.js";
+import { CooperationLoop } from "./cooperation/cooperation_loop.js";
+import { PeerInbox } from "../coordination/peer_inbox.js";
+import { Negotiator } from "../coordination/negotiator.js";
+import { PostureAssigner } from "../cooperation/posture/posture_assigner.js";
+import { PerformanceTracker } from "../cooperation/posture/performance_tracker.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 
 export class LLMAgent {
     private readonly bdi: BDIAgent;
     private readonly client: LLMClient;
-    // coordinator is assigned immediately after client in the constructor; the lazy closure
-    // `rawArgs => this.coordinator.proposeRendezvous(rawArgs)` passed to client is only
-    // invoked at tool-call time, well after construction completes.
-    private coordinator!: Coordinator;
+    private readonly loop: CooperationLoop;
     private readonly log: Logger;
-    /** Latest mission directive from the filtered emitter; forwarded to each coordination prompt. */
+    /** Latest mission directive from the filtered emitter; forwarded to each cooperation prompt. */
     private missionNote = "";
 
     constructor(socket: any, agentId?: string, teammateIds?: string[]) {
@@ -20,6 +21,26 @@ export class LLMAgent {
         let comm!: LLMCommunication;
         this.bdi = new BDIAgent(socket, agentId, teammateIds,
             (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; });
+
+        const beliefs = this.bdi.getBeliefs();
+
+        const peerInbox = new PeerInbox();
+        const negotiator = new Negotiator(
+            beliefs,
+            comm,
+            peerInbox,
+            entry => this.bdi.addInjectedDesire(entry),
+        );
+        const postureAssigner = new PostureAssigner(
+            beliefs,
+            comm,
+            entry => this.bdi.addInjectedDesire(entry),
+            strategy => this.bdi.setGameStrategy(strategy),
+            (bonus, ttlMs) => this.bdi.armHandpass(bonus, ttlMs),
+            () => this.bdi.disarmHandpass(),
+        );
+        const performanceTracker = new PerformanceTracker();
+
         this.client = new LLMClient(
             entry => this.bdi.addInjectedDesire(entry),
             type => this.bdi.removeInjectedDesiresByType(type),
@@ -27,33 +48,32 @@ export class LLMAgent {
             () => this.bdi.getGameStrategy(),
             comm,
             this.bdi.getRuleStore(),
-            rawArgs => this.coordinator.proposeRendezvous(rawArgs),
-            rawArgs => this.coordinator.proposeRedLight(rawArgs),
-            (agentId2, rawArgs) => this.coordinator.proposeGoto(agentId2, rawArgs),
-            (posture, opts) => this.coordinator.assignPosture(posture, opts ?? {}),
+            rawArgs => negotiator.proposeRendezvous(rawArgs),
+            rawArgs => negotiator.proposeRedLight(rawArgs),
+            (agentId2, rawArgs) => negotiator.proposeGoto(agentId2, rawArgs),
             agentId
         );
-        this.coordinator = new Coordinator(
-            this.bdi.getBeliefs(),
+
+        this.loop = new CooperationLoop(
+            beliefs,
             comm,
             this.client,
-            entry => this.bdi.addInjectedDesire(entry),
-            strategy => this.bdi.setGameStrategy(strategy),
+            peerInbox,
+            postureAssigner,
+            performanceTracker,
             () => this.missionNote,
-            (bonus, ttlMs) => this.bdi.armHandpass(bonus, ttlMs),
-            () => this.bdi.disarmHandpass(),
         );
-        this.coordinator.start();
+        this.loop.start();
 
-        // Handler for coordination messages from teammates. Forwarded to the coordinator for processing.
-        comm.onCoordination((senderId, msg) => this.coordinator.handleInbound(senderId, msg));
+        // Inbound coordination messages from teammates are stored in the peer inbox.
+        comm.onCoordination((senderId, msg) => peerInbox.record(senderId, msg));
 
         // Handler for mission chat messages from the mission emitter. Passed to the LLM client.
-        // Also triggers an immediate coordination round so posture changes take effect right away.
+        // Also triggers an immediate cooperation round so posture changes take effect right away.
         comm.onMission((senderId, senderName, content) => {
             if (!this.isValidMessage(senderId, senderName, content)) return;
             this.missionNote = content;
-            void this.coordinator.runRound({ force: true });
+            void this.loop.runRound({ force: true });
             this.log.debug(`mission msg from ${senderName} (${senderId}): "${content}"`);
             this.client
                 .processMessage(senderId, senderName, content, this.bdi.getBeliefs())

@@ -9,10 +9,10 @@ import type { GameStrategy } from "../../models/game_strategy.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 
-/** Extract `rid` from a proposal args object, defaulting to "" on parse failure. */
-function extractRid(args: unknown): string {
+/** Extract `roundId` from a proposal args object, defaulting to "" on parse failure. */
+function extractRoundId(args: unknown): string {
     const obj = args as Record<string, unknown>;
-    return typeof obj.rid === "string" ? obj.rid : "";
+    return typeof obj.roundId === "string" ? obj.roundId : "";
 }
 
 /** Dependencies for handling incoming peer-injection messages. */
@@ -28,17 +28,19 @@ export type IncomingDeps = {
 
 /**
  * Peer communication for a BDI agent.
- *
  * Handles all inbound peer-injection messages from configured teammates:
- * position beacons, belief requests, handshake proposals, and goal injections.
+ * - position beacons;
+ * - belief requests;
+ * - handshake proposals, and goal injections;
+ * 
  * Outbound: send/broadcast peer-injection messages and the position beacon.
- *
+ * 
  * LLM-specific concerns (coordination votes, mission chat) are handled by
  * LLMCommunication, which extends this class.
  */
 export class Communication {
     protected readonly log: Logger;
-    private handpassVoteHook?: (senderId: string, rid: string, accept: boolean) => void;
+    private handpassVoteHook?: (senderId: string, roundId: string, accept: boolean) => void;
 
     constructor(
         protected readonly socket: any,
@@ -49,7 +51,7 @@ export class Communication {
     }
 
     /** Register a callback invoked when a handpass_vote arrives. Used by HandpassInitiator. */
-    onHandpassVote(fn: (senderId: string, rid: string, accept: boolean) => void): void {
+    onHandpassVote(fn: (senderId: string, roundId: string, accept: boolean) => void): void {
         this.handpassVoteHook = fn;
     }
 
@@ -98,9 +100,11 @@ export class Communication {
                     this.log.debug(`ignoring ${msg.tool} from non-teammate ${senderId}`);
                     return;
                 }
-                
+                // Handle the peer-injection message based on its tool type.
                 switch (msg.tool) {
-
+                    
+                    // Position beacons are sent periodically by teammates.
+                    // Update the sender's position in beliefs based on the beacon data
                     case PeerKind.PositionBeacon: {
                         const args = msg.args as Record<string, unknown>;
                         const rawPos = args.pos as Record<string, unknown> | null;
@@ -110,61 +114,62 @@ export class Communication {
                         deps.beliefs.agents.updateAgentFromBeacon(senderId, senderName, pos);
                         return;
                     }
-
+                    
+                    // The following message types are related to coordination and require special handling
                     case PeerKind.BeliefsReport:
                     case PeerKind.RendezvousVote:
                     case PeerKind.RedLightVote:
                     case PeerKind.GotoVote:
                         this.handleCoordinationMessage(senderId, msg);
                         return;
-
+                    
+                    // When receiving a beliefs request, reply with the current beliefs report
                     case PeerKind.RequestBeliefs: {
                         const report = deps.beliefs.buildReport();
                         this.log.debug(`reply beliefs_report to ${senderId}`);
                         await this.socket.emitSay(senderId, encode({ v: 1, kind: "peer_injection", tool: PeerKind.BeliefsReport, args: report }));
                         return;
                     }
-
+                    
+                    // When receiving a proposal (rendezvous, red light, goto, handpass), evaluate the proposal 
+                    // using the appropriate function and reply with a vote message indicating acceptance or rejection.
                     case PeerKind.RendezvousPropose: {
                         const accept = evaluateRendezvousVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = extractRid(msg.args);
-                        this.log.debug(`rendezvous_propose from ${senderName}: accept=${accept} (rid=${rid})`);
-                        await this.send(senderId, PeerKind.RendezvousVote, { rid, accept });
+                        const roundId = extractRoundId(msg.args);
+                        this.log.debug(`rendezvous_propose from ${senderName}: accept=${accept} (roundId=${roundId})`);
+                        await this.send(senderId, PeerKind.RendezvousVote, { roundId, accept });
                         return;
                     }
-
                     case PeerKind.RedLightPropose: {
                         const accept = evaluateRedLightVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = extractRid(msg.args);
-                        this.log.debug(`red_light_propose from ${senderName}: accept=${accept} (rid=${rid})`);
-                        await this.send(senderId, PeerKind.RedLightVote, { rid, accept });
+                        const roundId = extractRoundId(msg.args);
+                        this.log.debug(`red_light_propose from ${senderName}: accept=${accept} (roundId=${roundId})`);
+                        await this.send(senderId, PeerKind.RedLightVote, { roundId, accept });
                         return;
                     }
-
                     case PeerKind.GotoPropose: {
                         const accept = evaluateGotoVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = extractRid(msg.args);
-                        this.log.debug(`goto_propose from ${senderName}: accept=${accept} (rid=${rid})`);
-                        await this.send(senderId, PeerKind.GotoVote, { rid, accept });
+                        const roundId = extractRoundId(msg.args);
+                        this.log.debug(`goto_propose from ${senderName}: accept=${accept} (roundId=${roundId})`);
+                        await this.send(senderId, PeerKind.GotoVote, { roundId, accept });
                         return;
                     }
-
                     case PeerKind.HandpassPropose: {
                         const accept = evaluateHandpassVote(deps.beliefs, deps.ruleStore, msg.args);
-                        const rid = extractRid(msg.args);
-                        this.log.debug(`handpass_propose from ${senderName}: accept=${accept} (rid=${rid})`);
-                        await this.send(senderId, PeerKind.HandpassVote, { rid, accept });
+                        const roundId = extractRoundId(msg.args);
+                        this.log.debug(`handpass_propose from ${senderName}: accept=${accept} (roundId=${roundId})`);
+                        await this.send(senderId, PeerKind.HandpassVote, { roundId, accept });
                         return;
                     }
-
                     case PeerKind.HandpassVote: {
                         const args = msg.args as Record<string, unknown>;
-                        const rid = extractRid(args);
+                        const roundId = extractRoundId(args);
                         const accept = typeof args.accept === "boolean" ? args.accept : false;
-                        this.handpassVoteHook?.(senderId, rid, accept);
+                        this.handpassVoteHook?.(senderId, roundId, accept);
                         return;
                     }
-
+                    
+                    // For any other peer-injection message types, treat as intention injections and apply via applyInjection()
                     default: {
                         const injDeps: InjectionDeps = {
                             beliefs: deps.beliefs,

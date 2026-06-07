@@ -53,7 +53,7 @@ export class BDIAgent {
         );
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId,
             () => { void this.handpass.maybeInitiate(); });
-        this.comm.onHandpassVote((id, rid, accept) => this.handpass.handleVote(id, rid, accept));
+        this.comm.onHandpassVote((id, roundId, accept) => this.handpass.handleVote(id, roundId, accept));
         this.comm.start({
             beliefs: this.beliefs,
             ruleStore: this.ruleStore,

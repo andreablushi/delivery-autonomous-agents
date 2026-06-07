@@ -1,8 +1,8 @@
-import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { BeliefsReport } from "../../../models/message_injection.js";
-import type { ClusterInfo } from "../../bdi/belief/modules/map_beliefs.js";
-import { posKey, nearestByManhattan, manhattanDistance } from "../../../utils/metrics.js";
-import { config } from "../../../config.js";
+import type { Beliefs } from "../bdi/belief/beliefs.js";
+import type { BeliefsReport } from "../../models/message_injection.js";
+import type { ClusterInfo } from "../bdi/belief/modules/map_beliefs.js";
+import { posKey, nearestByManhattan, manhattanDistance } from "../../utils/metrics.js";
+import { config } from "../../config.js";
 
 export type { ClusterInfo };
 
@@ -30,7 +30,7 @@ export type TeamGeometry = {
 
 /**
  * Compute deterministic team geometry from the map and aggregated belief reports.
- * The result is passed to the LLM coordinator as orientation data.
+ * The result is passed to the LLM cooperation prompt as orientation data.
  */
 export function buildTeamGeometry(
     beliefs: Readonly<Beliefs>,

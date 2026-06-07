@@ -3,13 +3,13 @@ import { dirname } from "path";
 import type { Beliefs } from "../../../bdi/belief/beliefs.js";
 import type { RuleStore } from "../../../bdi/desire/rule_store.js";
 import type { BeliefsReport } from "../../../../models/message_injection.js";
-import type { TeamGeometry } from "../../coordination/geometry.js";
+import type { TeamGeometry } from "../../../cooperation/geometry.js";
 import { render } from "../shared.js";
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 
-/** Build the system and user prompts for a team coordination pass. */
-export function buildCoordinationPrompt(
+/** Build the system and user prompts for a team cooperation pass. */
+export function buildCooperationPrompt(
     reports: Map<string, BeliefsReport>,
     geometry: TeamGeometry,
     beliefs: Readonly<Beliefs>,

@@ -6,9 +6,10 @@ import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/desire/rule_store.js";
 import { getTools, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
-import { buildCoordinationPrompt } from "../prompt/coordination/index.js";
+import { buildCooperationPrompt } from "../prompt/cooperation/index.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
-import type { TeamGeometry } from "../coordination/geometry.js";
+import type { TeamGeometry } from "../../cooperation/geometry.js";
+import { POSTURES, type Posture } from "../../cooperation/posture/performance_tracker.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
 
@@ -41,7 +42,6 @@ export class LLMClient {
     private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
     private readonly proposeRedLight: (rawArgs: unknown) => Promise<string>;
     private readonly proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>;
-    private readonly assignPosture: (posture: string, opts?: { bonus?: number }) => Promise<string>;
     private readonly coordLog: Logger;
 
     constructor(
@@ -54,7 +54,6 @@ export class LLMClient {
         proposeRendezvous: (rawArgs: unknown) => Promise<string>,
         proposeRedLight: (rawArgs: unknown) => Promise<string>,
         proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>,
-        assignPosture: (posture: string, opts?: { bonus?: number }) => Promise<string>,
         agentId?: string,
     ) {
         this.client = new OpenAI({
@@ -74,7 +73,6 @@ export class LLMClient {
         this.proposeRendezvous = proposeRendezvous;
         this.proposeRedLight = proposeRedLight;
         this.proposeGoto = proposeGoto;
-        this.assignPosture = assignPosture;
         this.coordLog = createLogger("coordination", agentId);
     }
 
@@ -177,18 +175,19 @@ export class LLMClient {
     }
 
     /**
-     * Run a team coordination pass: the LLM is given teammate reports + map geometry
+     * Run a team cooperation pass: the LLM is given teammate reports + map geometry
      * and responds with a single JSON posture decision. No tool-calling loop — one completion.
+     * Returns the chosen posture and optional bonus; the caller applies it via PostureAssigner.
      */
-    async coordinate(
+    async chooseCooperationPosture(
         reports: Map<string, BeliefsReport>,
         geometry: TeamGeometry,
         beliefs: Readonly<Beliefs>,
         missionNote = "",
         performance = "",
-    ): Promise<void> {
-        const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote, performance);
-        this.log.debug("Running coordination pass");
+    ): Promise<{ posture: Posture; bonus?: number }> {
+        const { system, user } = buildCooperationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote, performance);
+        this.log.debug("Running cooperation pass");
 
         const response = await this.client.chat.completions.create({
             model: this.model,
@@ -200,11 +199,9 @@ export class LLMClient {
         });
 
         const text = response.choices[0]?.message.content?.trim() ?? "";
-        this.promptLog.debug(`Coordination response: ${text}`);
+        this.promptLog.debug(`Cooperation response: ${text}`);
 
         // Extract the first {...} block from the response and parse the posture.
-        const POSTURES = ["ZONAL_RELAY", "OPPORTUNISTIC", "NONE"] as const;
-        type Posture = typeof POSTURES[number];
         let posture: Posture = "NONE";
         let bonus: number | undefined;
 
@@ -218,15 +215,14 @@ export class LLMClient {
                 }
                 if (typeof obj.bonus === "number") bonus = Math.round(obj.bonus);
                 const rationale = typeof obj.rationale === "string" ? obj.rationale.trim() : "";
-                if (rationale) this.coordLog.debug(`coordination rationale: ${rationale}`);
+                if (rationale) this.coordLog.debug(`cooperation rationale: ${rationale}`);
             } catch {
-                this.coordLog.debug(`coordination: could not parse posture JSON — defaulting to NONE. text=${text}`);
+                this.coordLog.debug(`cooperation: could not parse posture JSON — defaulting to NONE. text=${text}`);
             }
         } else {
-            this.coordLog.debug(`coordination: no JSON found in response — defaulting to NONE. text=${text}`);
+            this.coordLog.debug(`cooperation: no JSON found in response — defaulting to NONE. text=${text}`);
         }
 
-        const result = await this.assignPosture(posture, { bonus });
-        this.log.debug(`Coordination assignPosture(${posture}) → ${result}`);
+        return { posture, bonus };
     }
 }

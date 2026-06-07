@@ -141,15 +141,15 @@ export function parseRendezvousArgs(json: unknown): RendezvousArgs | { error: st
     return { x, y, max_distance, reward };
 }
 
-/** Wire args for `rendezvous_propose` and `rendezvous_commit` (same shape, includes rid). */
-export type RendezvousProposeArgs = RendezvousArgs & { rid: string };
+/** Wire args for `rendezvous_propose` and `rendezvous_commit` (same shape, includes roundId). */
+export type RendezvousProposeArgs = RendezvousArgs & { roundId: string };
 
 export function parseRendezvousProposeArgs(json: unknown): RendezvousProposeArgs | { error: string } {
     const base = parseRendezvousArgs(json);
     if ("error" in base) return base;
     const obj = json as Record<string, unknown>;
-    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
-    return { ...base, rid: obj.rid };
+    if (typeof obj.roundId !== "string" || obj.roundId.trim() === "") return { error: "roundId must be a non-empty string" };
+    return { ...base, roundId: obj.roundId as string };
 }
 
 /** Arguments for `request_red_light`. */
@@ -176,15 +176,15 @@ export function parseRedLightArgs(json: unknown): RedLightArgs | { error: string
 }
 
 
-/** Wire args for `red_light_propose` and `red_light_commit` (same shape as RedLightArgs, plus rid). */
-export type RedLightProposeArgs = RedLightArgs & { rid: string };
+/** Wire args for `red_light_propose` and `red_light_commit` (same shape as RedLightArgs, plus roundId). */
+export type RedLightProposeArgs = RedLightArgs & { roundId: string };
 
 export function parseRedLightProposeArgs(json: unknown): RedLightProposeArgs | { error: string } {
     const base = parseRedLightArgs(json);
     if ("error" in base) return base;
     const obj = json as Record<string, unknown>;
-    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
-    return { ...base, rid: obj.rid };
+    if (typeof obj.roundId !== "string" || obj.roundId.trim() === "") return { error: "roundId must be a non-empty string" };
+    return { ...base, roundId: obj.roundId as string };
 }
 
 
@@ -216,10 +216,10 @@ export function parseTraversalPenaltyArgs(json: unknown): TraversalPenaltyArgs |
 }
 
 
-/** Wire args for `handpass_propose` and `handpass_commit` (same shape, includes rid).
+/** Wire args for `handpass_propose` and `handpass_commit` (same shape, includes roundId).
  *  `approach_x`/`approach_y` carry the receiver's approach cell and are present only in commit. */
 export type HandpassProposeArgs = {
-    rid: string;
+    roundId: string;
     meet_x: number;
     meet_y: number;
     reward: number;
@@ -231,7 +231,7 @@ export type HandpassProposeArgs = {
 export function parseHandpassProposeArgs(json: unknown): HandpassProposeArgs | { error: string } {
     if (typeof json !== "object" || json === null) return { error: "args must be an object" };
     const obj = json as Record<string, unknown>;
-    if (typeof obj.rid !== "string" || obj.rid.trim() === "") return { error: "rid must be a non-empty string" };
+    if (typeof obj.roundId !== "string" || obj.roundId.trim() === "") return { error: "roundId must be a non-empty string" };
     const meet_x      = coerceNum(obj.meet_x);
     const meet_y      = coerceNum(obj.meet_y);
     const reward      = coerceNum(obj.reward);
@@ -249,7 +249,7 @@ export function parseHandpassProposeArgs(json: unknown): HandpassProposeArgs | {
     if (hasApproach && (typeof approach_y !== "number" || !Number.isInteger(approach_y)))
         return { error: "approach_y must be an integer" };
     return {
-        rid: obj.rid, meet_x, meet_y, reward, ttl_seconds,
+        roundId: obj.roundId as string, meet_x, meet_y, reward, ttl_seconds,
         approach_x: hasApproach ? approach_x as number : undefined,
         approach_y: hasApproach ? approach_y as number : undefined,
     };

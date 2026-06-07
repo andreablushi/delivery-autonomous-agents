@@ -81,6 +81,8 @@ export function evaluateRendezvousVote(
     for (const tile of tiles) {
         // Meeting time for this tile in steps; convert to ms for decay calc.
         const distSteps = ctx.meDist.get(posKey(tile)) ?? Infinity;
+        // Include friend travel time: if the friend arrives later, carried parcels keep decaying
+        // while this agent holds the zone waiting for the release condition to fire.
         const friendMaxSteps = ctx.friendDists.length > 0
             ? Math.max(...ctx.friendDists.map(fd => fd.get(posKey(tile)) ?? Infinity))
             : 0;

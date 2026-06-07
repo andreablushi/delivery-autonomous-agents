@@ -138,7 +138,7 @@ export function applyInjection(
             if (!from) return { error: "Agent position not yet known" };
             const holds = buildRendezvousHolds(beliefs, from, { x: p.x, y: p.y }, p.max_distance, p.reward, {
                 releaseZone: { center: { x: p.x, y: p.y }, maxDistance: p.max_distance },
-                rendezvousId: p.rid,
+                rendezvousId: p.roundId,
                 sourceId,
             });
             if (holds.length === 0) return { error: "No reachable tile within rendezvous zone" };

@@ -16,7 +16,7 @@ export class HandpassInitiator {
     private lastInitiateAt = 0;
     private inFlight = false;
     /** Latest vote received from the partner. Set by handleVote(), consumed by maybeInitiate(). */
-    private pendingVote: { rid: string; accept: boolean; at: number } | null = null;
+    private pendingVote: { roundId: string; accept: boolean; at: number } | null = null;
 
     constructor(
         private readonly beliefs: Beliefs,
@@ -45,9 +45,9 @@ export class HandpassInitiator {
     }
 
     /** Called by the Communication router when a handpass_vote arrives from a peer. */
-    handleVote(senderId: string, rid: string, accept: boolean): void {
-        this.pendingVote = { rid, accept, at: Date.now() };
-        this.log.debug(`handpass_vote from ${senderId}: rid=${rid}, accept=${accept}`);
+    handleVote(senderId: string, roundId: string, accept: boolean): void {
+        this.pendingVote = { roundId, accept, at: Date.now() };
+        this.log.debug(`handpass_vote from ${senderId}: roundId=${roundId}, accept=${accept}`);
     }
 
     /**
@@ -90,28 +90,28 @@ export class HandpassInitiator {
         const carriedValue = carried.reduce((sum, p) => sum + p.reward, 0);
         const reward = Math.max(1, bonus + carriedValue);
         const ttlSeconds = 30;
-        const rid = `hp-${now}-${partnerId.slice(-4)}`;
+        const roundId = `hp-${now}-${partnerId.slice(-4)}`;
 
         this.lastInitiateAt = now;
         this.inFlight = true;
-        // pendingVote is NOT cleared here: rid + timestamp checks below are sufficient
+        // pendingVote is NOT cleared here: roundId + timestamp checks below are sufficient
         // to reject any vote from a previous round.
 
         try {
-            this.log.debug(`Handpass propose ${rid} to ${partnerId} @ (${geo.meetTile.x},${geo.meetTile.y}), reward=${reward}`);
+            this.log.debug(`Handpass propose ${roundId} to ${partnerId} @ (${geo.meetTile.x},${geo.meetTile.y}), reward=${reward}`);
             await this.send(partnerId, PeerKind.HandpassPropose, {
-                rid, meet_x: geo.meetTile.x, meet_y: geo.meetTile.y, reward, ttl_seconds: ttlSeconds,
+                roundId, meet_x: geo.meetTile.x, meet_y: geo.meetTile.y, reward, ttl_seconds: ttlSeconds,
             });
 
             await new Promise<void>(r => setTimeout(r, config.rendezvous.commitWindowMs));
 
             const vote = this.pendingVote;
-            const accepted = vote !== null && vote.rid === rid && vote.accept && vote.at >= now;
+            const accepted = vote !== null && vote.roundId === roundId && vote.accept && vote.at >= now;
 
             if (accepted) {
-                this.log.debug(`Handpass ${rid}: partner accepted — committing (PASSER)`);
+                this.log.debug(`Handpass ${roundId}: partner accepted — committing (PASSER)`);
                 await this.send(partnerId, PeerKind.HandpassCommit, {
-                    rid,
+                    roundId,
                     meet_x: geo.meetTile.x, meet_y: geo.meetTile.y,
                     reward, ttl_seconds: ttlSeconds,
                     approach_x: geo.receiverApproach.x, approach_y: geo.receiverApproach.y,
@@ -128,8 +128,8 @@ export class HandpassInitiator {
                 // One-shot: disarm so we don't re-initiate next pickup.
                 this.armed = null;
             } else {
-                this.log.debug(`Handpass ${rid}: partner rejected or timed out — staying armed`);
-                await this.send(partnerId, PeerKind.HandpassAbort, { rid });
+                this.log.debug(`Handpass ${roundId}: partner rejected or timed out — staying armed`);
+                await this.send(partnerId, PeerKind.HandpassAbort, { roundId });
             }
         } finally {
             this.inFlight = false;
