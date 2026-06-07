@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { InjectedIntention } from "../../../models/intentions.js";
+import type { InjectedDesire } from "../../../models/desires.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/desire/rule_store.js";
@@ -32,8 +32,8 @@ export class LLMClient {
     private readonly model: string;
     private readonly log: Logger;
     private readonly promptLog: Logger;
-    private readonly addInjectedIntention: (entry: InjectedIntention) => void;
-    private readonly removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
+    private readonly addInjectedDesire: (entry: InjectedDesire) => void;
+    private readonly removeInjectedDesiresByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
     private readonly setGameStrategy: (strategy: GameStrategy) => void;
     private readonly getGameStrategy: () => GameStrategy | null;
     private readonly comm: Communication;
@@ -45,8 +45,8 @@ export class LLMClient {
     private readonly coordLog: Logger;
 
     constructor(
-        addInjectedIntention: (entry: InjectedIntention) => void,
-        removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
+        addInjectedDesire: (entry: InjectedDesire) => void,
+        removeInjectedDesiresByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
         setGameStrategy: (strategy: GameStrategy) => void,
         getGameStrategy: () => GameStrategy | null,
         comm: Communication,
@@ -65,8 +65,8 @@ export class LLMClient {
         this.model = config.llm.model;
         this.log = createLogger("llm", agentId);
         this.promptLog = createLogger("llm-prompt", agentId);
-        this.addInjectedIntention = addInjectedIntention;
-        this.removeIntentionsByType = removeIntentionsByType;
+        this.addInjectedDesire = addInjectedDesire;
+        this.removeInjectedDesiresByType = removeInjectedDesiresByType;
         this.setGameStrategy = setGameStrategy;
         this.getGameStrategy = getGameStrategy;
         this.comm = comm;
@@ -156,8 +156,8 @@ export class LLMClient {
     ): Promise<void> {
         const ctx = {
             beliefs: beliefs as Beliefs,
-            addInjectedIntention: this.addInjectedIntention,
-            removeIntentionsByType: this.removeIntentionsByType,
+            addInjectedDesire: this.addInjectedDesire,
+            removeInjectedDesiresByType: this.removeInjectedDesiresByType,
             setGameStrategy: this.setGameStrategy,
             getGameStrategy: this.getGameStrategy,
             comm: this.comm,

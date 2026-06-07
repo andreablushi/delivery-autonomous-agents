@@ -1,6 +1,6 @@
 import type { Beliefs } from "../agents/bdi/belief/beliefs.js";
 import type { RuleStore } from "../agents/bdi/desire/rule_store.js";
-import type { InjectedIntention } from "./intentions.js";
+import type { InjectedDesire } from "./desires.js";
 import type { DesireType } from "./desires.js";
 import type { ScoringRule } from "./rules.js";
 import { SCORING_AXIS } from "./rules.js";
@@ -22,8 +22,8 @@ import { buildRendezvousHolds, buildHolds } from "../agents/cooperation/holds.js
 export interface InjectionDeps {
     beliefs: Beliefs;
     ruleStore: RuleStore;
-    addInjectedIntention: (entry: InjectedIntention) => void;
-    removeIntentionsByType: (type: DesireType["type"]) => void;
+    addInjectedDesire: (entry: InjectedDesire) => void;
+    removeInjectedDesiresByType: (type: DesireType["type"]) => void;
     setGameStrategy: (strategy: GameStrategy) => void;
     sourceId: string;
     armHandpass?: (bonus: number | undefined, ttlMs: number) => void;
@@ -45,7 +45,7 @@ export function applyInjection(
     rawArgs: unknown,
     deps: InjectionDeps,
 ): InjectionResult {
-    const { beliefs, ruleStore, addInjectedIntention, removeIntentionsByType, setGameStrategy, sourceId } = deps;
+    const { beliefs, ruleStore, addInjectedDesire, removeInjectedDesiresByType, setGameStrategy, sourceId } = deps;
 
     switch (tool) {
 
@@ -78,7 +78,7 @@ export function applyInjection(
             const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
             if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
-            addInjectedIntention({
+            addInjectedDesire({
                 desire: { type: "PARK_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
                 expiresAt,
                 sourceId,
@@ -92,7 +92,7 @@ export function applyInjection(
             const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
             if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
-            addInjectedIntention({
+            addInjectedDesire({
                 desire: { type: "DELIVER_PARCEL", target: { x: p.target_x, y: p.target_y }, bonus: p.reward },
                 expiresAt,
                 sourceId,
@@ -142,7 +142,7 @@ export function applyInjection(
                 sourceId,
             });
             if (holds.length === 0) return { error: "No reachable tile within rendezvous zone" };
-            for (const hold of holds) addInjectedIntention(hold);
+            for (const hold of holds) addInjectedDesire(hold);
             return { ok: true };
         }
 
@@ -161,7 +161,7 @@ export function applyInjection(
             if (tiles.length === 0) return { error: "No matching tile reachable" };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
             const holds = buildHolds(tiles, p.reward, { sourceId, expiresAt });
-            for (const hold of holds) addInjectedIntention(hold);
+            for (const hold of holds) addInjectedDesire(hold);
             return { ok: true };
         }
 
@@ -176,7 +176,7 @@ export function applyInjection(
             const errMsg = beliefs.map.validateTargetTile(p.target_x, p.target_y);
             if (errMsg) return { error: errMsg };
             const expiresAt = Date.now() + p.ttl_seconds * 1_000;
-            addInjectedIntention({
+            addInjectedDesire({
                 desire: { type: "PARK_TILE", target: { x: p.target_x, y: p.target_y }, sourceId, expiresAt, reward: p.reward },
                 expiresAt,
                 sourceId,
@@ -191,8 +191,8 @@ export function applyInjection(
 
         case PeerKind.RequestResume: {
             // No args to validate — request_resume carries no parameters.
-            removeIntentionsByType("HOLD_TILE");
-            removeIntentionsByType("PARK_TILE");
+            removeInjectedDesiresByType("HOLD_TILE");
+            removeInjectedDesiresByType("PARK_TILE");
             return { ok: true };
         }
 

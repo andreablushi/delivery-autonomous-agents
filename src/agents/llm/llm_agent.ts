@@ -21,8 +21,8 @@ export class LLMAgent {
         this.bdi = new BDIAgent(socket, agentId, teammateIds,
             (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; });
         this.client = new LLMClient(
-            entry => this.bdi.addInjectedIntention(entry),
-            type => this.bdi.removeIntentionsByType(type),
+            entry => this.bdi.addInjectedDesire(entry),
+            type => this.bdi.removeInjectedDesiresByType(type),
             strategy => this.bdi.setGameStrategy(strategy),
             () => this.bdi.getGameStrategy(),
             comm,
@@ -37,7 +37,7 @@ export class LLMAgent {
             this.bdi.getBeliefs(),
             comm,
             this.client,
-            entry => this.bdi.addInjectedIntention(entry),
+            entry => this.bdi.addInjectedDesire(entry),
             strategy => this.bdi.setGameStrategy(strategy),
             () => this.missionNote,
             (bonus, ttlMs) => this.bdi.armHandpass(bonus, ttlMs),

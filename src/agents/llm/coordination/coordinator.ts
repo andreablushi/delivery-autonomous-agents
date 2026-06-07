@@ -1,7 +1,7 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { Communication } from "../../communication/communication.js";
 import { PeerKind, type BeliefsReport, type PeerInjectionMessage, type PeerInjectionKind } from "../../../models/message_injection.js";
-import type { InjectedIntention } from "../../../models/intentions.js";
+import type { InjectedDesire } from "../../../models/desires.js";
 import type { LLMClient } from "../client/llm_client.js";
 import { parseRendezvousArgs, parseRedLightArgs, parseGotoArgs } from "../../../models/injection_args.js";
 import { buildTeamGeometry, type TeamGeometry } from "./geometry.js";
@@ -50,7 +50,7 @@ export class Coordinator {
         private readonly beliefs: Readonly<Beliefs>,
         private readonly comm: Communication,
         private readonly client: LLMClient,
-        private readonly addInjectedIntention: (entry: InjectedIntention) => void,
+        private readonly addInjectedDesire: (entry: InjectedDesire) => void,
         private readonly setGameStrategy: (strategy: GameStrategy) => void,
         private readonly getMissionNote: () => string = () => "",
         private readonly armHandpass: (bonus: number | undefined, ttlMs: number) => void = () => {},
@@ -114,7 +114,7 @@ export class Coordinator {
             proposeKind: PeerKind.RendezvousPropose, commitKind: PeerKind.RendezvousCommit, abortKind: PeerKind.RendezvousAbort,
             proposeArgs: { rid, x: p.x, y: p.y, max_distance: p.max_distance, reward: p.reward },
             onCommit: () => {
-                for (const hold of selfHolds) this.addInjectedIntention(hold);
+                for (const hold of selfHolds) this.addInjectedDesire(hold);
             },
         });
     }
@@ -134,7 +134,7 @@ export class Coordinator {
             onCommit: () => {
                 const expiresAt = Date.now() + p.ttl_seconds * 1_000;
                 const holds = buildHolds(selfTiles, p.reward, { sourceId: "coordinator", expiresAt });
-                for (const hold of holds) this.addInjectedIntention(hold);
+                for (const hold of holds) this.addInjectedDesire(hold);
             },
         });
     }

@@ -1,5 +1,5 @@
 import type { Beliefs } from "../bdi/belief/beliefs.js";
-import type { InjectedIntention } from "../../models/intentions.js";
+import type { InjectedDesire } from "../../models/desires.js";
 import type { Position } from "../../models/position.js";
 
 /**
@@ -13,7 +13,7 @@ type HoldOpts = {
 };
 
 /**
- * Build `InjectedIntention` entries from a pre-computed list of tiles.
+ * Build `InjectedDesire` entries from a pre-computed list of tiles.
  * The single canonical implementation of "wrap tiles as HOLD_TILE intentions."
  * Used by rendezvous-commit and red-light-commit.
  */
@@ -21,7 +21,7 @@ export function buildHolds(
     tiles: Position[],
     reward: number,
     opts: HoldOpts = {},
-): InjectedIntention[] {
+): InjectedDesire[] {
     const sourceId = opts.sourceId ?? "coordinator";
     return tiles.map(tile => ({
         desire: {
@@ -38,7 +38,7 @@ export function buildHolds(
 }
 
 /**
- * Build `InjectedIntention` entries for a rendezvous hold zone.
+ * Build `InjectedDesire` entries for a rendezvous hold zone.
  * Snaps to all reachable tiles within `maxDistance` of `center` via `allRendezvousTiles`,
  * then delegates to `buildHolds`.
  *
@@ -51,7 +51,7 @@ export function buildRendezvousHolds(
     maxDistance: number,
     reward: number,
     opts: HoldOpts = {},
-): InjectedIntention[] {
+): InjectedDesire[] {
     const tiles = beliefs.map.allRendezvousTiles(from, center.x, center.y, maxDistance);
     if (tiles.length === 0) return [];
     return buildHolds(tiles, reward, opts);

@@ -1,5 +1,5 @@
 import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
-import type { InjectedIntention } from "../../models/intentions.js";
+import type { InjectedDesire } from "../../models/desires.js";
 import type { DesireType } from "../../models/desires.js";
 import type { GameStrategy } from "../../models/game_strategy.js";
 import { Beliefs } from "./belief/beliefs.js";
@@ -57,8 +57,8 @@ export class BDIAgent {
         this.comm.start({
             beliefs: this.beliefs,
             ruleStore: this.ruleStore,
-            addInjectedIntention: entry => this.addInjectedIntention(entry),
-            removeIntentionsByType: type => this.removeIntentionsByType(type),
+            addInjectedDesire: entry => this.addInjectedDesire(entry),
+            removeInjectedDesiresByType: type => this.removeInjectedDesiresByType(type),
             setGameStrategy: strategy => this.setGameStrategy(strategy),
             armHandpass: (bonus, ttlMs) => this.handpass.arm(bonus, ttlMs),
             disarmHandpass: () => this.handpass.disarm(),
@@ -94,21 +94,21 @@ export class BDIAgent {
     }
 
     /**
-     * Add an injected intention that will be included in the intention queue each cycle until it expires.
+     * Add an injected desire that will be included in the desire queue each cycle until it expires.
      * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
-     * @param entry The injected intention entry, including the desire itself and its expiration time.
+     * @param entry The injected desire entry, including the desire itself and its expiration time.
      */
-    addInjectedIntention(entry: InjectedIntention): void {
-        this.intentions.addInjectedIntention(entry);
+    addInjectedDesire(entry: InjectedDesire): void {
+        this.intentions.addInjectedDesire(entry);
     }
 
     /**
-     * Remove all intentions of a given desire type from the intention queue.
+     * Remove all injected desires of a given type from the desire queue.
      * Useful for revoking desires injected by an LLM or other external system.
-     * @param type The type of desire whose intentions should be removed.
+     * @param type The type of desire to remove.
      */
-    removeIntentionsByType(type: DesireType["type"]): void {
-        this.intentions.removeIntentionsByType(type);
+    removeInjectedDesiresByType(type: DesireType["type"]): void {
+        this.intentions.removeInjectedDesiresByType(type);
     }
 
     /** Set the active cooperation strategy assigned by the coordinator. */

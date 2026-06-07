@@ -3,7 +3,7 @@ import { applyInjection, type InjectionDeps } from "../../models/apply_injection
 import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote, evaluateHandpassVote } from "../bdi/desire/scoring/vote.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
 import type { RuleStore } from "../bdi/desire/rule_store.js";
-import type { InjectedIntention } from "../../models/intentions.js";
+import type { InjectedDesire } from "../../models/desires.js";
 import type { DesireType } from "../../models/desires.js";
 import type { GameStrategy } from "../../models/game_strategy.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
@@ -19,8 +19,8 @@ function extractRid(args: unknown): string {
 export type IncomingDeps = {
     beliefs: Beliefs;
     ruleStore: RuleStore;
-    addInjectedIntention: (e: InjectedIntention) => void;
-    removeIntentionsByType: (t: DesireType["type"]) => void;
+    addInjectedDesire: (e: InjectedDesire) => void;
+    removeInjectedDesiresByType: (t: DesireType["type"]) => void;
     setGameStrategy: (s: GameStrategy) => void;
     armHandpass?: (bonus: number | undefined, ttlMs: number) => void;
     disarmHandpass?: () => void;
@@ -169,8 +169,8 @@ export class Communication {
                         const injDeps: InjectionDeps = {
                             beliefs: deps.beliefs,
                             ruleStore: deps.ruleStore,
-                            addInjectedIntention: deps.addInjectedIntention,
-                            removeIntentionsByType: deps.removeIntentionsByType,
+                            addInjectedDesire: deps.addInjectedDesire,
+                            removeInjectedDesiresByType: deps.removeInjectedDesiresByType,
                             setGameStrategy: deps.setGameStrategy,
                             sourceId: senderId,
                             armHandpass: deps.armHandpass,

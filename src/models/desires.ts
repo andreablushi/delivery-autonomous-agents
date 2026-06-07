@@ -54,3 +54,12 @@ export type DesireType = ExploreDesire | ReachParcelDesire | DeliverParcelDesire
 
 /** Maps desire type strings to arrays of corresponding desires (e.g. "EXPLORE" -> ExploreDesire[]) */
 export type GeneratedDesires = Map<DesireType["type"], DesireType[]>;
+
+/** A desire wrapped with its computed score and priority tier — the output of the ranker. */
+export type ScoredDesire = { desire: DesireType; score: number; priority: number };
+
+/** Ordered list of scored desires; head is the active intention the agent is committed to pursuing. */
+export type DesireQueue = ScoredDesire[];
+
+/** A desire injected by an external source (LLM, peer agent) that persists across deliberation ticks until it expires. */
+export type InjectedDesire = { desire: DesireType; expiresAt?: number; sourceId: string };

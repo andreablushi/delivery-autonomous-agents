@@ -1,5 +1,5 @@
 import type { Beliefs } from "../belief/beliefs.js";
-import type { RuleStore } from "./rule_store.js";
+import type { RuleStore } from "../desire/rule_store.js";
 import type {
     DesireType,
     ExploreDesire,
@@ -9,20 +9,20 @@ import type {
     ParkTileDesire,
     HoldTileDesire,
     GeneratedDesires,
+    DesireQueue,
 } from "../../../models/desires.js";
 import type { Position } from "../../../models/position.js";
-import type { IntentionQueue } from "../../../models/intentions.js";
-import { buildScoringContext } from "./scoring/utils.js";
-import { scoreReachDesire } from "./scoring/reach_parcel.js";
-import { scoreDeliverDesire } from "./scoring/deliver_parcel.js";
-import { scoreReachTile } from "./scoring/reach_tile.js";
-import { scoreParkTile } from "./scoring/park_tile.js";
-import { scoreHoldTile } from "./scoring/hold_tile.js";
-import { scoreExplore } from "./scoring/explore.js";
+import { buildScoringContext } from "../desire/scoring/utils.js";
+import { scoreReachDesire } from "../desire/scoring/reach_parcel.js";
+import { scoreDeliverDesire } from "../desire/scoring/deliver_parcel.js";
+import { scoreReachTile } from "../desire/scoring/reach_tile.js";
+import { scoreParkTile } from "../desire/scoring/park_tile.js";
+import { scoreHoldTile } from "../desire/scoring/hold_tile.js";
+import { scoreExplore } from "../desire/scoring/explore.js";
 
 
 /**
- * Build the ordered desire queue for all candidates generated this cycle.
+ * Score and sort all desire candidates into the ordered desire queue.
  *
  * Priority tiers:
  *   2   — HOLD_TILE with releaseZone (committed rendezvous): non-preemptible once committed.
@@ -39,19 +39,19 @@ import { scoreExplore } from "./scoring/explore.js";
  * @param ruleStore Active scoring rules; applied when scoring REACH_PARCEL, DELIVER_PARCEL, and EXPLORE.
  * @returns The ordered desire queue, or an empty array if no candidates are available.
  */
-export function getIntentionQueue(
+export function rankDesires(
     desires: GeneratedDesires,
     beliefs: Beliefs,
     ruleStore: RuleStore,
     zone: { center: Position; maxDistance: number } | null = null,
     currentHoldTarget?: Position,
-): IntentionQueue {
-    const queue: IntentionQueue = [];
+): DesireQueue {
+    const queue: DesireQueue = [];
 
     const ctx = buildScoringContext(beliefs, ruleStore);
     if (!ctx) return queue;
 
-    const { me, meDist, enemyDists, carriedCount, carriedValue } = ctx;
+    const { meDist, enemyDists, carriedCount, carriedValue } = ctx;
 
     const reaches = (desires.get("REACH_PARCEL") ?? []) as ReachParcelDesire[];
     const delivers = (desires.get("DELIVER_PARCEL") ?? []) as DeliverParcelDesire[];
