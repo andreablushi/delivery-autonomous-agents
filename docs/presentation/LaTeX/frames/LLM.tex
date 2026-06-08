@@ -5,7 +5,6 @@
   \begin{itemize}
     \item Thin wrapper around the BDI agent
     \item Listens for mission-controller chat messages
-    \item Up to 4 tool-call rounds (hops) per message
     \item Three command categories: \textbf{goals}, \textbf{rules}, \textbf{coordination}
   \end{itemize}
 \end{frame}
@@ -40,27 +39,36 @@
   \end{itemize}
 \end{frame}
 
-% ----- Team Communication --------------------------------------
-\begin{frame}{Team Communication}
+% ----- Coordination: Position Sharing --------------------------------------
+\begin{frame}{Coordination: Position Sharing}
   \begin{itemize}
     \item \textbf{Beacons}: each agent broadcasts position at fixed interval
     \item Ensures up-to-date peer positions beyond sensing radius
-    \item \textbf{Peer-injection}: command applied locally, then broadcast
-    \item Simple commands (goals, rules, penalties) are fire-and-forget
+    \item Needed for scoring coordination desires
   \end{itemize}
 \end{frame}
 
-% ----- Holds: 2-Phase Commit -----------------------------------
-\begin{frame}{Holds: 2-Phase Commit}
+% ----- Coordination: Peer Injection --------------------------------------
+\begin{frame}{Coordination: Peer Injection}
+    \begin{itemize}
+        \item Only the LLM-driven agent is connected to the mission controller
+        \item \textbf{Peer-injection}: the LLM applies the command locally, then repackages it and broadcasts it
+        \item Applies to any \emph{stateless} command
+        \item No acknowledgement needed: fire-and-forget
+    \end{itemize}
+\end{frame}
+
+% ----- Coordination: 2-Phase Commit -----------------------------------
+\begin{frame}{Coordination: 2-Phase Commit}
   \begin{columns}
-    \column{0.55\textwidth}
-      \texttt{request\_rendezvous} \& \texttt{request\_red\_light} gated by 2PC:
+    \column{0.60\textwidth}
+      Used for complex coordination tasks (commit together or not at all):
       \begin{itemize}
-        \item \textbf{Phase 1}: proposer broadcasts candidate hold tiles
-        \item Each teammate scores them, then votes accept/reject based on its current desires
-        \item \textbf{Phase 2}: after a fixed window, unanimous accept $\to$ commit; any miss/reject $\to$ abort
+        \item \textbf{Phase 1 - Propose}: proposer broadcasts candidate hold tiles; each agent scores them
+        \item \textbf{Vote}: \emph{accept} if the hold outweighs current desires; \emph{reject} if current desires are better
+        \item \textbf{Phase 2 - Decide}: unanimous accept $\to$ commit (all inject); any miss or reject $\to$ abort
       \end{itemize}
-    \column{0.42\textwidth}
+    \column{0.38\textwidth}
       % TODO: populate media/redlight/ with frame images, then uncomment:
       % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/redlight/frame-}{0}{47}
       \begin{block}{}
@@ -72,12 +80,12 @@
 % ----- Cooperation: Context -------------------------
 \begin{frame}{Cooperation: Context}
   \begin{itemize}
-    \item Every $k$ seconds one agent opens a \emph{cooperation round}
+    \item Every $\Delta t$ seconds the LLM agent opens a \emph{cooperation round}
     \item Requests teammates' beliefs $\to$ builds a compact context:
       \begin{itemize}
-        \item \textbf{roster}: positions, payloads, sensed enemies
-        \item \textbf{geometry}: spawn/delivery clusters, separation, corridor flag
-        \item \textbf{performance}: avg score/round per strategy (sliding window)
+        \item \textbf{Roster}: positions, payloads, sensed enemies
+        \item \textbf{Map geometry}: spawn/delivery clusters, separation, corridor flag
+        \item \textbf{Performance}: avg score/round per strategy (sliding window)
       \end{itemize}
     \item From this context the LLM picks one shared strategy for the team
   \end{itemize}
@@ -96,22 +104,27 @@
 \begin{frame}{Cooperation: Roles}
   \begin{itemize}
     \item Each strategy assigns every agent a \emph{role}
-    \item A deterministic per-role FSM supersedes BDI deliberation
-    \item It emits only a filtered set of state-gated desires
+    \item A deterministic FSM per role supersedes BDI deliberation
+    \item The FSM's filtered desires enforce the role's behaviour 
+    \item Positioning are computed deterministically from map geometry
+    \item The approach cell is injected as a high-reward \texttt{REACH\_TILE} desire
   \end{itemize}
 \end{frame}
 
 % ----- Cooperation: Handpass -----------------------------------
 \begin{frame}{Cooperation: Handpass}
   \begin{columns}
-    \column{0.55\textwidth}
+    \column{0.60\textwidth}
+      Both strategies culminate in a \emph{handpass}:
       \begin{itemize}
-        \item Both strategies culminate in a \emph{handpass}
-        \item \texttt{ZONAL\_RELAY}: roles fixed, exchange loops indefinitely
-        \item \texttt{OPPORTUNISTIC}: roles fluid, through 2PC proposal
-        \item Admin directive adds a \emph{bonus}
+        \item \textbf{\texttt{ZONAL\_RELAY}}: the exchange loops indefinitely
+        \item \textbf{\texttt{OPPORTUNISTIC}}: the agent that acquires a parcel proposes a handpass via 2PC
+        \begin{itemize}
+            \item Receiver accepts only if the meeting tile is reachable and it has available carrying capacity.
+        \end{itemize}
+        \item Admin directive adds a reward bonus to the handpass desire 
       \end{itemize}
-    \column{0.42\textwidth}
+    \column{0.38\textwidth}
       % TODO: populate media/handpass/ with frame images, then uncomment:
       % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/handpass/frame-}{0}{47}
       \begin{block}{}
