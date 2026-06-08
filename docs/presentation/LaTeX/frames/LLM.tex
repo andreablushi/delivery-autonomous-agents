@@ -60,21 +60,12 @@
 
 % ----- Coordination: 2-Phase Commit -----------------------------------
 \begin{frame}{Coordination: 2-Phase Commit}
-  \begin{columns}
-    \column{0.60\textwidth}
-      Used for complex coordination tasks (commit together or not at all):
-      \begin{itemize}
-        \item \textbf{Phase 1 - Propose}: proposer broadcasts candidate hold tiles; each agent scores them
-        \item \textbf{Vote}: \emph{accept} if the hold outweighs current desires; \emph{reject} if current desires are better
-        \item \textbf{Phase 2 - Decide}: unanimous accept $\to$ commit (all inject); any miss or reject $\to$ abort
-      \end{itemize}
-    \column{0.38\textwidth}
-      % TODO: populate media/redlight/ with frame images, then uncomment:
-      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/redlight/frame-}{0}{47}
-      \begin{block}{}
-        \centering\textit{[traffic control]}
-      \end{block}
-  \end{columns}
+    Used for complex coordination tasks (commit together or not at all):
+    \begin{itemize}
+    \item \textbf{Phase 1 - Propose}: proposer broadcasts candidate hold tiles; each agent scores them
+    \item \textbf{Vote}: \emph{accept} if the hold outweighs current desires; \emph{reject} if current desires are better
+    \item \textbf{Phase 2 - Decide}: unanimous accept $\to$ commit (all inject); any miss or reject $\to$ abort
+    \end{itemize}
 \end{frame}
 
 % ----- Cooperation: Context -------------------------
@@ -125,10 +116,10 @@
         \item Admin directive adds a reward bonus to the handpass desire 
       \end{itemize}
     \column{0.38\textwidth}
-      % TODO: populate media/handpass/ with frame images, then uncomment:
-      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/handpass/frame-}{0}{47}
+      % TODO: populate media/cooperation/ with frame images, then uncomment:
+      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/cooperation/frame-}{0}{47}
       \begin{block}{}
-        \centering\textit{[handpass]}
+        \centering\textit{[cooperation]}
       \end{block}
   \end{columns}
 \end{frame}
