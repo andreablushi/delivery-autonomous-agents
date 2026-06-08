@@ -44,7 +44,7 @@
   \begin{itemize}
     \item \textbf{Beacons}: each agent broadcasts position at fixed interval
     \item Ensures up-to-date peer positions beyond sensing radius
-    \item Needed for scoring coordination desires
+    \item Needed for coordination when agents are outside each other's sensing radius
   \end{itemize}
 \end{frame}
 
@@ -120,7 +120,7 @@
         \item \textbf{\texttt{ZONAL\_RELAY}}: the exchange loops indefinitely
         \item \textbf{\texttt{OPPORTUNISTIC}}: the agent that acquires a parcel proposes a handpass via 2PC
         \begin{itemize}
-            \item Receiver accepts only if the meeting tile is reachable and it has available carrying capacity.
+            \item Receiver accepts only if the meeting tile is reachable
         \end{itemize}
         \item Admin directive adds a reward bonus to the handpass desire 
       \end{itemize}
