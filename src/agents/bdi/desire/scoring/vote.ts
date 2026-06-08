@@ -150,9 +150,7 @@ export function evaluateRedLightVote(
 /**
  * Evaluate a handpass proposal on behalf of a BDI agent (this agent will become the RECEIVER).
  *
- * Returns `true` (accept) iff:
- *   1. The meet zone is reachable (≥1 tile accessible from the agent's current position), AND
- *   2. The agent has spare carry capacity (it will need to collect the dropped parcels).
+ * Returns `true` (accept) iff the meet zone is reachable (≥1 tile accessible from the agent's current position).
  */
 export function evaluateHandpassVote(
     beliefs: Beliefs,
@@ -169,10 +167,7 @@ export function evaluateHandpassVote(
     if (!ctx) return false;
 
     const tiles = beliefs.map.allRendezvousTiles(ctx.me.lastPosition, meet_x, meet_y, config.coordination.opportunisticMeetRadius);
-    if (tiles.length === 0) return false;
-
-    const carryCapacity = beliefs.agents.getCarryCapacity() ?? Infinity;
-    return ctx.carriedCount < carryCapacity;
+    return tiles.length > 0;
 }
 
 /**

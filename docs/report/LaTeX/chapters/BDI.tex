@@ -130,11 +130,11 @@ The cluster weight $w$ quantifies the structural density of the target's surroun
 where $OST$ is the set of spawn tiles such that their Manhattan distance $\delta(x, y) \le R_{\text{obs}}$.
 
 The enemy heat $h$ actively steers the agent away from sectors currently crowded by competitors.
-It is accumulated from the history of tracked enemy observations $E$, combining spatial and temporal decay, and weighted by each enemy's track confidence $c_e$ (Eq.~\ref{eq:confidence}):
+It is accumulated from the history of tracked enemy observations $E$, combining spatial and temporal decay:
 \begin{equation*}
-  h = \sum_{e \in E} c_e \exp\left(-\frac{d_e^2}{2\sigma^2}\right) \exp\left(-\frac{\Delta t_e}{\tau_h}\right)
+  h = \sum_{e \in E} \exp\left(-\frac{d_e^2}{2\sigma^2}\right) \exp\left(-\frac{\Delta t_e}{\tau_h}\right)
 \end{equation*}
-where $d_e$ is the spatial distance to the past enemy observation, $\Delta t_e$ is the observation's age, $\sigma$ controls the spatial spread, $\tau_h$ is the temporal decay rate, and $c_e = \exp(-(t - t_{seen,e})/\tau_c)$ is the confidence in the enemy's last known position.
+where $d_e$ is the spatial distance to the past enemy observation, $\Delta t_e$ is the observation's age, $\sigma$ controls the spatial spread, and $\tau_h$ is the temporal decay rate.
 
 Finally, the score for an \texttt{Explore} desire is computed as:
 \begin{equation*}

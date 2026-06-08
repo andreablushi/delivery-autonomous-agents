@@ -126,10 +126,10 @@
     $OST$: spawn tiles within observation range; \quad $\delta(x, y)$: BFS distance from $x$ to $y$
   \end{block}
   \begin{block}{Enemy heat $h$}
-    \[ h = \sum_{e \in E} c_e
+    \[ h = \sum_{e \in E}
          \exp\!\left(-\frac{d_e^2}{2\sigma^2}\right)
          \exp\!\left(-\frac{\Delta t_e}{\tau_h}\right) \]
-    Spatial $\times$ temporal decay, weighted by enemy track confidence $c_e$
+    Spatial $\times$ temporal decay over tracked enemy observations
   \end{block}
 \end{frame}
 

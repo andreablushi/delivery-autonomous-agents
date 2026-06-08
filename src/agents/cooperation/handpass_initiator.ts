@@ -4,7 +4,7 @@ import { StrategyType, StrategyRole } from "../../models/game_strategy.js";
 import { PeerKind, type PeerInjectionKind } from "../../models/message_injection.js";
 import type { Logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
-import { computeHandoffGeometry } from "./roles/handoff_geometry.js";
+import { computeHandoffGeometry } from "./handoff_geometry.js";
 
 /**
  * Owned by every BDIAgent. When armed (by the coordinator), fires a handpass handshake
@@ -119,7 +119,7 @@ export class HandpassInitiator {
                 this.setGameStrategy({
                     strategy: StrategyType.Opportunistic,
                     role: StrategyRole.Passer,
-                    tiles: [geo.meetTile],
+                    meetTile: geo.meetTile,
                     approachTile: geo.carrierApproach,
                     maxDistance: config.handoff.zoneRadius,
                     partnerId,

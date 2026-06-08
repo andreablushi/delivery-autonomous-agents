@@ -230,14 +230,6 @@ export class AgentBeliefs {
     }
 
     /**
-     * Get the carry capacity from the player settings.
-     * @returns The carry capacity, or null if settings are not yet received.
-     */
-    getCarryCapacity(): number | null {
-        return this.playerSettings?.carry_capacity ?? null;
-    }
-
-    /**
      * Heat contribution at `pos` from a single enemy, computed from its observation history.
      * Each observation contributes exp(-d²/2σ²) * exp(-age/τ), combining spatial and temporal decay.
      * @param enemyId The ID of the enemy agent to compute heat for.
@@ -260,27 +252,15 @@ export class AgentBeliefs {
     }
 
     /**
-     * Get the confidence level of the belief about a specific enemy agent.
-     * Uses exponential time-decay (τ = confidenceHalfLifeMs) on the last observation timestamp.
-     * @param id Enemy agent ID
-     * @returns Confidence score in [0, 1], or undefined if the enemy is not tracked
-     */
-    getEnemyConfidence(id: string): number | undefined {
-        return this.enemies.getConfidence(id, config.beliefs.confidenceHalfLifeMs);
-    }
-
-    /**
      * Aggregate enemy heat at `pos` across all currently-tracked enemies.
-     * Each enemy's heat footprint is weighted by its track confidence so stale tracks
-     * contribute less pressure than freshly-observed enemies.
      * Used by the EXPLORE scorer to penalise spawn tiles near recent enemy positions.
      * @param pos The position at which to evaluate total enemy heat.
-     * @returns Sum of per-enemy (confidence-weighted) heat contributions at pos.
+     * @returns Sum of per-enemy heat contributions at pos.
      */
     getEnemyHeatAt(pos: Position): number {
         const now = Date.now();
         return this.enemies.getCurrentAll().reduce(
-            (sum, enemy) => sum + (this.getEnemyConfidence(enemy.id) ?? 0) * this.heatFromEnemy(enemy.id, pos, now),
+            (sum, enemy) => sum + this.heatFromEnemy(enemy.id, pos, now),
             0
         );
     }

@@ -2,15 +2,14 @@ import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { GeneratedDesires } from "../../../models/desires.js";
 import type { Logger } from "../../../utils/logger.js";
+import type { RoleFSM } from "./role_fsm.js";
 import { manhattanDistance } from "../../../utils/metrics.js";
-import { approachDesire } from "./handoff_geometry.js";
+import { approachDesire } from "./helpers/approach_desire.js";
 
 type PasserState = "TO_APPROACH" | "DROP_ENTER" | "LEAVE";
 
 /**
- * OPPORTUNISTIC/PASSER role FSM.
- *
- * Deterministic exchange: both agents navigate to distinct cells adjacent to the exchange
+ * Passer role FSM. Deterministic exchange: both agents navigate to distinct cells adjacent to the exchange
  * tile M, wait there, then the carrier executes a tight three-step maneuver:
  *
  *   TO_APPROACH — navigate to approachTile and wait until the receiver is also adjacent to M.
@@ -19,8 +18,8 @@ type PasserState = "TO_APPROACH" | "DROP_ENTER" | "LEAVE";
  *
  * Completes once back at the approach cell; autonomous desires resume.
  */
-export class PasserRole {
-    private state: PasserState = "TO_APPROACH";
+export class PasserRole implements RoleFSM<PasserState> {
+    state: PasserState = "TO_APPROACH";
     private completed = false;
 
     constructor(private readonly log: Logger) {}
@@ -40,9 +39,9 @@ export class PasserRole {
         if (!me) return;
         const myPos = beliefs.agents.getCurrentPosition();
         if (!myPos) return;
-        const M = strategy.tiles[0];
+        const M = strategy.meetTile;
         const approachTile = strategy.approachTile;
-        if (!M || !approachTile) {
+        if (!approachTile) {
             this.completed = true;
             this.log.debug("PASSER: completed (no geometry)");
             return;
@@ -52,6 +51,7 @@ export class PasserRole {
 
         switch (this.state) {
             case "TO_APPROACH": {
+                // Nothing to hand off — skip the exchange entirely.
                 if (carried.length === 0) {
                     this.completed = true;
                     this.log.debug("PASSER: TO_APPROACH → completed (nothing to carry)");
@@ -61,6 +61,7 @@ export class PasserRole {
                     .find(f => f.id === strategy.partnerId)?.lastPosition ?? null;
                 const atApproach = myPos.x === approachTile.x && myPos.y === approachTile.y;
                 const partnerReady = partnerPos !== null && manhattanDistance(partnerPos, M) === 1;
+                // Transition to DROP_ENTER once both agents are at their respective approach cells.
                 if (atApproach && partnerReady) {
                     this.state = "DROP_ENTER";
                     this.log.debug("PASSER: TO_APPROACH → DROP_ENTER (both at approach cells)");
@@ -68,6 +69,7 @@ export class PasserRole {
                 break;
             }
             case "DROP_ENTER": {
+                // Drop done — step back to vacate M for the receiver.
                 if (carried.length === 0) {
                     this.state = "LEAVE";
                     this.log.debug("PASSER: DROP_ENTER → LEAVE (drop done)");
@@ -75,6 +77,7 @@ export class PasserRole {
                 break;
             }
             case "LEAVE": {
+                // Back at the approach cell — handoff complete.
                 if (myPos.x === approachTile.x && myPos.y === approachTile.y) {
                     this.completed = true;
                     this.log.debug("PASSER: LEAVE → completed (back at approach cell)");
@@ -88,9 +91,9 @@ export class PasserRole {
         const desires: GeneratedDesires = new Map();
         const myPos = beliefs.agents.getCurrentPosition();
         if (!myPos) return desires;
-        const M = strategy.tiles[0];
+        const M = strategy.meetTile;
         const approachTile = strategy.approachTile;
-        if (!M || !approachTile) return desires;
+        if (!approachTile) return desires;
 
         switch (this.state) {
             case "TO_APPROACH":

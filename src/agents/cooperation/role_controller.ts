@@ -1,13 +1,14 @@
 import type { Beliefs } from "../bdi/belief/beliefs.js";
-import type { GameStrategy, } from "../../models/game_strategy.js";
+import type { GameStrategy } from "../../models/game_strategy.js";
 import type { GeneratedDesires } from "../../models/desires.js";
-import { StrategyRole } from "../../models/game_strategy.js";
+import { StrategyType, StrategyRole } from "../../models/game_strategy.js";
 import { createLogger } from "../../utils/logger.js";
 import { PickupRole } from "./roles/pickup_role.js";
 import { DeliverRole } from "./roles/deliver_role.js";
 import { PasserRole } from "./roles/passer_role.js";
 import { ReceiverRole } from "./roles/receiver_role.js";
 
+/** Controls the roles of agents in the team. */
 export class RoleController {
     private lastRole: string | null = null;
     private lastPartnerId: string | undefined = undefined;
@@ -46,34 +47,48 @@ export class RoleController {
     }
 
     tick(beliefs: Beliefs, strategy: GameStrategy): void {
-        if (strategy.role === StrategyRole.PickupAgent) {
-            this.pickup.tick(beliefs, strategy);
-        } else if (strategy.role === StrategyRole.DeliverAgent) {
-            this.deliver.tick(beliefs, strategy);
-        } else if (strategy.role === StrategyRole.Passer) {
-            this.passer.tick(beliefs, strategy);
-        } else if (strategy.role === StrategyRole.Receiver) {
-            this.receiver.tick(beliefs, strategy);
+        switch (strategy.strategy) {
+            case StrategyType.ZonalRelay:
+                if (strategy.role === StrategyRole.PickupAgent) this.pickup.tick(beliefs, strategy);
+                else this.deliver.tick(beliefs, strategy);
+                break;
+            case StrategyType.Opportunistic:
+                if (strategy.role === StrategyRole.Passer) this.passer.tick(beliefs, strategy);
+                else this.receiver.tick(beliefs, strategy);
+                break;
+            default: {
+                const _exhaustive: never = strategy;
+                break;
+            }
         }
     }
 
     buildDesires(beliefs: Beliefs, strategy: GameStrategy): GeneratedDesires {
-        if (strategy.role === StrategyRole.PickupAgent) {
-            return this.pickup.buildDesires(beliefs, strategy);
-        } else if (strategy.role === StrategyRole.DeliverAgent) {
-            return this.deliver.buildDesires(beliefs, strategy);
-        } else if (strategy.role === StrategyRole.Passer) {
-            return this.passer.buildDesires(beliefs, strategy);
-        } else if (strategy.role === StrategyRole.Receiver) {
-            return this.receiver.buildDesires(beliefs, strategy);
+        switch (strategy.strategy) {
+            case StrategyType.ZonalRelay:
+                if (strategy.role === StrategyRole.PickupAgent) return this.pickup.buildDesires(beliefs, strategy);
+                else return this.deliver.buildDesires(beliefs, strategy);
+            case StrategyType.Opportunistic:
+                if (strategy.role === StrategyRole.Passer) return this.passer.buildDesires(beliefs, strategy);
+                else return this.receiver.buildDesires(beliefs, strategy);
+            default: {
+                const _exhaustive: never = strategy;
+                return new Map();
+            }
         }
-        return new Map();
     }
 
     /** Returns true when the current role's FSM has reached its terminal state. */
     isComplete(strategy: GameStrategy): boolean {
-        if (strategy.role === StrategyRole.Passer) return this.passer.isComplete();
-        if (strategy.role === StrategyRole.Receiver) return this.receiver.isComplete();
-        return false;
+        switch (strategy.strategy) {
+            case StrategyType.ZonalRelay:    return false; // relay roles loop continuously
+            case StrategyType.Opportunistic:
+                if (strategy.role === StrategyRole.Passer) return this.passer.isComplete();
+                else return this.receiver.isComplete();
+            default: {
+                const _exhaustive: never = strategy;
+                return false;
+            }
+        }
     }
 }
