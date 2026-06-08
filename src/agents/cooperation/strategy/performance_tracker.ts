@@ -1,6 +1,6 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { BeliefsReport } from "../../../models/message_injection.js";
-import { TEAM_STRATEGIES, type TeamStrategy } from "../../../models/game_strategy.js";
+import { StrategyType } from "../../../models/game_strategy.js";
 import { config } from "../../../config.js";
 
 /**
@@ -8,12 +8,12 @@ import { config } from "../../../config.js";
  * Called once per cooperation round to sample performance and expose it to the LLM prompt.
  */
 export class PerformanceTracker {
-    private readonly recentGains = new Map<TeamStrategy, number[]>(TEAM_STRATEGIES.map(s => [s, []]));
-    private lastStrategy: TeamStrategy | null = null;
+    private readonly recentGains = new Map<StrategyType | "NONE", number[]>([...Object.values(StrategyType), "NONE"].map(s => [s, []] as [StrategyType | "NONE", number[]]));
+    private lastStrategy: StrategyType | "NONE" | null = null;
     private lastTeamScore: number | null = null;
 
     /** Record which strategy was just applied so the next sample can attribute the delta to it. */
-    markActive(strategy: TeamStrategy): void {
+    markActive(strategy: StrategyType | "NONE"): void {
         this.lastStrategy = strategy;
     }
 
@@ -38,7 +38,7 @@ export class PerformanceTracker {
     /** Format per-strategy stats for injection into the LLM cooperation prompt. */
     format(): string {
         const lines: string[] = [];
-        for (const strategy of TEAM_STRATEGIES) {
+        for (const strategy of [...Object.values(StrategyType), "NONE"] as const) {
             const gains = this.recentGains.get(strategy)!;
             if (gains.length === 0) {
                 lines.push(`${strategy}: no data yet`);

@@ -14,5 +14,4 @@ export type ParcelSettings = {
 export type PlayerSettings = {
     movement_duration: number;             // Duration of player movement actions
     observation_distance: number;          // Distance within which players can observe parcels (Manhattan)
-    carry_capacity: number;                // Maximum number of parcels a player can carry
 }

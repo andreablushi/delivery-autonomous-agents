@@ -2,8 +2,9 @@ import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { GeneratedDesires } from "../../../models/desires.js";
 import type { Logger } from "../../../utils/logger.js";
+import type { RoleFSM } from "./role_fsm.js";
 import { generateDeliverDesires } from "../../bdi/desire/desire_generator.js";
-import { approachDesire } from "./handoff_geometry.js";
+import { approachDesire } from "./helpers/approach_desire.js";
 
 type ReceiverState = "WAIT_DROP" | "COLLECT" | "DELIVER";
 
@@ -20,8 +21,8 @@ type ReceiverState = "WAIT_DROP" | "COLLECT" | "DELIVER";
  *
  * Completes once delivery is done.
  */
-export class ReceiverRole {
-    private state: ReceiverState = "WAIT_DROP";
+export class ReceiverRole implements RoleFSM<ReceiverState> {
+    state: ReceiverState = "WAIT_DROP";
     private done = false;
 
     constructor(private readonly log: Logger) {}
@@ -41,9 +42,9 @@ export class ReceiverRole {
         if (!me) return;
         const myPos = beliefs.agents.getCurrentPosition();
         if (!myPos) return;
-        const M = strategy.tiles[0];
+        const M = strategy.meetTile;
         const approachTile = strategy.approachTile;
-        if (!M || !approachTile) {
+        if (!approachTile) {
             this.done = true;
             this.log.debug("RECEIVER: done (no geometry)");
             return;
@@ -56,9 +57,7 @@ export class ReceiverRole {
 
         switch (this.state) {
             case "WAIT_DROP": {
-                // Trigger as soon as sensing reports the parcel at M. The passer enters LEAVE
-                // immediately after dropping, so it won't linger; any brief overlap is handled
-                // by the executor's move-fail/retry.
+                // Transition to COLLECT once a parcel appears at M; the passer steps off right after dropping.
                 if (parcelAtM()) {
                     this.state = "COLLECT";
                     this.log.debug("RECEIVER: WAIT_DROP → COLLECT (parcel at M)");
@@ -66,17 +65,19 @@ export class ReceiverRole {
                 break;
             }
             case "COLLECT": {
+                // Parcel collected and gone from M — proceed to deliver.
                 if (carried.length > 0 && !parcelAtM()) {
                     this.state = "DELIVER";
                     this.log.debug(`RECEIVER: COLLECT → DELIVER (carrying=${carried.length})`);
+                // Parcel vanished before pickup — wait for the passer to retry.
                 } else if (carried.length === 0 && !parcelAtM()) {
-                    // Parcel disappeared before pickup — wait for the passer to try again.
                     this.state = "WAIT_DROP";
                     this.log.debug("RECEIVER: COLLECT → WAIT_DROP (parcel gone, nothing collected)");
                 }
                 break;
             }
             case "DELIVER": {
+                // Delivery complete — FSM done.
                 if (carried.length === 0) {
                     this.done = true;
                     this.log.debug("RECEIVER: DELIVER → done");
@@ -90,16 +91,16 @@ export class ReceiverRole {
         const desires: GeneratedDesires = new Map();
         const myPos = beliefs.agents.getCurrentPosition();
         if (!myPos) return desires;
-        const M = strategy.tiles[0];
+        const M = strategy.meetTile;
         const approachTile = strategy.approachTile;
-        if (!M || !approachTile) return desires;
+        if (!approachTile) return desires;
 
         switch (this.state) {
             case "WAIT_DROP":
                 desires.set("REACH_TILE", [approachDesire(approachTile)]);
                 break;
             case "COLLECT":
-                // Step onto M and execute the pickup terminal step.
+                // Step onto M and pick up.
                 desires.set("REACH_PARCEL", [{ type: "REACH_PARCEL" as const, target: M }]);
                 break;
             case "DELIVER": {

@@ -1,7 +1,6 @@
-import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { Position } from "../../../models/position.js";
-import type { ReachTileDesire } from "../../../models/desires.js";
-import { posKey } from "../../../utils/metrics.js";
+import type { Beliefs } from "../bdi/belief/beliefs.js";
+import type { Position } from "../../models/position.js";
+import { posKey } from "../../utils/metrics.js";
 
 /** Exchange tile plus distinct adjacent wait cells for each side of the handoff. */
 export type HandoffGeometry = {
@@ -57,15 +56,4 @@ export function findApproachPair(
     const receiverApproach = receiverNeighbors.find(t => posKey(t) !== carrierKey);
     if (!receiverApproach) return null;
     return { carrierApproach, receiverApproach };
-}
-
-/** Single-tile REACH_TILE desire for navigating to an approach cell and waiting there. */
-export function approachDesire(tile: Position): ReachTileDesire {
-    return {
-        type: "REACH_TILE",
-        target: tile,
-        sourceId: "role",
-        reward: 100,
-        expiresAt: Infinity,
-    };
 }

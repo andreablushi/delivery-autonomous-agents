@@ -103,7 +103,6 @@ export class Beliefs {
         this.agents.setSettings({
             movement_duration: config.GAME.player.movement_duration,
             observation_distance: config.GAME.player.observation_distance,
-            carry_capacity: config.GAME.player.capacity,
         });
         this.parcels.setSettings({
             parcel_spawn_interval: parseTimeInterval(config.GAME.parcels.generation_event),

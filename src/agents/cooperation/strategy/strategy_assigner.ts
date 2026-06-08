@@ -5,11 +5,10 @@ import type { InjectedDesire } from "../../../models/desires.js";
 import type { TeamGeometry } from "../geometry.js";
 import type { Position } from "../../../models/position.js";
 import { PeerKind } from "../../../models/message_injection.js";
-import { StrategyType, StrategyRole, NO_STRATEGY, type TeamStrategy, type GameStrategy } from "../../../models/game_strategy.js";
+import { StrategyType, StrategyRole, type GameStrategy } from "../../../models/game_strategy.js";
 import { bfsDistancesFrom, posKey, manhattanDistance } from "../../../utils/metrics.js";
 import { MapBeliefs } from "../../bdi/belief/modules/map_beliefs.js";
-import { buildHolds } from "../holds.js";
-import { findApproachPair } from "../roles/handoff_geometry.js";
+import { findApproachPair } from "../handoff_geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
 
@@ -38,12 +37,12 @@ export class TeamStrategyAssigner {
         this.log = createLogger("coordination");
     }
 
-    async applyTeamStrategy(strategy: TeamStrategy, ctx: { geometry: TeamGeometry; reports: Map<string, BeliefsReport>; bonus?: number }): Promise<string> {
-        if (strategy === NO_STRATEGY) {
+    async applyTeamStrategy(strategy: StrategyType | "NONE", ctx: { geometry: TeamGeometry; reports: Map<string, BeliefsReport>; bonus?: number }): Promise<string> {
+        if (strategy === "NONE") {
             this.disarmHandpass();
             await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: false });
             this.log.debug("applyTeamStrategy: NONE — strategies will lapse on TTL");
-            return JSON.stringify({ ok: true, strategy: NO_STRATEGY });
+            return JSON.stringify({ ok: true, strategy: "NONE" });
         }
 
         if (strategy === StrategyType.Opportunistic) {
@@ -236,12 +235,12 @@ export class TeamStrategyAssigner {
         this.setGameStrategy({
             strategy: args.strategy,
             role: args.role,
-            tiles: [center],
+            meetTile: center,
             approachTile,
             maxDistance: args.max_distance,
             bonus: args.bonus,
             partnerId: args.partner_id,
             expiresAt,
-        });
+        } as GameStrategy);
     }
 }

@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
 import type { InjectedDesire } from "../../../models/desires.js";
 import type { GameStrategy } from "../../../models/game_strategy.js";
-import { TEAM_STRATEGIES, NO_STRATEGY, type TeamStrategy } from "../../../models/game_strategy.js";
+import { StrategyType } from "../../../models/game_strategy.js";
 import type { Communication } from "../../communication/communication.js";
 import type { RuleStore } from "../../bdi/desire/rule_store.js";
 import { getTools, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
@@ -185,7 +185,7 @@ export class LLMClient {
         beliefs: Readonly<Beliefs>,
         missionNote = "",
         performance = "",
-    ): Promise<{ strategy: TeamStrategy; bonus?: number }> {
+    ): Promise<{ strategy: StrategyType | "NONE"; bonus?: number }> {
         const { system, user } = buildCooperationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote, performance);
         this.log.debug("Running cooperation pass");
 
@@ -202,7 +202,7 @@ export class LLMClient {
         this.promptLog.debug(`Cooperation response: ${text}`);
 
         // Extract the first {...} block from the response and parse the strategy.
-        let strategy: TeamStrategy = NO_STRATEGY;
+        let strategy: StrategyType | "NONE" = "NONE";
         let bonus: number | undefined;
 
         const match = text.match(/\{[\s\S]*?\}/);
@@ -210,8 +210,8 @@ export class LLMClient {
             try {
                 const obj = JSON.parse(match[0]) as Record<string, unknown>;
                 const s = obj.strategy;
-                if (typeof s === "string" && (TEAM_STRATEGIES as readonly string[]).includes(s)) {
-                    strategy = s as TeamStrategy;
+                if (typeof s === "string" && ([...Object.values(StrategyType), "NONE"] as readonly string[]).includes(s)) {
+                    strategy = s as StrategyType | "NONE";
                 }
                 if (typeof obj.bonus === "number") bonus = Math.round(obj.bonus);
                 const rationale = typeof obj.rationale === "string" ? obj.rationale.trim() : "";

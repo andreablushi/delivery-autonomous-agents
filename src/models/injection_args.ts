@@ -1,4 +1,4 @@
-import { StrategyType, StrategyRole } from "./game_strategy.js";
+import { StrategyType, StrategyRole, ROLES_BY_STRATEGY } from "./game_strategy.js";
 import { SCORING_AXIS, type ScoringAxis } from "./rules.js";
 
 /** Coerce string-encoded numbers to actual numbers; leave all other values untouched. */
@@ -282,6 +282,9 @@ export function parseAssignStrategyArgs(json: unknown): AssignStrategyArgs | { e
         return { error: `strategy must be one of: ${[...STRATEGY_TYPES].join(", ")}` };
     if (typeof obj.role !== "string" || !STRATEGY_ROLES.has(obj.role))
         return { error: `role must be one of: ${[...STRATEGY_ROLES].join(", ")}` };
+    const allowedRoles = ROLES_BY_STRATEGY[obj.strategy as StrategyType] as readonly StrategyRole[];
+    if (!allowedRoles.includes(obj.role as StrategyRole))
+        return { error: `role ${obj.role} is not valid for strategy ${obj.strategy}; allowed: ${allowedRoles.join(", ")}` };
 
     const tile_x       = coerceNum(obj.tile_x);
     const tile_y       = coerceNum(obj.tile_y);

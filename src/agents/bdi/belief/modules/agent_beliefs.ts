@@ -230,14 +230,6 @@ export class AgentBeliefs {
     }
 
     /**
-     * Get the carry capacity from the player settings.
-     * @returns The carry capacity, or null if settings are not yet received.
-     */
-    getCarryCapacity(): number | null {
-        return this.playerSettings?.carry_capacity ?? null;
-    }
-
-    /**
      * Heat contribution at `pos` from a single enemy, computed from its observation history.
      * Each observation contributes exp(-d²/2σ²) * exp(-age/τ), combining spatial and temporal decay.
      * @param enemyId The ID of the enemy agent to compute heat for.

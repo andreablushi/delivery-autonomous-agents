@@ -61,13 +61,13 @@ export function applyInjection(
             setGameStrategy({
                 strategy: p.strategy,
                 role: p.role,
-                tiles: [{ x: p.tile_x, y: p.tile_y }],
+                meetTile: { x: p.tile_x, y: p.tile_y },
                 approachTile,
                 maxDistance: p.max_distance,
                 bonus: p.bonus,
                 partnerId: p.partner_id,
                 expiresAt: Date.now() + p.ttl_seconds * 1_000,
-            });
+            } as GameStrategy);
             // The RoleController in Intentions translates the strategy into gated desires each cycle.
             return { ok: true };
         }
@@ -206,7 +206,7 @@ export function applyInjection(
             setGameStrategy({
                 strategy: StrategyType.Opportunistic,
                 role: StrategyRole.Receiver,
-                tiles: [{ x: p.meet_x, y: p.meet_y }],
+                meetTile: { x: p.meet_x, y: p.meet_y },
                 approachTile,
                 maxDistance: config.handoff.zoneRadius,
                 partnerId: sourceId,
