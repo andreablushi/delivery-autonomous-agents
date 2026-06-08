@@ -5,14 +5,6 @@ export function manhattanDistance(a: Position, b: Position): number {
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-/** Given the current position and a target position, computes the direction of next step. */
-export function posToDirection(from: Position, to: Position): string {
-    if (to.x > from.x) return "right";
-    if (to.x < from.x) return "left";
-    if (to.y > from.y) return "up";
-    return "down";
-}
-
 /** Stable string key for a grid position, suitable for Map/Set lookups. */
 export function posKey(pos: Position): string {
     return `${pos.x},${pos.y}`;
@@ -29,6 +21,20 @@ export const NEIGHBOURS: Position[] = [
     { x: -1, y: 0 },
     { x: 1, y: 0 },
 ];
+
+/**
+ * Return the candidate from `candidates` that has the smallest Manhattan distance to `from`.
+ * Returns `undefined` when `candidates` is empty.
+ */
+export function nearestByManhattan<T extends { x: number; y: number }>(
+    from: { x: number; y: number },
+    candidates: T[],
+): T | undefined {
+    if (candidates.length === 0) return undefined;
+    return candidates.reduce((best, c) =>
+        manhattanDistance(from, c) < manhattanDistance(from, best) ? c : best
+    );
+}
 
 /**
  * BFS from `source` using the given walkability predicate (walls-only or full).

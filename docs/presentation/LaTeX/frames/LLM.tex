@@ -1,0 +1,125 @@
+\section{LLM Agent Layer}
+
+% ----- LLM Layer Overview --------------------------------------
+\begin{frame}{LLM Layer Overview}
+  \begin{itemize}
+    \item Thin wrapper around the BDI agent
+    \item Listens for mission-controller chat messages
+    \item Three command categories: \textbf{goals}, \textbf{rules}, \textbf{coordination}
+  \end{itemize}
+\end{frame}
+
+% ----- Goal Injection ------------------------------------------
+\begin{frame}{Goal Injection}
+  \begin{itemize}
+    \item \textbf{go-to} $\to$ \texttt{REACH\_TILE} desire (configurable reward + TTL)
+    \item \textbf{deliver-at} $\to$ \texttt{DELIVER\_PARCEL} at specific tile
+    \item Both compete with parcel goals via standard scoring
+    \item Persist and re-evaluated until executed or TTL expires
+  \end{itemize}
+\end{frame}
+
+% ----- Rule Injection ------------------------------------------
+\begin{frame}{Rule Injection}
+  \begin{itemize}
+    \item \texttt{RuleStore}: condition + multiplier $m$ + offset $a$
+    \item Applied each cycle: scales/shifts baseline desire scores
+    \item Example: incentivise collecting $n$ parcels before delivery
+    \item Stack rule automatically elevates Explore to priority~1
+  \end{itemize}
+\end{frame}
+
+% ----- Traversal Penalties -------------------------------------
+\begin{frame}{Traversal Penalties}
+  \begin{itemize}
+    \item Adds additive cost to A* edge leading onto a tile
+    \item Agent prefers detour if detour $<$ penalty length
+    \item Tile not forbidden, used as last resort
+    \item Operates at the planning layer, not the deliberation layer
+  \end{itemize}
+\end{frame}
+
+% ----- Coordination: Position Sharing --------------------------------------
+\begin{frame}{Coordination: Position Sharing}
+  \begin{itemize}
+    \item \textbf{Beacons}: each agent broadcasts position at fixed interval
+    \item Ensures up-to-date peer positions beyond sensing radius
+    \item Needed for coordination when agents are outside each other's sensing radius
+  \end{itemize}
+\end{frame}
+
+% ----- Coordination: Peer Injection --------------------------------------
+\begin{frame}{Coordination: Peer Injection}
+    \begin{itemize}
+        \item Only the LLM-driven agent is connected to the mission controller
+        \item \textbf{Peer-injection}: the LLM applies the command locally, then repackages it and broadcasts it
+        \item Applies to any \emph{stateless} command
+        \item No acknowledgement needed: fire-and-forget
+    \end{itemize}
+\end{frame}
+
+% ----- Coordination: 2-Phase Commit -----------------------------------
+\begin{frame}{Coordination: 2-Phase Commit}
+    Used for complex coordination tasks (commit together or not at all):
+    \begin{itemize}
+    \item \textbf{Phase 1 - Propose}: proposer broadcasts candidate hold tiles; each agent scores them
+    \item \textbf{Vote}: \emph{accept} if the hold outweighs current desires; \emph{reject} if current desires are better
+    \item \textbf{Phase 2 - Decide}: unanimous accept $\to$ commit (all inject); any miss or reject $\to$ abort
+    \end{itemize}
+\end{frame}
+
+% ----- Cooperation: Context -------------------------
+\begin{frame}{Cooperation: Context}
+  \begin{itemize}
+    \item Every $\Delta t$ seconds the LLM agent opens a \emph{cooperation round}
+    \item Requests teammates' beliefs $\to$ builds a compact context:
+      \begin{itemize}
+        \item \textbf{Roster}: positions, payloads, sensed enemies
+        \item \textbf{Map geometry}: spawn/delivery clusters, separation, corridor flag
+        \item \textbf{Performance}: avg score/round per strategy (sliding window)
+      \end{itemize}
+    \item From this context the LLM picks one shared strategy for the team
+  \end{itemize}
+\end{frame}
+
+% ----- Cooperation: Strategies ---------------------------------
+\begin{frame}{Cooperation: Strategies}
+  \begin{itemize}
+    \item \textbf{\texttt{ZONAL\_RELAY}}: one agent sweeps the spawn region and drops at a fixed midpoint; the other ferries parcels to delivery
+    \item \textbf{\texttt{OPPORTUNISTIC}}: agents forage independently and hand off parcels dynamically on pickup
+    \item \textbf{\texttt{NONE}}: fully autonomous baseline
+  \end{itemize}
+\end{frame}
+
+% ----- Cooperation: Roles --------------------------------------
+\begin{frame}{Cooperation: Roles}
+  \begin{itemize}
+    \item Each strategy assigns every agent a \emph{role}
+    \item A deterministic FSM per role supersedes BDI deliberation
+    \item The FSM's filtered desires enforce the role's behaviour 
+    \item Positioning are computed deterministically from map geometry
+    \item The approach cell is injected as a high-reward \texttt{REACH\_TILE} desire
+  \end{itemize}
+\end{frame}
+
+% ----- Cooperation: Handpass -----------------------------------
+\begin{frame}{Cooperation: Handpass}
+  \begin{columns}
+    \column{0.60\textwidth}
+      Both strategies culminate in a \emph{handpass}:
+      \begin{itemize}
+        \item \textbf{\texttt{ZONAL\_RELAY}}: the exchange loops indefinitely
+        \item \textbf{\texttt{OPPORTUNISTIC}}: the agent that acquires a parcel proposes a handpass via 2PC
+        \begin{itemize}
+            \item Receiver accepts only if the meeting tile is reachable
+        \end{itemize}
+        \item Admin directive adds a reward bonus to the handpass desire 
+      \end{itemize}
+    \column{0.38\textwidth}
+      % TODO: populate media/cooperation/ with frame images, then uncomment:
+      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/cooperation/frame-}{0}{47}
+      \begin{block}{}
+        \centering\textit{[cooperation]}
+      \end{block}
+  \end{columns}
+\end{frame}

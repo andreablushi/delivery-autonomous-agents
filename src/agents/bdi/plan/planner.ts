@@ -1,7 +1,7 @@
 import { AStarPlanner, TERMINAL_STEP } from "./astar_planner.js";
 import { PddlPlanner } from "./pddl_planner.js";
 import { Intentions } from "../intention/intentions.js";
-import { detectCrateBlock, findCrateSegment } from "../belief/utils/crate_block.js";
+import { detectCrateBlock, findCrateSegment } from "./utils/crate_block.js";
 import { stepsTo } from "./navigation/a_star.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Position } from "../../../models/position.js";
@@ -100,8 +100,9 @@ export class Planner {
         for (let head = this.intentionManager.getIntentionHead(); head; head = this.intentionManager.getIntentionHead()) {
             const desire = head.desire;
             // Already at target: keep the head (don't drop) and return null so the executor idles
-            // until the hold expires or is cancelled via request_resume.
-            if (desire.type === "HOLD_TILE" && from.x === desire.target.x && from.y === desire.target.y) {
+            // until the hold expires or is cancelled via request_resume / request_green_light.
+            if (desire.type === "HOLD_TILE"
+                && from.x === desire.target.x && from.y === desire.target.y) {
                 return null;
             }
 

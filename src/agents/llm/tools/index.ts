@@ -10,7 +10,7 @@ import * as requestGreenLight from "./handlers/request_green_light.js";
 import * as reply from "./handlers/reply.js";
 import * as calculate from "./handlers/calculate.js";
 import * as assignGoto from "./handlers/assign_goto.js";
-import * as requestTeamStatus from "./handlers/request_team_status.js";
+import * as assignStrategy from "./handlers/assign_strategy.js";
 
 export type { ToolContext };
 
@@ -30,10 +30,13 @@ const modules: Record<string, ToolModule> = {
     reply,
     calculate,
     assign_goto: assignGoto,
-    request_team_status: requestTeamStatus,
+    assign_strategy: assignStrategy,
 };
 
-export const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = Object.values(modules).map(m => m.definition);
+/** Returns the tool definitions available in the given context. */
+export function getTools(_ctx: ToolContext): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    return Object.values(modules).map(m => m.definition);
+}
 
 export const FOLLOWUP_TOOLS = new Set(["calculate"]);
 

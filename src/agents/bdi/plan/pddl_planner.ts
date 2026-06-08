@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { Beliefs } from "../belief/beliefs.js";
-import type { NavigationDesire } from "../../../models/desires.js";
+import type { DesireType } from "../../../models/desires.js";
 import type { Plan, PlanStep, CrateSegment } from "../../../models/plan.js";
 import type { Position } from "../../../models/position.js";
 import { buildProblem } from "./pddl/problem_builder.js";
@@ -50,7 +50,7 @@ export class PddlPlanner {
      * @param crateIds IDs of crates detected as blocking the direct path (used for logging only).
      * @returns A complete Plan, or null if the solver returns no valid solution.
      */
-    async plan(from: Position, intention: NavigationDesire, crateIds: string[]): Promise<Plan | null> {
+    async plan(from: Position, intention: DesireType, crateIds: string[]): Promise<Plan | null> {
         this.log.debug(`Planning for ${intention.type} via ${crateIds.length} crate(s): [${crateIds.join(", ")}]`);
 
 

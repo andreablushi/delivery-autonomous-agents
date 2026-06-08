@@ -1,13 +1,13 @@
 import type { CollisionDecision, Plan } from "../../../../models/plan.js";
 import type { Position } from "../../../../models/position.js";
-import type { NavigationDesire } from "../../../../models/desires.js";
+import type { DesireType } from "../../../../models/desires.js";
 import type { Beliefs } from "../../belief/beliefs.js";
 import { CollisionTimer } from "./collision_timer.js";
 import { config } from "../../../../config.js";
 
 type CollisionPlanner = (
     from: Position,
-    intention: NavigationDesire,
+    intention: DesireType,
     blockedTile?: Position | null,
 ) => Plan | null;
 

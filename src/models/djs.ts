@@ -1,3 +1,4 @@
+/** Defines the interface for the game world objects, as received by the server */
 import { TileType } from "./tile_type.js";
 import { Position } from "./position.js";
 
@@ -91,10 +92,18 @@ export type IOInfo = {
 }
 
 export type IOLogMeta = {
-    src: 'server' | 'client';  // Origin of the log message
+    src: 'server' | 'client';   // Origin of the log message
     ms: number;                 // Timestamp of the log event in milliseconds
     frame: number;              // Game frame at which the log was emitted
     socket: string;             // Socket ID associated with the log source
     id: string;                 // Agent ID associated with the log source
     name: string;               // Agent name associated with the log source
+}
+
+/** Arguments to the `msg` socket event. The server only provides id and name — team info is
+ *  absent from the event payload and must come from the message content (e.g. a position beacon). */
+export type IOMessage = {
+    senderId: string;    // Socket ID of the sender
+    senderName: string;  // Display name of the sender
+    content: unknown;    // Message payload (opaque; use tryDecode for peer injection messages)
 }

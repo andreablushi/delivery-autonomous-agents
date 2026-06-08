@@ -44,6 +44,6 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const parsed = parseArgs(rawArgs);
     if ("error" in parsed) return JSON.stringify({ error: parsed.error });
-    ctx.messenger.say(ctx.sourceId, parsed.text).catch(() => {});
+    ctx.comm.sayText(ctx.sourceId, parsed.text).catch(() => {});
     return JSON.stringify({ ok: true });
 }

@@ -2,11 +2,11 @@ import { stepsTo } from "./navigation/a_star.js";
 import { CollisionManager } from "./collision/collision_manager.js";
 import type { Beliefs } from "../belief/beliefs.js";
 import type { Position } from "../../../models/position.js";
-import type { NavigationDesire } from "../../../models/desires.js";
+import type { DesireType } from "../../../models/desires.js";
 import type { Plan, PlanStep } from "../../../models/plan.js";
 
 /** Terminal steps appended to the path for desires that require a game action on arrival. */
-export const TERMINAL_STEP: Partial<Record<NavigationDesire["type"], PlanStep>> = {
+export const TERMINAL_STEP: Partial<Record<DesireType["type"], PlanStep>> = {
     REACH_PARCEL: { kind: "pickup" },
     DELIVER_PARCEL: { kind: "putdown" },
 };
@@ -32,7 +32,7 @@ export class AStarPlanner {
      * @param blockedTile An extra tile to avoid during this search, or null.
      * @returns A Plan, or null if no valid path exists.
      */
-    plan(from: Position, intention: NavigationDesire, blockedTile: Position | null = null): Plan | null {
+    plan(from: Position, intention: DesireType, blockedTile: Position | null = null): Plan | null {
         const steps = stepsTo(this.beliefs, from, intention.target, blockedTile);
         if (!steps) return null;
 
@@ -53,7 +53,14 @@ export class AStarPlanner {
         if (step.kind !== "move") return step;
 
         const walkable = (a: Position, b: Position) => this.beliefs.map.isWalkable(a, b);
-        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) return step;
+        if (!this.beliefs.agents.isNextBlockedByAgents(step.to, walkable)) {
+            // We outrank this friend, so isNextBlockedByAgents waved us through — but it is
+            // physically on our next tile. Wait for it to vacate instead of ramming the tile
+            // (which would fail and escalate to mark-blocked + replan). Keeps our path; the
+            // lower-id friend is the one that yields and replans around.
+            if (this.beliefs.agents.isTileHeldByOutrankedFriend(step.to)) return "wait";
+            return step;
+        }
 
         if (this.collision.tryDetour(plan, currentPosition, step.to)) {
             return plan.steps[plan.cursor] ?? null;

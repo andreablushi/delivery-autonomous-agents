@@ -1,7 +1,7 @@
 import type { Position } from "../../../models/position.js";
 import type { Parcel } from "../../../models/parcel.js";
 import type { Beliefs } from "../belief/beliefs.js";
-import type { RuleStore } from "../belief/rule_store.js";
+import type { RuleStore } from "../desire/rule_store.js";
 import type { Planner } from "../plan/planner.js";
 import type { Intentions } from "../intention/intentions.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
@@ -24,6 +24,8 @@ export class Executor {
         private readonly planner: Planner,
         private readonly ruleStore: RuleStore,
         agentId?: string,
+        /** Invoked after a successful pickup — used to initiate the cooperation handshake. */
+        private readonly onPickup?: () => void,
     ) {
         this.log = createLogger("execute", agentId);
     }
@@ -126,6 +128,7 @@ export class Executor {
 
         if (succeeded) {
             this.log.debug("Step succeeded.");
+            if (step.kind === "pickup") this.onPickup?.();
             this.planner.advance();
             // Eagerly rebuild desires and replan so position-sensitive preemptions
             this.intentions.update(this.beliefs, this.ruleStore);

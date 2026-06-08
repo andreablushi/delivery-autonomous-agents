@@ -1,0 +1,72 @@
+\section{PDDL Crate Navigation}
+% ----- When A* Fails ---------------------------------------------
+\begin{frame}{When A* Fails}
+    \begin{itemize}
+        \item A* fails: no path that avoids crates
+        \item Second A* ignoring crates finds a ``ghost'' path
+        \item Crates intersecting that path are part of the ``PDDL`` problem instance
+    \end{itemize}
+\end{frame}
+
+% ----- PDDL  -------------------------------------------
+\begin{frame}{PDDL}
+  \begin{itemize}
+    \item Cluster detected $\to$ PDDL problem built from current beliefs
+    \item Solver finds \texttt{move} + \texttt{push} sequence to reach goal
+    \item Result translated back to agent's action plan
+  \end{itemize}
+\end{frame}
+
+% ----- The PDDL Domain -----------------------------------------
+\begin{frame}{The PDDL Domain}
+  \begin{itemize}
+    \item STRIPS: two object types - \texttt{tile} and \texttt{crate}
+    \item 4 directional \textbf{move} actions (step into crate-free tile)
+    \item 4 directional \textbf{push} actions:
+    \begin{itemize}
+      \item Agent adjacent on opposite side of push direction
+      \item Destination must be a valid, crate-free tile
+    \end{itemize}
+    \item Push relocates crate; agent steps onto its former tile
+  \end{itemize}
+\end{frame}
+
+% ----- Performance Bottlenecks ----------------------------------
+\begin{frame}{Performance Bottlenecks}
+  \begin{itemize}
+    \item \textbf{Real-Time Constraints:} The initial PDDL solver integration was too slow to meet the game's strict timing demands.
+    \item \textbf{Identified Issues \& Fixes:}
+    \begin{itemize}
+      \item \emph{API Overhead:} Remote solver calls introduced heavy latency. \textbf{Fix:} Migrated to a local solver instance.
+      \item \emph{Redundant Computation:} Identical crate configurations were being solved repeatedly, but implementing a standard cache was non-trivial.
+    \end{itemize}
+    \item \textbf{The Pivot:} Rather than brute-forcing a complex caching mechanism, we restated the problem to naturally maximize cache hits.
+  \end{itemize}
+\end{frame}
+
+% ----- Smart Fix -----------------------------------------------
+\begin{frame}{Optimization: Problem Restatement}
+  \begin{block}{Three-Phase Journey Segmentation}
+    \begin{enumerate}
+      \item \textbf{Approach:} A* pathfinding from the current position to the cluster \emph{entry}.
+      \item \textbf{Manipulation:} PDDL execution solely through the crate cluster (entry $\to$ exit).
+      \item \textbf{Completion:} A* pathfinding from the cluster \emph{exit} to the final goal.
+    \end{enumerate}
+  \end{block}
+\end{frame}
+
+% ----- Smart Fix (Result) --------------------------------------
+\begin{frame}{Optimization: Problem Restatement}
+  \begin{columns}
+    \column{0.4\textwidth}
+      \begin{itemize}
+        \item \textbf{The Result:} The PDDL problem is now strictly anchored to the cluster entry tile rather than absolute map coordinates.
+        \item \textbf{Simplified Cache Key:} $\langle \text{entry},\, \text{exit},\, \{\text{crate positions}\} \rangle$.
+      \end{itemize}
+    \column{0.55\textwidth}
+        %\animategraphics[autoplay,loop,width=\linewidth]{12}{../../media/PDDL/frame-}{1}{20}
+        \begin{block}{}
+            \centering\textit{[PDDL]}
+        \end{block}
+  \end{columns}
+\end{frame}

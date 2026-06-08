@@ -1,45 +1,32 @@
-import type { IOClockEvent, IOConfig } from "../../../models/djs.js";
-import type { GameSettings } from "../../../models/config.js";
-import type { BeliefsReport } from "../../../models/team.js";
-import { AgentBeliefs } from "./agent_beliefs.js";
-import { MapBeliefs } from "./map_beliefs.js";
-import { ParcelBeliefs } from "./parcel_beliefs.js";
+import type { IOConfig } from "../../../models/djs.js";
+import { parseTimeInterval } from "../../../utils/time.js";
+import type { GameSettings } from "../../../models/game_configs.js";
+import type { BeliefsReport } from "../../../models/message_injection.js";
+import { AgentBeliefs } from "./modules/agent_beliefs.js";
+import { MapBeliefs } from "./modules/map_beliefs.js";
+import { ParcelBeliefs } from "./modules/parcel_beliefs.js";
+import { CrateBeliefs } from "./modules/crate_beliefs.js";
 import { TILE_TYPE } from "../../../models/tile_type.js";
-import { manhattanDistance } from "../../../utils/metrics.js";
+import { nearestByManhattan } from "../../../utils/metrics.js";
 import { config as appConfig } from "../../../config.js";
 
-/**
- * Converts an IOClockEvent string to milliseconds.
- * Valid values: 'frame' | '1s' | '2s' | '5s' | '10s' | 'infinite'
- * @param event The clock event string from the config
- * @returns The corresponding time interval in milliseconds
- * @throws Error if the event string is not recognized
- */
-function parseTimeInterval(event: IOClockEvent): number {
-    if (event === "infinite") return Number.POSITIVE_INFINITY;
-    if (event === "frame") return 0;
-    const match = event.match(/^(\d+)s$/);
-    if (!match){
-        console.warn(`Unrecognized time interval format: "${event}". Defaulting to 1 second.`);
-        return 1_000; // Default to 1 second if unrecognized format
-    } 
-    return Number(match[1]) * 1_000;
-}
 
-/**
- * The Beliefs class serves as the central repository for all beliefs held by the BDI agent
- */
+/** Central repository for all beliefs held by the BDI agent */
 export class Beliefs {
     // Belief sub-systems
-    readonly agents  = new AgentBeliefs();   // Tracks me, friends, and enemies
-    readonly map: MapBeliefs;                // Tracks map layout and crates
-    readonly parcels = new ParcelBeliefs();  // Tracks parcels and their statuses
+    readonly agents: AgentBeliefs;      // Tracks me, friends, and enemies
+    readonly map: MapBeliefs;           // Tracks static map layout and tile metadata
+    readonly crates: CrateBeliefs;      // Tracks dynamic crate positions
+    readonly parcels: ParcelBeliefs;    // Tracks parcels and their statuses
 
     // Centralized game settings distributed to sub-systems on arrival
     settings: GameSettings | null = null;
 
-    constructor(agentId?: string) {
-        this.map = new MapBeliefs(agentId);
+    constructor(agentId?: string, teammateIds?: string[]) {
+        this.agents = new AgentBeliefs(new Set(teammateIds ?? []));
+        this.crates = new CrateBeliefs();
+        this.map = new MapBeliefs(this.crates, agentId);
+        this.parcels = new ParcelBeliefs();
     }
 
     /** Build a compact belief snapshot for sending to the LLM coordinator. */
@@ -68,14 +55,12 @@ export class Beliefs {
         }
 
         const deliveryTiles = this.map.getDeliveryTiles();
-        let nearestDelivery: typeof pos = null;
-        if (pos && deliveryTiles.length > 0) {
-            nearestDelivery = deliveryTiles.reduce((best, tile) =>
-                manhattanDistance(pos, tile) < manhattanDistance(pos, best) ? tile : best
-            );
-        }
+        const nearestDelivery = pos && deliveryTiles.length > 0
+            ? nearestByManhattan(pos, deliveryTiles) ?? null
+            : null;
 
-        return { pos, carrying, enemies, hotTiles, nearestDelivery };
+        const score = me?.score ?? 0;
+        return { pos, carrying, score, enemies, hotTiles, nearestDelivery };
     }
 
     /**
@@ -112,23 +97,17 @@ export class Beliefs {
      */
     setSettings(config: IOConfig): void {
         this.settings = {
-            title: config.GAME.title,
-            description: config.GAME.description,
-            max_player: config.GAME.maxPlayers,
             clock: config.CLOCK,
         };
         // Distribute relevant config slices to sub-systems
         this.agents.setSettings({
             movement_duration: config.GAME.player.movement_duration,
             observation_distance: config.GAME.player.observation_distance,
-            carry_capacity: config.GAME.player.capacity,
         });
         this.parcels.setSettings({
-                parcel_spawn_interval: parseTimeInterval(config.GAME.parcels.generation_event),
-                reward_decay_interval: parseTimeInterval(config.GAME.parcels.decaying_event),
-                max_concurrent_parcels: config.GAME.parcels.max,
-                reward_avg: config.GAME.parcels.reward_avg,
-                reward_variance: config.GAME.parcels.reward_variance,
+            parcel_spawn_interval: parseTimeInterval(config.GAME.parcels.generation_event),
+            reward_decay_interval: parseTimeInterval(config.GAME.parcels.decaying_event),
+            reward_avg: config.GAME.parcels.reward_avg,
         })
     }
 }

@@ -23,9 +23,34 @@ A project focused on the development and analysis of autonomous software agents,
   </tr>
 </table>
 
+## Demos
+
+<table align="center">
+  <tr>
+    <td align="center" width="50%">
+      <strong>Collision Management</strong><br><br>
+      <video src="https://github.com/user-attachments/assets/83d9eda0-3e09-4e0a-b74c-f668ed17043f" width="100%" controls></video>
+    </td>
+    <td align="center" width="50%">
+      <strong>PDDL Crate-Clearing</strong><br><br>
+      <video src="https://github.com/user-attachments/assets/1945034c-ecf3-4311-84e9-fa081c7e069e" width="100%" controls></video>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>Safe SCC Reachability</strong><br><br>
+      <video src="https://github.com/user-attachments/assets/10aa9e26-08c1-4351-a29c-93ce53e8458f" width="100%" controls></video>
+    </td>
+    <td align="center" width="50%">
+      <strong>Cooperation Showcase</strong><br><br>
+      <video src="https://github.com/user-attachments/assets/bb8cab17-84e4-4b3c-8e1f-1fcb714c1a21" width="100%" controls></video>
+    </td>
+  </tr>
+</table>
+
 **Course:** Autonomous Software Agents  
 **Professors:** Prof. Paolo Giorgini, Prof. Marco Robol  
-**Authors:** Davide Donà, Andrea Blushi
+**Authors:** Davide Donà (davide.dona-1@studenti.unitn.it), Andrea Blushi (andrea.blushi@studenti.unitn.it)
 
 ---
 
@@ -115,7 +140,7 @@ Set the matching tokens in `.env` before starting. Production scripts suppress a
 
 ### LLM agent
 
-Set `MISSION_AGENT_NAME` in `.env` to the in-game name of the human operator. The LLM agent filters incoming chat messages and only processes those from that sender.
+Set `MISSION_EMITTER_NAME` or `MISSION_EMITTER_ID` in `.env` to the in-game name or socket ID of the human operator. The LLM agent forwards only chat messages from that sender to the LLM; if neither is set, all chat messages are processed.
 
 Required `.env` keys for LLM / cooperative modes:
 
@@ -151,7 +176,7 @@ Available namespaces:
 | `llm` | Incoming chat messages handled by the LLM agent |
 | `llm-client` | Tool calls and tool results per hop |
 | `llm-prompt` | User message + belief context sent to the model |
-| `comm` | Outgoing chat messages (messenger) |
+| `communication` | Outbound sends and inbound routing in the Communication module |
 
 Production scripts (`npm start`, `npm run start:*`) always suppress debug output regardless of `.env`.  
 Dev scripts (`npm run dev`, `npm run dev:*`) respect the `_DEBUG` value in `.env`.
@@ -160,20 +185,35 @@ Dev scripts (`npm run dev`, `npm run dev:*`) respect the `_DEBUG` value in `.env
 ## Repository Structure
 
 ```
-autonomous-software-agents/
-├── src/                        # Source code of the project
-│   ├── index.ts                # Entry point of the application
-│   ├── agents/                 # Directory for different agent implementations
-│   │   ├── bdi/                # BDI agent implementation
-│   │   │   ├── bdi_agent.ts    # Main BDI agent class
-│   │   │   ├── belief/         # Belief management module
-│   │   │   ├── desire/         # Desire generation and filter module
-│   │   │   ├── intention/      # Intention selection and execution module
-│   │   │   └── navigation/     # Plan library and navigation module
-│   │   └── llm/                # LLM-based agent implementation
-│   │       ├── llm_agent.js    # Main LLM agent class
-│   │       └── prompts/        # Directory for prompt templates and management
-│   ├── models/                 # Data types definitions and interfaces
-│   └── utils/                  # Utility functions and modules
-├── docs/                       # Documentation and related materials
+src/
+├── index.ts                        # Entry point; fans out into single or multi-agent mode
+├── config.ts                       # All tunable numeric constants (timeouts, thresholds, …)
+├── agents/
+│   ├── communication/              # Single Communication module (inbound router, outbound sends, position beacon)
+│   ├── bdi/                        # BDI agent
+│   │   ├── bdi_agent.ts            # Main BDI agent class (perceive → deliberate → execute loop)
+│   │   ├── belief/
+│   │   │   ├── beliefs.ts          # Aggregate: composes AgentBeliefs, MapBeliefs, CrateBeliefs, ParcelBeliefs
+│   │   │   └── modules/            # Individual belief sub-systems
+│   │   │       ├── agent_beliefs.ts    # Self, friends, enemies
+│   │   │       ├── map_beliefs.ts      # Static map layout, traversal penalties, tile queries
+│   │   │       ├── crate_beliefs.ts    # Dynamic crate positions
+│   │   │       ├── parcel_beliefs.ts   # Parcel tracking and reward decay
+│   │   │       └── utils/              # Tracker, Memory, Reachability, EnemyPredictor, CrateBlock
+│   │   ├── desire/                 # Desire generation, scoring, and RuleStore
+│   │   │   └── rule_store.ts       # LLM-injected scoring rules (reweights desire scoring each cycle)
+│   │   ├── intention/              # Intention queue management
+│   │   ├── plan/                   # Planning (A*, PDDL fallback, collision avoidance)
+│   │   └── execution/              # Socket action loop (move / pickup / putdown)
+│   └── llm/                        # LLM agent (wraps BDI)
+│       ├── llm_agent.ts            # Main LLM agent class
+│       ├── client/                 # LLM API client and tool-call loop
+│       ├── coordination/           # Periodic team coordinator
+│       ├── prompt/                 # Prompt builders (main + coordination)
+│       └── tools/                  # Tool definitions and handlers
+├── models/                         # Shared data types and injection logic
+└── utils/                          # Logger, metrics, API helpers
+docs/
+├── report/                         # Written report (LaTeX source + compiled PDF)
+└── presentation/                   # Slide deck (LaTeX/Beamer source + compiled PDF)
 ```

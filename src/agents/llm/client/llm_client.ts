@@ -1,13 +1,15 @@
 import OpenAI from "openai";
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { InjectedIntention } from "../../../models/intentions.js";
-import type { Messenger } from "../../bdi/communication/messenger.js";
-import type { RuleStore } from "../../bdi/belief/rule_store.js";
-import { TOOLS, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
+import type { InjectedDesire } from "../../../models/desires.js";
+import type { GameStrategy } from "../../../models/game_strategy.js";
+import { StrategyType } from "../../../models/game_strategy.js";
+import type { Communication } from "../../communication/communication.js";
+import type { RuleStore } from "../../bdi/desire/rule_store.js";
+import { getTools, FOLLOWUP_TOOLS, executeToolCall } from "../tools/index.js";
 import { buildSystemPrompt, buildUserMessage } from "../prompt/main/index.js";
-import { buildCoordinationPrompt } from "../prompt/coordination/index.js";
-import type { BeliefsReport } from "../../../models/team.js";
-import type { TeamGeometry } from "../coordination/geometry.js";
+import { buildCooperationPrompt } from "../prompt/cooperation/index.js";
+import type { BeliefsReport } from "../../../models/message_injection.js";
+import type { TeamGeometry } from "../../cooperation/geometry.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
 import { config } from "../../../config.js";
 
@@ -31,16 +33,27 @@ export class LLMClient {
     private readonly model: string;
     private readonly log: Logger;
     private readonly promptLog: Logger;
-    private readonly addInjectedIntention: (entry: InjectedIntention) => void;
-    private readonly removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
-    private readonly messenger: Messenger;
+    private readonly addInjectedDesire: (entry: InjectedDesire) => void;
+    private readonly removeInjectedDesiresByType: (type: import("../../../models/desires.js").DesireType["type"]) => void;
+    private readonly setGameStrategy: (strategy: GameStrategy) => void;
+    private readonly getGameStrategy: () => GameStrategy | null;
+    private readonly comm: Communication;
     private readonly ruleStore: RuleStore;
+    private readonly proposeRendezvous: (rawArgs: unknown) => Promise<string>;
+    private readonly proposeRedLight: (rawArgs: unknown) => Promise<string>;
+    private readonly proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>;
+    private readonly coordLog: Logger;
 
     constructor(
-        addInjectedIntention: (entry: InjectedIntention) => void,
-        removeIntentionsByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
-        messenger: Messenger,
+        addInjectedDesire: (entry: InjectedDesire) => void,
+        removeInjectedDesiresByType: (type: import("../../../models/desires.js").DesireType["type"]) => void,
+        setGameStrategy: (strategy: GameStrategy) => void,
+        getGameStrategy: () => GameStrategy | null,
+        comm: Communication,
         ruleStore: RuleStore,
+        proposeRendezvous: (rawArgs: unknown) => Promise<string>,
+        proposeRedLight: (rawArgs: unknown) => Promise<string>,
+        proposeGoto: (agentId: string, rawArgs: unknown) => Promise<string>,
         agentId?: string,
     ) {
         this.client = new OpenAI({
@@ -48,17 +61,23 @@ export class LLMClient {
             apiKey: process.env.LLM_API_KEY ?? "no-key",
             timeout: config.llm.timeoutMs,
         });
-        this.model = process.env.MODEL_NAME ?? "llama-3.3-70b-lmstudio";
+        this.model = config.llm.model;
         this.log = createLogger("llm", agentId);
         this.promptLog = createLogger("llm-prompt", agentId);
-        this.addInjectedIntention = addInjectedIntention;
-        this.removeIntentionsByType = removeIntentionsByType;
-        this.messenger = messenger;
+        this.addInjectedDesire = addInjectedDesire;
+        this.removeInjectedDesiresByType = removeInjectedDesiresByType;
+        this.setGameStrategy = setGameStrategy;
+        this.getGameStrategy = getGameStrategy;
+        this.comm = comm;
         this.ruleStore = ruleStore;
+        this.proposeRendezvous = proposeRendezvous;
+        this.proposeRedLight = proposeRedLight;
+        this.proposeGoto = proposeGoto;
+        this.coordLog = createLogger("coordination", agentId);
     }
 
     /**
-     * Shared multi-hop tool-call loop used by both processMessage and coordinate.
+     * Shared multi-hop tool-call loop used by processMessage.
      */
     private async runHops(
         messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
@@ -69,7 +88,7 @@ export class LLMClient {
             const response = await this.client.chat.completions.create({
                 model: this.model,
                 messages,
-                tools: TOOLS,
+                tools: getTools(ctx),
                 tool_choice: "auto",
                 temperature: 0.1,
             });
@@ -135,11 +154,16 @@ export class LLMClient {
     ): Promise<void> {
         const ctx = {
             beliefs: beliefs as Beliefs,
-            addInjectedIntention: this.addInjectedIntention,
-            removeIntentionsByType: this.removeIntentionsByType,
-            messenger: this.messenger,
+            addInjectedDesire: this.addInjectedDesire,
+            removeInjectedDesiresByType: this.removeInjectedDesiresByType,
+            setGameStrategy: this.setGameStrategy,
+            getGameStrategy: this.getGameStrategy,
+            comm: this.comm,
             sourceId: senderId,
             ruleStore: this.ruleStore,
+            proposeRendezvous: this.proposeRendezvous,
+            proposeRedLight: this.proposeRedLight,
+            proposeGoto: this.proposeGoto,
         };
 
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -151,31 +175,54 @@ export class LLMClient {
     }
 
     /**
-     * Run a team coordination pass: the LLM is given teammate reports + map geometry
-     * and expected to call `assign_goto` for each agent.
+     * Run a team cooperation pass: the LLM is given teammate reports + map geometry
+     * and responds with a single JSON strategy decision. No tool-calling loop — one completion.
+     * Returns the chosen strategy and optional bonus; the caller applies it via TeamStrategyAssigner.
      */
-    async coordinate(
+    async chooseTeamStrategy(
         reports: Map<string, BeliefsReport>,
         geometry: TeamGeometry,
         beliefs: Readonly<Beliefs>,
-        requestTeamStatus: () => void,
-    ): Promise<void> {
-        const ctx = {
-            beliefs: beliefs as Beliefs,
-            addInjectedIntention: this.addInjectedIntention,
-            removeIntentionsByType: this.removeIntentionsByType,
-            messenger: this.messenger,
-            sourceId: "coordinator",
-            ruleStore: this.ruleStore,
-            requestTeamStatus,
-        };
+        missionNote = "",
+        performance = "",
+    ): Promise<{ strategy: StrategyType | "NONE"; bonus?: number }> {
+        const { system, user } = buildCooperationPrompt(reports, geometry, beliefs, this.ruleStore, missionNote, performance);
+        this.log.debug("Running cooperation pass");
 
-        const { system, user } = buildCoordinationPrompt(reports, geometry, beliefs, this.ruleStore);
-        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            { role: "system", content: system },
-            { role: "user", content: user },
-        ];
-        this.log.debug("Running coordination pass");
-        await this.runHops(messages, ctx);
+        const response = await this.client.chat.completions.create({
+            model: this.model,
+            messages: [
+                { role: "system", content: system },
+                { role: "user", content: user },
+            ],
+            temperature: 0.1,
+        });
+
+        const text = response.choices[0]?.message.content?.trim() ?? "";
+        this.promptLog.debug(`Cooperation response: ${text}`);
+
+        // Extract the first {...} block from the response and parse the strategy.
+        let strategy: StrategyType | "NONE" = "NONE";
+        let bonus: number | undefined;
+
+        const match = text.match(/\{[\s\S]*?\}/);
+        if (match) {
+            try {
+                const obj = JSON.parse(match[0]) as Record<string, unknown>;
+                const s = obj.strategy;
+                if (typeof s === "string" && ([...Object.values(StrategyType), "NONE"] as readonly string[]).includes(s)) {
+                    strategy = s as StrategyType | "NONE";
+                }
+                if (typeof obj.bonus === "number") bonus = Math.round(obj.bonus);
+                const rationale = typeof obj.rationale === "string" ? obj.rationale.trim() : "";
+                if (rationale) this.coordLog.debug(`cooperation rationale: ${rationale}`);
+            } catch {
+                this.coordLog.debug(`cooperation: could not parse strategy JSON — defaulting to NONE. text=${text}`);
+            }
+        } else {
+            this.coordLog.debug(`cooperation: no JSON found in response — defaulting to NONE. text=${text}`);
+        }
+
+        return { strategy, bonus };
     }
 }

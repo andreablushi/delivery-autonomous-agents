@@ -1,12 +1,16 @@
 import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
-import type { InjectedIntention } from "../../models/intentions.js";
+import type { InjectedDesire } from "../../models/desires.js";
 import type { DesireType } from "../../models/desires.js";
+import type { GameStrategy } from "../../models/game_strategy.js";
 import { Beliefs } from "./belief/beliefs.js";
-import { RuleStore } from "./belief/rule_store.js";
+import { RuleStore } from "./desire/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
-import { Messenger } from "./communication/messenger.js";
+import { Communication } from "../communication/communication.js";
+import { HandoffInitiator } from "../cooperation/handoff_initiator.js";
+import { PeerInbox } from "../coordination/peer_inbox.js";
+import { Negotiator } from "../coordination/negotiator.js";
 import { createLogger } from "../../utils/logger.js";
 
 /**
@@ -22,26 +26,54 @@ export class BDIAgent {
     private planner: Planner;
     private intentions: Intentions;
     private executor: Executor;
-    private messenger: Messenger;
+    private comm: Communication;
+    private peerInbox: PeerInbox;
+    private negotiator: Negotiator;
+    private handoff: HandoffInitiator;
     private perceiveLog;
     private deliberateLog;
 
-    constructor(socket: any, agentId?: string) {
+    constructor(
+        socket: any,
+        agentId?: string,
+        teammateIds?: string[],
+        commFactory?: (socket: any, beliefs: Beliefs, agentId?: string) => Communication,
+    ) {
         this.socket = socket;
         this.perceiveLog = createLogger("perceive", agentId);
         this.deliberateLog = createLogger("deliberate", agentId);
-        this.beliefs = new Beliefs(agentId);
+        this.beliefs = new Beliefs(agentId, teammateIds);
         this.ruleStore = new RuleStore();
         this.intentions = new Intentions(agentId);
         this.planner = new Planner(this.intentions, this.beliefs, agentId);
-        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId);
-        this.messenger = new Messenger(socket, agentId);
-        this.messenger.receive(
+        this.comm = commFactory
+            ? commFactory(socket, this.beliefs, agentId)
+            : new Communication(socket, this.beliefs, agentId);
+        this.peerInbox = new PeerInbox();
+        this.negotiator = new Negotiator(
             this.beliefs,
-            this.ruleStore,
-            entry => this.addInjectedIntention(entry),
-            type => this.removeIntentionsByType(type),
+            this.comm,
+            this.peerInbox,
+            entry => this.addInjectedDesire(entry),
         );
+        this.handoff = new HandoffInitiator(
+            this.beliefs,
+            this.negotiator,
+            strategy => this.setGameStrategy(strategy),
+            createLogger("coordination", agentId),
+        );
+        this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId,
+            () => { void this.handoff.maybeInitiate(); });
+        this.comm.start({
+            beliefs: this.beliefs,
+            ruleStore: this.ruleStore,
+            addInjectedDesire: entry => this.addInjectedDesire(entry),
+            removeInjectedDesiresByType: type => this.removeInjectedDesiresByType(type),
+            setGameStrategy: strategy => this.setGameStrategy(strategy),
+            armHandoff: (bonus, ttlMs) => this.handoff.arm(bonus, ttlMs),
+            disarmHandoff: () => this.handoff.disarm(),
+            peerInbox: this.peerInbox,
+        });
 
         this.socket.once('controller', (status: string, agent: { id: string; name: string; teamId: string; teamName: string; score: number }) => {
             if (status === 'connected') this.beliefs.agents.updateOtherAgents([agent as IOAgent], []);
@@ -73,31 +105,63 @@ export class BDIAgent {
     }
 
     /**
-     * Add an injected intention that will be included in the intention queue each cycle until it expires.
+     * Expose the Negotiator for external use (e.g. by LLMAgent's coordination tools).
+     * @returns The agent's Negotiator instance.
+     */
+    getNegotiator(): Negotiator {
+        return this.negotiator;
+    }
+
+    /**
+     * Expose the PeerInbox for external use (e.g. by CooperationLoop).
+     * @returns The agent's PeerInbox instance.
+     */
+    getPeerInbox(): PeerInbox {
+        return this.peerInbox;
+    }
+
+    /**
+     * Add an injected desire that will be included in the desire queue each cycle until it expires.
      * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
-     * @param entry The injected intention entry, including the desire itself and its expiration time.
+     * @param entry The injected desire entry, including the desire itself and its expiration time.
      */
-    addInjectedIntention(entry: InjectedIntention): void {
-        this.intentions.addInjectedIntention(entry);
+    addInjectedDesire(entry: InjectedDesire): void {
+        this.intentions.addInjectedDesire(entry);
     }
 
     /**
-     * Remove all intentions of a given desire type from the intention queue.
+     * Remove all injected desires of a given type from the desire queue.
      * Useful for revoking desires injected by an LLM or other external system.
-     * @param type The type of desire whose intentions should be removed.
+     * @param type The type of desire to remove.
      */
-    removeIntentionsByType(type: DesireType["type"]): void {
-        this.intentions.removeIntentionsByType(type);
+    removeInjectedDesiresByType(type: DesireType["type"]): void {
+        this.intentions.removeInjectedDesiresByType(type);
     }
 
-    /**
-     * Expose the messenger for external use (e.g. by LLM tool handlers that need to send messages).
-     * @returns The agent's Messenger instance.
-     */
-    getMessenger(): Messenger {
-        return this.messenger;
+    /** Set the active cooperation strategy assigned by the coordinator. */
+    setGameStrategy(strategy: GameStrategy): void {
+        this.intentions.setGameStrategy(strategy);
     }
 
+    /** Returns the active cooperation strategy, or null if none. */
+    getGameStrategy(): GameStrategy | null {
+        return this.intentions.getGameStrategy();
+    }
+
+    /** Clear the active cooperation strategy. */
+    clearGameStrategy(): void {
+        this.intentions.clearGameStrategy();
+    }
+
+    /** Arm the handoff initiator (called by the coordinator when OPPORTUNISTIC is selected). */
+    armHandoff(bonus: number | undefined, ttlMs: number): void {
+        this.handoff.arm(bonus, ttlMs);
+    }
+
+    /** Disarm the handoff initiator (called by the coordinator on NONE or ZONAL_RELAY). */
+    disarmHandoff(): void {
+        this.handoff.disarm();
+    }
 
     /**
      * Register socket listeners that update beliefs and drive the deliberation cycle.
@@ -123,7 +187,7 @@ export class BDIAgent {
         this.socket.on('sensing', async (sensing: IOSensing) => {
             this.beliefs.agents.updateOtherAgents(sensing.agents, sensing.positions);
             this.beliefs.parcels.updateParcels(sensing.parcels, sensing.positions);
-            this.beliefs.map.updateCrates(sensing.crates, sensing.positions);
+            this.beliefs.crates.updateCrates(sensing.crates, sensing.positions);
             this.beliefs.map.updateSpawnTilesSensingTimes(sensing.positions, Date.now());
 
             this.perceiveLog.debug("Sensing update — agents:", sensing.agents.length,
@@ -132,7 +196,7 @@ export class BDIAgent {
             this.perceiveLog.debug("  - Friends:", this.beliefs.agents.getCurrentFriends().length, "agents");
             this.perceiveLog.debug("  - Enemies:", this.beliefs.agents.getCurrentEnemies().length, "agents");
             this.perceiveLog.debug("  - Parcels:", this.beliefs.parcels.getCurrentParcels().length, "parcels");
-            this.perceiveLog.debug("  - Crates:", this.beliefs.map.getCurrentCrates().length, "crates");
+            this.perceiveLog.debug("  - Crates:", this.beliefs.crates.getCurrentCrates().length, "crates");
 
             this.deliberate();
             this.executor.kick();
@@ -145,7 +209,6 @@ export class BDIAgent {
     deliberate(): void {
         this.intentions.update(this.beliefs, this.ruleStore);
         this.deliberateLog.debug("Intention selected:", this.intentions.getIntentionHead());
-
         this.executor.start();
     }
 }

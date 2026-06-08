@@ -1,15 +1,26 @@
 import OpenAI from "openai";
 import type { ToolContext } from "../context.js";
 import { TILE_TYPE } from "../../../../models/tile_type.js";
-import { parseAssignGotoArgs } from "../../../../models/tool_args.js";
-import { communicateTo } from "../../communication/communicate.js";
+import { parseGotoArgs, type GotoArgs } from "../../../../models/injection_args.js";
+
+type AssignGotoArgs = { agent_id: string } & GotoArgs;
+
+function parseAssignGotoArgs(json: unknown): AssignGotoArgs | { error: string } {
+    if (typeof json !== "object" || json === null) return { error: "args must be an object" };
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.agent_id !== "string" || obj.agent_id.trim() === "") return { error: "agent_id must be a non-empty string" };
+    const rest = parseGotoArgs(json);
+    if ("error" in rest) return rest;
+    return { agent_id: obj.agent_id, ...rest };
+}
 import { applyInjection } from "../../../../models/apply_injection.js";
+import { PeerKind } from "../../../../models/message_injection.js";
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     type: "function",
     function: {
         name: "assign_goto",
-        description: "Send a specific agent (yourself or a known teammate) to a target tile. Use agent_id to address the target agent. For yourself, injects a REACH_TILE goal directly; for a teammate, sends a request_goto envelope.",
+        description: "Send a specific agent (yourself or a known teammate) to a target tile. Use agent_id to address the target agent. For yourself, injects a REACH_TILE goal directly; for a teammate, sends a request_goto message.",
         parameters: {
             type: "object",
             properties: {
@@ -27,7 +38,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
 /**
  * Assign a navigation goal to a specific agent (self or teammate).
  * If agent_id matches this agent's own id, the REACH_TILE desire is injected locally.
- * Otherwise a request_goto envelope is sent directly to that teammate.
+ * Otherwise a request_goto message is sent directly to that teammate.
  */
 export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const parsed = parseAssignGotoArgs(rawArgs);
@@ -38,17 +49,17 @@ export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<strin
     const me = ctx.beliefs.agents.getCurrentMe();
     if (agent_id === me?.id) {
         // Local injection — applyInjection handles all validation (map, bounds, wall, blocked).
-        const r = applyInjection("request_goto", { target_x, target_y, reward, ttl_seconds }, ctx);
+        const r = applyInjection(PeerKind.RequestGoto, { target_x, target_y, reward, ttl_seconds }, ctx);
         if ("error" in r) return JSON.stringify(r);
     } else {
-        // Remote: validate early to give the LLM useful feedback before sending.
+        // Remote: validate early to give the LLM useful feedback before proposing.
         const map = ctx.beliefs.map.getMap();
         if (!map) return JSON.stringify({ error: "Map not yet loaded" });
         if (!ctx.beliefs.map.checkMapBounds(target_x, target_y)) return JSON.stringify({ error: "Coordinates out of map bounds" });
         if (map.tiles[target_y][target_x] === TILE_TYPE.WALL) return JSON.stringify({ error: "Target tile is a wall" });
-        const friend = ctx.beliefs.agents.getCurrentFriends().find(f => f.id === agent_id);
-        if (!friend) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
-        await communicateTo(ctx.messenger, agent_id, "request_goto", { target_x, target_y, reward, ttl_seconds });
+        if (!ctx.beliefs.agents.getTeammateIds().has(agent_id)) return JSON.stringify({ error: `Agent ${agent_id} is not a known teammate` });
+        if (!ctx.proposeGoto) return JSON.stringify({ error: "proposeGoto not available in this context" });
+        return await ctx.proposeGoto(agent_id, { target_x, target_y, reward, ttl_seconds });
     }
 
     return JSON.stringify({ ok: true, agent_id, target: { x: target_x, y: target_y } });

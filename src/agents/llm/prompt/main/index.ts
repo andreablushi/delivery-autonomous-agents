@@ -1,7 +1,7 @@
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import type { Beliefs } from "../../../bdi/belief/beliefs.js";
-import type { RuleStore } from "../../../bdi/belief/rule_store.js";
+import type { RuleStore } from "../../../bdi/desire/rule_store.js";
 import { render } from "../shared.js";
 
 const DIR = dirname(fileURLToPath(import.meta.url));

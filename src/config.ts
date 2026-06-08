@@ -6,14 +6,15 @@ export const config = {
 
     beliefs: {
         positionStaleThresholdMs: 2_000,    // Discard agent positions not refreshed within this window
+        confidenceHalfLifeMs: 2_000,        // τ for tracker confidence decay (parcels + enemies)
         evictIntervalMs: 1_000,             // Minimum gap between stale-belief eviction passes
+        positionBeaconIntervalMs: 1_000,    // How often each agent sends its own position to each configured teammate
         enemy: {
             memoryTtlMs: 1_000,             // How long an enemy observation stays in memory
             memorySizeEntries: 20,          // Max observations kept per enemy
             heatSigma: 3,                   // Spatial spread (tiles) of the heat Gaussian
             heatTau: 5_000,                 // Time decay constant (ms) of the heat signal
             confidenceThreshold: 0.5,       // Min confidence to treat a predicted enemy position as blocking
-            confidenceHalfLifeMs: 2_000,    // Half-life for the enemy tracker confidence score
             predictionCeilThreshold: 0.6,   // Fractional coord above which agent is committed to the upper tile
             predictionFloorThreshold: 0.4,  // Fractional coord below which agent is committed to the lower tile
         },
@@ -49,20 +50,39 @@ export const config = {
     },
 
     llm: {
+        model: "gpt-4o",
         maxHops: 5,             // Max consecutive tool-call rounds per LLM invocation
         timeoutMs: 15_000,      // HTTP timeout for OpenAI-compatible API calls
         replyMaxChars: 280,     // Character limit for the reply tool
     },
 
     coordination: {
-        intervalMs: 10_000,     // How often the LLM coordinator runs a team assignment round
+        intervalMs: 30_000,    // How often the LLM coordinator runs a team assignment round
         collectWindowMs: 750,   // Time to wait for belief reports before running the LLM pass
-        cooldownMs: 5_000,      // Minimum gap between coordination rounds
+        cooldownMs: 30_000,     // Minimum gap between coordination rounds
         hotZonesLimit: 5,       // Max hot zones kept when merging teammate reports
+        corridorSeparationMin: 5,           // Min spawn→delivery separation to force ZONAL_RELAY on single-file maps
+        perfWindowRounds: 6,               // Number of recent rounds kept per strategy for the LLM strategy-stats summary (≈3min at 30s interval)
+        // Opportunistic handoff (OPPORTUNISTIC strategy)
+        opportunisticCooldownMs: 4_000,     // Minimum gap between opportunistic handoff proposals
+        opportunisticMeetRadius: 3,         // Manhattan radius around the agent-midpoint to snap to a reachable meet tile
+    },
+
+    rendezvous: {
+        commitWindowMs: 750,    // Time to wait for peer votes before committing or aborting
+        stickinessMargin: 0.15, // Incumbent hold tile must be beaten by this fraction to switch targets
+    },
+
+    handoff: {
+        zoneRadius: 2,    // Meet-zone Manhattan radius around the midpoint
     },
 
     report: {
         hotTilesLimit: 5,   // Max hot tiles included in a single belief report
+    },
+
+    parcels: {
+        droppedCooldownMs: 5_000, // Ignore parcels this agent just put down, so it doesn't re-grab a handover
     },
 
 } as const;

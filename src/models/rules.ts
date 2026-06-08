@@ -1,5 +1,14 @@
 import type { Position } from "./position.js";
 
+/** The valid discriminant values for the `conditioned_axis` field of a scoring rule. */
+export const SCORING_AXIS = {
+    STACK_COUNT:   "stack_count",
+    DELIVERY_TILE: "delivery_tile",
+    PARCEL_VALUE:  "parcel_value",
+} as const;
+
+export type ScoringAxis = typeof SCORING_AXIS[keyof typeof SCORING_AXIS];
+
 /** Base interface for all scoring rules. */
 interface ScoringRuleBase {
   id:             string;
@@ -14,7 +23,7 @@ interface ScoringEffect {
 
 /** Defines a rule that applies to the number of parcels currently carried by the agent. */
 interface StackCountRule extends ScoringRuleBase {
-  conditioned_axis: "stack_count";
+  conditioned_axis: typeof SCORING_AXIS.STACK_COUNT;
   predicate: {
     equals?: number;
     min?:    number;
@@ -25,14 +34,14 @@ interface StackCountRule extends ScoringRuleBase {
 
 /** Defines a rule that applies to a specific delivery tile. */
 interface DeliveryTileRule extends ScoringRuleBase {
-  conditioned_axis: "delivery_tile";
+  conditioned_axis: typeof SCORING_AXIS.DELIVERY_TILE;
   tile:   Position;
   effect: ScoringEffect;
 }
 
 /** Defines a rule that applies to the value of individual parcels. */
 interface ParcelValueRule extends ScoringRuleBase {
-  conditioned_axis: "parcel_value";
+  conditioned_axis: typeof SCORING_AXIS.PARCEL_VALUE;
   predicate: {
     minReward?: number;
     maxReward?: number;
@@ -41,19 +50,13 @@ interface ParcelValueRule extends ScoringRuleBase {
 }
 
 /**
- * A scoring rule modifies the desirability score of potential actions based 
+ * A scoring rule modifies the desirability score of potential actions based
  * on a specific aspect (axis) of the current state.
  * Each rule is defined by:
  * - A unique string `id` for identification and management.
- * - A `conditioned_axis` that specifies which aspect of the state it applies to:
- *   - "stack_count": the number of parcels currently carried by the agent.
- *   - "delivery_tile": the specific tile being targeted for delivery.
- *   - "parcel_value": the value of individual parcels.
+ * - A `conditioned_axis` that specifies which aspect of the state it applies to.
  */
 export type ScoringRule =
   | StackCountRule
   | DeliveryTileRule
   | ParcelValueRule;
-
-/** Defines the axes along which scoring rules can be applied. */
-export type ScoringAxis = ScoringRule["conditioned_axis"];

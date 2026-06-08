@@ -1,7 +1,7 @@
 import OpenAI from "openai";
-import type { ToolContext } from "../context.js";
-import { applyInjection } from "../../../../models/apply_injection.js";
-import { communicate } from "../../communication/communicate.js";
+import { PeerKind } from "../../../../models/message_injection.js";
+import { SCORING_AXIS } from "../../../../models/rules.js";
+import { makeInjectionExecute } from "./_injection_handler.js";
 
 
 export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -13,7 +13,7 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
             type: "object",
             properties: {
                 id:               { type: "string",  description: "Unique identifier for this rule. Re-registering with the same id replaces the previous rule." },
-                conditioned_axis: { type: "string",  enum: ["stack_count", "delivery_tile", "parcel_value"], description: "Which dimension this rule applies to." },
+                conditioned_axis: { type: "string",  enum: Object.values(SCORING_AXIS), description: "Which dimension this rule applies to." },
                 equals:      { type: "integer", description: "(stack_count only) Exact carried-parcel count to match." },
                 min:         { type: "integer", description: "(stack_count only) Minimum carried-parcel count to match." },
                 max:         { type: "integer", description: "(stack_count only) Maximum carried-parcel count to match." },
@@ -29,15 +29,4 @@ export const definition: OpenAI.Chat.Completions.ChatCompletionTool = {
     },
 };
 
-/**
- * Execute the "register_scoring_rule" tool by parsing the input arguments, validating them, and then upserting the new scoring rule into the rule store. Returns a JSON string indicating success or containing an error message if execution failed.
- * @param rawArgs The raw arguments to the tool, expected to be an object with properties as defined in the Args type
- * @param ctx The tool context, which provides access to beliefs and the rule store for registering the new rule
- * @returns A JSON string containing { ok: true } if the rule was successfully registered, or { error: string } if there was a problem with the input arguments
- */
-export async function execute(rawArgs: unknown, ctx: ToolContext): Promise<string> {
-    const r = applyInjection("register_scoring_rule", rawArgs, ctx);
-    if ("error" in r) return JSON.stringify(r);
-    await communicate(ctx, "register_scoring_rule", rawArgs as Record<string, unknown>);
-    return JSON.stringify({ ok: true });
-}
+export const execute = makeInjectionExecute(PeerKind.RegisterScoringRule);

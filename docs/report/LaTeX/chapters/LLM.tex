@@ -1,0 +1,129 @@
+\section{LLM-Based Agent Layer}
+\label{sec:llm}
+The LLM layer functions as a thin wrapper around the underlying BDI agent.
+It interprets high-level textual commands from a mission controller, utilizing tools exposed by the BDI core to inject new desires,
+adjust scoring rules, or initiate team coordination.
+
+The mission controller can issue requests that fall into three broad categories: direct navigation goals, persistent behavioural adjustments, and team-level control.
+Each category is handled through a different mechanism in the BDI core, chosen to integrate naturally with the existing deliberation loop rather than bypassing it.
+
+\subsection{Adapting Behavior Through Goal Injection}
+
+Navigation requests, more specifically, moving to a tile (\emph{go-to}) or delivering at a specific location (\emph{deliver-at}), are translated into \texttt{REACH\_TILE} and \texttt{DELIVER\_PARCEL} desires, respectively. 
+These injected goals enter the BDI intention queue and persist for a specified Time-To-Live (TTL), allowing them to be continuously re-evaluated against existing tasks until completion or expiry.
+
+Both injected desires utilize the standard BDI rate formulas (Section~\ref{sec:desires}), 
+but incorporate configurable rewards from the mission controller to dictate their competitive priority:
+
+\begin{itemize}
+    \item \textbf{\texttt{REACH\_TILE}:} Scored identically to \texttt{ReachParcel}:
+    \begin{equation*}
+      S = \frac{r_{\text{inj}} + \sum_{c \in C} r_c}{d}
+    \end{equation*}
+    where $r_{\text{inj}}$ is the injected reward. Setting this reward equal to a typical parcel value allows the navigation goal to compete on equal footing with standard parcel collection.
+
+    \item \textbf{\texttt{DELIVER\_PARCEL}:} Similarly, applies the standard rule-adjusted scoring for deliveries (Section~\ref{sec:scoring_rules}), including an optional additive bonus after the rule combination to successfully bias the agent toward the requested destination tile.
+\end{itemize}
+
+\subsection{Adapting Strategy via Rule Injection}
+\label{sec:scoring_rules}
+The \texttt{RuleStore} maintains a persistent registry of LLM-defined scoring rules.
+Each rule encodes a state condition alongside a linear effect: a multiplier $m$ and an additive offset $a$.
+
+During each deliberation cycle, any matching rules are applied to the baseline scores from Section~\ref{sec:desires} as a linear combination.
+This scales or shifts the priorities without overwriting the foundational scoring logic.
+
+These rules evaluate three primary state variables: the individual parcel reward, the current carry count, and the target delivery tile.
+Their effects compose directly onto the reward aggregates utilized in the desire formulas.
+
+\paragraph{ReachParcel:}
+The baseline score (Section~\ref{sec:desires}) is linearly adjusted according to the \emph{estimated stack count} post-pickup: the hypothetical carry count $|C|+1$.
+This allows a rule to incentivize picking up a specific parcel only if it achieves a desired total stack size, leaving all other pickup valuations unchanged.
+
+\paragraph{DeliverParcel:}
+The delivery score is linearly modified based on the current carry count $|C|$ and, optionally, the specific target tile.
+A stack rule keyed to $|C|$ dynamically alters the attractiveness of delivery depending on the agent's current payload, while a tile-specific rule can shepherd the agent toward a preferred drop-off location.
+An independent bonus can also be applied directly via the \texttt{request\_putdown\_at} tool, biasing delivery toward a specific tile regardless of any active rules.
+
+\paragraph{Explore:}
+In the absence of an active stack rule, \texttt{Explore} maintains its default priority of 0 and functions as outlined in Section~\ref{sec:desires}.
+
+However, when a positive stack rule is triggered, \texttt{Explore} is elevated to priority 1, forcing it to compete directly against active parcel and delivery goals.
+Its score is subsequently scaled by the anticipated reward of completing the stack, incentivizing the agent to actively search for missing parcels rather than settling for a premature delivery.
+This behavior emerges naturally from the linear weighting system: the LLM is not required to issue an explicit exploration command, as simply registering a stack rule is sufficient to trigger the shift.
+
+\paragraph{Traversal Penalties:}
+Traversal penalties operate at the planning layer rather than the deliberation layer.
+Unlike scoring rules, which modulate desire priority during deliberation, a traversal penalty injects an additive cost onto the A* edge leading onto a specific tile.
+When the planner evaluates candidate paths, it adds this cost to any step landing on a penalized tile, causing the agent to prefer a detour whenever the detour length is shorter than the penalty,
+without completely forbidding the option of traversing the tile if it becomes necessary.
+
+\subsection{Coordination}
+\label{sec:coordination}
+
+Coordination in our system is fully decentralized and message-driven: there is no central authority, and every joint decision emerges from peer-to-peer exchanges.
+Since only the LLM-driven agent is wired to the mission controller, it is the one that interprets admin queries and is therefore the sole agent able to issue proposals.
+
+\paragraph{Beacon Communication:}
+To handle the critical need for up-to-date position information in coordination maneuvers, each agent repeatedly broadcasts its current position 
+to all configured teammates as a \texttt{position\_beacon} message at a fixed interval. 
+This continuous broadcast is essential for enabling reliable coordination, even with teammates that fall outside of an agent's direct sensory range.
+
+\paragraph{Peer Communication:}
+Simple agent-level commands (navigation goals, scoring rules, traversal penalties) follow a uniform two-step pattern: 
+the injection is applied to the issuing agent locally, then packaged as a peer-injection message and broadcast to all teammates.
+
+Commands that carry stronger team-synchronisation requirements (rendezvous and traffic control) instead use a two-phase commit protocol described below.
+
+\paragraph{Two-Phase Commit Protocol:}
+Commands that carry stronger team-synchronization requirements utilize a generalized two-phase commit (2PC) protocol. 
+This ensures the team only commits to a synchronized interruption of their current tasks when it is collectively optimal to do so.
+
+\begin{itemize}
+    \item \textbf{Phase 1: Propose.} The proposing agent broadcasts a \emph{propose} message carrying a unique round identifier (\texttt{rid}) and the command parameters. 
+    Each teammate evaluates the proposal based on its current local state and replies with a \emph{vote} message indicating its accept or reject decision for that \texttt{rid}.
+    \item \textbf{Phase 2: Commit.} After a fixed collection window, the proposer checks for unanimity. 
+    If every expected teammate voted \emph{accept}, the proposer broadcasts a \emph{commit} message, and all agents (including the proposer) execute the command. 
+    If any vote is missing or negative, the proposer broadcasts \emph{abort}, and the command is discarded globally.
+\end{itemize}
+
+\paragraph{Protocol Evaluation and Execution:}
+We specifically apply this 2PC protocol to coordination maneuvers that force an agent to hold its position, namely \texttt{request\_rendezvous} and \texttt{request\_red\_light}. 
+In both cases, the successfully committed action results in the injection of a \texttt{HOLD\_TILE} desire.
+
+During Phase 1, the proposal payload offers a set of candidate hold tiles: for rendezvous, the tiles around the meeting point; for traffic control, the tiles lying on alternate rows or columns. 
+A teammate evaluates this proposal by scoring the candidates and keeping the best \texttt{HOLD\_TILE} score, reusing the reward-over-distance formulation from Section~\ref{sec:desires}. 
+To keep the comparison fair, the carried value is first discounted by the parcel-reward decay expected during the wait—either until the slowest teammate arrives for a rendezvous, or over the full duration for traffic control. 
+The teammate votes \emph{accept} only if this discounted hold score outweighs its current active desires.
+
+Once committed, holds are released based on their specific command semantics. 
+A rendezvous hold releases itself automatically once position beacons confirm all teammates have gathered within the agreed radius, requiring no further messages. 
+Conversely, a traffic-control hold persists until its time limit expires or the mission controller issues an explicit green-light command that releases the whole team at once.
+
+\subsection{Cooperation}
+
+Beyond reactive primitives, the team periodically evaluates a higher-level cooperation strategy.
+Every $k$ seconds, the LLM agent initiates a cooperation round by requesting teammates' beliefs.
+From the replies it assembles a compact context for an LLM query, drawing on three sources: a \emph{roster} listing each agent's position, carried load, and any sensed enemies; 
+a deterministic \emph{geometry} summary of the spawn clusters and delivery zones; 
+and a \emph{performance} record holding the average score each strategy has earned per round over a recent sliding window.
+The prompt is steered with a handful of \emph{few-shot examples}, each pairing a representative scenario with its expected decision.
+It is further guided by \emph{chain-of-thought} prompting: the model is asked to reason step by step and to return a structured response that states its rationale before committing to a strategy.
+
+\paragraph{Strategies:}
+Two cooperative strategies are available alongside a default non-cooperative baseline.
+In \texttt{ZONAL\_RELAY}, one agent clears the spawn region and drops parcels at a fixed midpoint tile, while the other ferries them to delivery tiles.
+In \texttt{OPPORTUNISTIC}, agents forage independently and hand off parcels dynamically whenever a pickup occurs.
+
+\paragraph{Roles:}
+Each strategy assigns agents specific roles executed via a deterministic finite-state machine (FSM).
+This FSM supersedes the standard BDI deliberation, emitting a restricted set of state-gated desires to enforce the intended cooperative behavior.
+The spatial targets for these roles are computed deterministically from map geometry; the exchange tile is the reachable cell closest to the midpoint between spawn and delivery clusters, and each agent is assigned a distinct adjacent approach cell.
+This position is injected as a high-reward \texttt{REACH\_TILE} desire until the FSM transitions.
+
+\paragraph{Handoff:}
+Both strategies culminate in a handoff.
+In \texttt{ZONAL\_RELAY}, roles are fixed and the exchange loops indefinitely.
+In \texttt{OPPORTUNISTIC}, roles are fluid: the agent that acquires a parcel proposes a handoff via a two-phase commit protocol, becoming the \emph{passer} once the partner commits as the \emph{receiver}.
+The partner accepts only if the meeting tile is reachable.
+When the mission controller issues an explicit directive, the LLM does not alter this core machinery; it simply applies a reward bonus to the handoff desire to make the exchange more highly prioritized.

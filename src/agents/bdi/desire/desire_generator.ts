@@ -5,24 +5,26 @@ import type {
     ReachParcelDesire,
     DeliverParcelDesire,
 } from "../../../models/desires.js";
-import type { InjectedIntention } from "../../../models/intentions.js";
+import type { InjectedDesire } from "../../../models/desires.js";
 import type { Beliefs } from "../belief/beliefs.js";
 
 /**
-    * Generates desires based on the current beliefs and injected intentions.
-    * - For each available parcel with a known position, generate a REACH_PARCEL desire.
-    * - If the agent is carrying any parcels, generate a DELIVER_PARCEL desire for each delivery tile.
-    * - Generate an EXPLORE desire for each spawn tile.
-    * - Injected intentions (from LLM, peer agents) are merged into the appropriate type bucket.
-    * Rule-based filtering and decay projection happen in the sorter, which has BFS distance info.
-    * Note: crate-clearing is handled transparently by the Planner as a fallback when A* fails.
-    * @param beliefs Current beliefs of the agent.
-    * @param injectedIntentions Live injected intentions to merge into the generated desires.
-    * @returns A map of desire types to arrays of generated desires.
+ * Generates desires based on the current beliefs and injected desires.
+ * - For each available parcel with a known position, generate a REACH_PARCEL desire.
+ * - If the agent is carrying any parcels, generate a DELIVER_PARCEL desire for each delivery tile.
+ * - Generate an EXPLORE desire for each spawn tile as a fallback.
+ * - Injected desires (from LLM, peer agents) are merged into the appropriate type bucket.
+ * Rule-based filtering and decay projection happen in the ranker, which has BFS distance info.
+ * Note: crate-clearing is handled transparently by the Planner as a fallback when A* fails.
+ * Note: when a HANDOFF role strategy is active, Intentions uses RoleController instead of this
+ * function to build gated desires for the role state machine.
+ * @param beliefs Current beliefs of the agent.
+ * @param injectedDesires Live injected desires to merge into the generated desires.
+ * @returns A map of desire types to arrays of generated desires.
  */
 export function generateDesires(
     beliefs: Beliefs,
-    injectedIntentions: readonly InjectedIntention[],
+    injectedDesires: readonly InjectedDesire[],
 ): GeneratedDesires {
     const desires: GeneratedDesires = new Map();
 
@@ -38,8 +40,8 @@ export function generateDesires(
     const explore = generateExploreDesires(beliefs);
     if (explore.length > 0) desires.set("EXPLORE", explore);
 
-    // Merge injected intentions (LLM / peer goals) into the appropriate type bucket
-    for (const entry of injectedIntentions) {
+    // Merge injected desires (LLM / peer goals) into the appropriate type bucket
+    for (const entry of injectedDesires) {
         const bucket = (desires.get(entry.desire.type) ?? []) as DesireType[];
         bucket.push(entry.desire);
         desires.set(entry.desire.type, bucket);
@@ -54,7 +56,7 @@ export function generateDesires(
  * @param beliefs Current beliefs of the agent.
  * @returns An array of REACH_PARCEL desires, each targeting the last known position of an available parcel.
  */
-function generateReachParcelDesires(beliefs: Beliefs): ReachParcelDesire[] {
+export function generateReachParcelDesires(beliefs: Beliefs): ReachParcelDesire[] {
     return beliefs.parcels.getAvailableParcels()
         .filter(parcel => parcel.lastPosition !== null)
         .map(parcel => ({
@@ -68,7 +70,7 @@ function generateReachParcelDesires(beliefs: Beliefs): ReachParcelDesire[] {
  * @param beliefs Current beliefs of the agent, used to determine if the agent is carrying parcels and to get delivery tile positions.
  * @returns An array of DELIVER_PARCEL desires, each targeting a delivery tile position, or an empty array if the agent is not carrying any parcels.
  */
-function generateDeliverDesires(beliefs: Beliefs): DeliverParcelDesire[] {
+export function generateDeliverDesires(beliefs: Beliefs): DeliverParcelDesire[] {
     const me = beliefs.agents.getCurrentMe();
     if (!me) return [];
     if (beliefs.parcels.getCarriedByAgent(me.id).length === 0) return [];

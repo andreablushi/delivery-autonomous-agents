@@ -1,0 +1,65 @@
+\section{PDDL-Based Crate Navigation}
+\label{sec:pddl}
+Some maps in the Deliveroo.js environment contain movable crates that can obstruct navigable paths. 
+An agent may push a crate one tile in any cardinal direction, subject to the constraints outlined in Section~\ref{sec:planning}. 
+We model this crate manipulation problem using PDDL (Planning Domain Definition Language), invoking it as a fallback mechanism when the standard A* planner fails to find an unobstructed route.
+
+\subsection{Domain Overview}
+The \texttt{deliveroo-crates} domain is formulated in STRIPS and relies on two primary object types: \texttt{tile} and \texttt{crate}. The complete state required for crate-aware navigation is captured by the following predicate set:
+\begin{itemize}[noitemsep]
+  \item \texttt{(at ?t)}: The agent is located on tile $t$.
+  \item \texttt{(adj-up/down/left/right ?from ?to)}: Defines the valid directed spatial relationships between adjacent tiles for movement or pushing.
+  \item \texttt{(crate-at ?c ?t)}: Crate $c$ occupies tile $t$.
+  \item \texttt{(crate-free ?t)}: Tile $t$ contains no crate, making it available for entry or as a push destination.
+  \item \texttt{(crate-space ?t)}: Tile $t$ can structurally support a crate (e.g., it is not a wall or a conveyor belt).
+\end{itemize}
+
+The domain defines eight parameterized actions: four directional \emph{move} actions and four directional \emph{push} actions.
+\begin{itemize}
+    \item A move action allows the agent to step into an adjacent \texttt{crate-free} tile. 
+    \item A push action allows the agent to displace a crate one tile in the specified direction, requiring two preconditions:
+    \begin{enumerate}[label=(\roman*)]
+        \item the agent is positioned adjacent to the crate on the opposite side of the push direction, and
+        \item the target destination is a valid \texttt{crate-space} and is currently \texttt{crate-free}. 
+    \end{enumerate}
+    The execution of a push action simultaneously relocates the crate to the target tile and moves the agent onto the crate's former tile, updating the \texttt{crate-free} state of the involved tiles accordingly.
+\end{itemize}
+
+\subsection{Planning With PDDL}
+PDDL planning is invoked exclusively when standard A* pathfinding fails and the agent's belief system indicates that crates obstruct the route (Section~\ref{sec:planning}).
+This detection occurs in two phases. First, an A* search is executed, treating all crate-occupied tiles as impassable. 
+If this search fails, a second A* search is performed that entirely ignores crate positions, yielding a structurally valid but potentially obstructed path. 
+Any crates from the agent's current beliefs that intersect this path are collected; their presence confirms that the route is blocked by movable obstacles rather than static map geometry.
+
+A PDDL problem instance is subsequently constructed from the agent's current beliefs.
+The \texttt{:init} state is populated with the following:
+\begin{itemize}[noitemsep]
+    \item \texttt{(at t\_X\_Y)}, where $(X, Y)$ is the agent's current position;
+    \item adjacency facts for every pair of connected non-wall tiles, covering all four cardinal directions;
+    \item \texttt{(crate-at ?c ?t)} and \texttt{(crate-free ?t)} facts for each believed crate position;
+    \item \texttt{(crate-space ?t)} facts for all structurally valid positions (non-wall, non-conveyor tiles).
+\end{itemize}
+The \texttt{:goal} section comprises a single ground atom, \texttt{(at t\_TX\_TY)}, where $(TX, TY)$ represents the target position.
+Consequently, the solver is tasked with generating a \textit{complete} sequence of \texttt{move} and \texttt{push} actions from the agent's 
+current location to the final destination, clearing any obstructing crates along the way.
+The resulting plan is translated back into the agent's internal action representation, stored in the plan buffer, and executed step-by-step until completion or failure.
+
+However, this formulation suffers from a fundamental performance bottleneck: the PDDL solver is slow for the interactive demands of the environment.
+An initial optimization involved transitioning to a local solver, which eliminated the overhead of remote API requests and constant problem serialization. 
+A more structural optimization, caching solved plans, is unfortunately undermined by the formulation itself. 
+Because the cache key must incorporate both the start and goal tiles, even a trivial change in the agent's position alters the key and triggers a cache miss, 
+despite the crate-clearing maneuver remaining identical regardless of where the agent initiated the request.
+
+\subsection{A Smart Solution: Problem Restatement \& Caching}
+The root cause of this inefficiency is that PDDL is only strictly necessary for navigating the crate cluster itself; 
+the initial and final segments can be efficiently handled by standard A* navigation.
+
+To resolve this, the problem is reformulated so that the PDDL solver is only responsible for the segment of the journey that requires crate manipulation.
+The overall plan is decomposed into three distinct segments:
+\begin{itemize}[noitemsep]
+    \item Move from the current position to the cluster entry tile (A*);
+    \item Navigate through the crate cluster, from entry to exit (PDDL);
+    \item Move from the cluster exit tile to the final goal (A*).
+\end{itemize}
+Under this paradigm, the PDDL problem is anchored to the cluster's entry tile rather than the agent's live position.
+Computed maneuvers are stored in a FIFO cache, utilizing the tuple $(\text{entry},\, \text{exit},\, \{\text{crate positions}\})$ as the key.
