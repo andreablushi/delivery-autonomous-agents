@@ -27,6 +27,35 @@ A project focused on the development and analysis of autonomous software agents,
 <img width="600" height="338" alt="Image" src="https://github.com/user-attachments/assets/990ac01f-7788-4e38-980b-6435b28f980d" />
 </p>
 
+## Demos
+
+<table align="center">
+  <tr>
+    <td align="center" width="50%">
+      <strong>Collision Management</strong><br><br>
+      <!-- Upload video and replace the src URL -->
+      <em>Video coming soon</em>
+    </td>
+    <td align="center" width="50%">
+      <strong>PDDL Crate-Clearing</strong><br><br>
+      <!-- Upload video and replace the src URL -->
+      <em>Video coming soon</em>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>Safe SCC Reachability</strong><br><br>
+      <!-- Upload video and replace the src URL -->
+      <em>Video coming soon</em>
+    </td>
+    <td align="center" width="50%">
+      <strong>Cooperation Showcase</strong><br><br>
+      <!-- Upload video and replace the src URL -->
+      <em>Video coming soon</em>
+    </td>
+  </tr>
+</table>
+
 **Course:** Autonomous Software Agents  
 **Professors:** Prof. Paolo Giorgini, Prof. Marco Robol  
 **Authors:** Davide Donà (davide.dona-1@studenti.unitn.it), Andrea Blushi (andrea.blushi@studenti.unitn.it)

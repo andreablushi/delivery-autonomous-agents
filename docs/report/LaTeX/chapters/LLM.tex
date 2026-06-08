@@ -103,8 +103,10 @@ Conversely, a traffic-control hold persists until its time limit expires or the 
 \subsection{Cooperation}
 
 Beyond reactive primitives, the team periodically evaluates a higher-level cooperation strategy.
-Every $k$ seconds, an agent initiates a cooperation round by requesting teammates' beliefs.
-From the replies it assembles a compact context for an LLM query, drawing on three sources: a \emph{roster} listing each agent's position, carried load, and any sensed enemies; a deterministic \emph{geometry} summary of the spawn clusters and delivery zones; and a \emph{performance} record holding the average score each strategy has earned per round over a recent sliding window.
+Every $k$ seconds, the LLM agent initiates a cooperation round by requesting teammates' beliefs.
+From the replies it assembles a compact context for an LLM query, drawing on three sources: a \emph{roster} listing each agent's position, carried load, and any sensed enemies; 
+a deterministic \emph{geometry} summary of the spawn clusters and delivery zones; 
+and a \emph{performance} record holding the average score each strategy has earned per round over a recent sliding window.
 The prompt is steered with a handful of \emph{few-shot examples}, each pairing a representative scenario with its expected decision.
 It is further guided by \emph{chain-of-thought} prompting: the model is asked to reason step by step and to return a structured response that states its rationale before committing to a strategy.
 
@@ -119,9 +121,9 @@ This FSM supersedes the standard BDI deliberation, emitting a restricted set of 
 The spatial targets for these roles are computed deterministically from map geometry; the exchange tile is the reachable cell closest to the midpoint between spawn and delivery clusters, and each agent is assigned a distinct adjacent approach cell.
 This position is injected as a high-reward \texttt{REACH\_TILE} desire until the FSM transitions.
 
-\paragraph{Handpass:}
-Both strategies culminate in a handpass.
+\paragraph{Handoff:}
+Both strategies culminate in a handoff.
 In \texttt{ZONAL\_RELAY}, roles are fixed and the exchange loops indefinitely.
-In \texttt{OPPORTUNISTIC}, roles are fluid: the agent that acquires a parcel proposes a handpass via a two-phase commit protocol, becoming the \emph{passer} once the partner commits as the \emph{receiver}.
+In \texttt{OPPORTUNISTIC}, roles are fluid: the agent that acquires a parcel proposes a handoff via a two-phase commit protocol, becoming the \emph{passer} once the partner commits as the \emph{receiver}.
 The partner accepts only if the meeting tile is reachable.
-When the mission controller issues an explicit directive, the LLM does not alter this core machinery; it simply applies a reward bonus to the handpass desire to make the exchange more highly prioritized.
+When the mission controller issues an explicit directive, the LLM does not alter this core machinery; it simply applies a reward bonus to the handoff desire to make the exchange more highly prioritized.

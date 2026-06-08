@@ -17,11 +17,11 @@ ZONAL_RELAY  — one agent (PICKUP) sweeps the entire spawn region, heads to the
                at the edge tile, picks up ALL dropped parcels, delivers them to the delivery zone,
                and returns to wait. Use when spawns are clustered on one side of the map.
 
-OPPORTUNISTIC — arms both agents for handpass mode. Both search autonomously. The first to pick up
+OPPORTUNISTIC — arms both agents for handoff mode. Both search autonomously. The first to pick up
                a parcel initiates a handshake (2PC): both agents converge on the midpoint between
                them and wait for each other; the initiator (PASSER) drops its parcels there; the
                partner (RECEIVER) collects the dropped parcels and delivers. Either agent can be
-               the initiator. Disarms automatically after one handpass + delivery cycle.
+               the initiator. Disarms automatically after one handoff + delivery cycle.
                Use when spawns are scattered AND a cross-agent bonus is active.
 
 NONE         — agents run fully autonomously; current assignments lapse on their TTL.

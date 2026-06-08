@@ -216,9 +216,9 @@ export function parseTraversalPenaltyArgs(json: unknown): TraversalPenaltyArgs |
 }
 
 
-/** Wire args for `handpass_propose` and `handpass_commit` (same shape, includes roundId).
+/** Wire args for `handoff_propose` and `handoff_commit` (same shape, includes roundId).
  *  `approach_x`/`approach_y` carry the receiver's approach cell and are present only in commit. */
-export type HandpassProposeArgs = {
+export type HandoffProposeArgs = {
     roundId: string;
     meet_x: number;
     meet_y: number;
@@ -228,7 +228,7 @@ export type HandpassProposeArgs = {
     approach_y?: number;
 };
 
-export function parseHandpassProposeArgs(json: unknown): HandpassProposeArgs | { error: string } {
+export function parseHandoffProposeArgs(json: unknown): HandoffProposeArgs | { error: string } {
     if (typeof json !== "object" || json === null) return { error: "args must be an object" };
     const obj = json as Record<string, unknown>;
     if (typeof obj.roundId !== "string" || obj.roundId.trim() === "") return { error: "roundId must be a non-empty string" };

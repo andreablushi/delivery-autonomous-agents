@@ -5,7 +5,7 @@ import { createLogger, type Logger } from "../../utils/logger.js";
 export class PeerInbox {
     // Stores the latest beliefs_report from each peer, along with the timestamp of when it was received
     private readonly reports = new Map<string, { report: BeliefsReport; at: number }>();
-    // Stores the latest vote (rendezvous_vote, red_light_vote, goto_vote) from each peer, along with the timestamp of when it was received
+    // Stores the latest vote (rendezvous_vote, red_light_vote, goto_vote, handoff_vote) from each peer, along with the timestamp of when it was received
     private readonly votes = new Map<string, { roundId: string; accept: boolean; at: number }>();
     private readonly log: Logger;
 
@@ -22,7 +22,8 @@ export class PeerInbox {
         else if (
             msg.tool === PeerKind.RendezvousVote ||
             msg.tool === PeerKind.RedLightVote ||
-            msg.tool === PeerKind.GotoVote
+            msg.tool === PeerKind.GotoVote ||
+            msg.tool === PeerKind.HandoffVote
         ){
             const args = msg.args as Record<string, unknown>;
             if (typeof args.roundId === "string" && typeof args.accept === "boolean") {

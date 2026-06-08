@@ -148,11 +148,11 @@ export function evaluateRedLightVote(
 }
 
 /**
- * Evaluate a handpass proposal on behalf of a BDI agent (this agent will become the RECEIVER).
+ * Evaluate a handoff proposal on behalf of a BDI agent (this agent will become the RECEIVER).
  *
  * Returns `true` (accept) iff the meet zone is reachable (≥1 tile accessible from the agent's current position).
  */
-export function evaluateHandpassVote(
+export function evaluateHandoffVote(
     beliefs: Beliefs,
     ruleStore: RuleStore,
     rawArgs: unknown,

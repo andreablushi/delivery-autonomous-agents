@@ -1,6 +1,7 @@
 import { encode, tryDecode, PeerKind, type PeerInjectionMessage, type PeerInjectionKind } from "../../models/message_injection.js";
 import { applyInjection, type InjectionDeps } from "../../models/apply_injection.js";
-import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote, evaluateHandpassVote } from "../bdi/desire/scoring/vote.js";
+import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote, evaluateHandoffVote } from "../bdi/desire/scoring/vote.js";
+import type { PeerInbox } from "../coordination/peer_inbox.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
 import type { RuleStore } from "../bdi/desire/rule_store.js";
 import type { InjectedDesire } from "../../models/desires.js";
@@ -22,8 +23,9 @@ export type IncomingDeps = {
     addInjectedDesire: (e: InjectedDesire) => void;
     removeInjectedDesiresByType: (t: DesireType["type"]) => void;
     setGameStrategy: (s: GameStrategy) => void;
-    armHandpass?: (bonus: number | undefined, ttlMs: number) => void;
-    disarmHandpass?: () => void;
+    armHandoff?: (bonus: number | undefined, ttlMs: number) => void;
+    disarmHandoff?: () => void;
+    peerInbox: PeerInbox;
 };
 
 /**
@@ -32,15 +34,14 @@ export type IncomingDeps = {
  * - position beacons;
  * - belief requests;
  * - handshake proposals, and goal injections;
- * 
+ * - votes and belief reports recorded in the PeerInbox.
+ *
  * Outbound: send/broadcast peer-injection messages and the position beacon.
- * 
- * LLM-specific concerns (coordination votes, mission chat) are handled by
- * LLMCommunication, which extends this class.
+ *
+ * LLM-specific concerns (mission chat) are handled by LLMCommunication, which extends this class.
  */
 export class Communication {
     protected readonly log: Logger;
-    private handpassVoteHook?: (senderId: string, roundId: string, accept: boolean) => void;
 
     constructor(
         protected readonly socket: any,
@@ -48,11 +49,6 @@ export class Communication {
         agentId?: string,
     ) {
         this.log = createLogger("communication", agentId);
-    }
-
-    /** Register a callback invoked when a handpass_vote arrives. Used by HandpassInitiator. */
-    onHandpassVote(fn: (senderId: string, roundId: string, accept: boolean) => void): void {
-        this.handpassVoteHook = fn;
     }
 
     /** Send a peer-injection message to a specific agent. */
@@ -79,12 +75,12 @@ export class Communication {
     }
 
     /**
-     *  Listen for incoming peer-injection messages and handle them appropriately:
-     *  - position_beacon: update beliefs about sender's position.
-     *  - beliefs_report, rendezvous_vote, red_light_vote: forward to onCoordination().
-     *  - request_beliefs: reply with beliefs_report.
-     *  - rendezvous_propose, red_light_propose: evaluate and reply with vote.
-     *  - other tools: treat as intention injection and apply via applyInjection().
+     * Listen for incoming peer-injection messages and handle them appropriately:
+     * - position_beacon: update beliefs about sender's position.
+     * - beliefs_report, *_vote: record in peerInbox.
+     * - request_beliefs: reply with beliefs_report.
+     * - *_propose: evaluate and reply with the corresponding vote.
+     * - other tools: treat as intention injection and apply via applyInjection().
      * @param deps Dependencies needed to handle incoming messages, including beliefs, rule store, and intention management functions.
      */
     start(deps: IncomingDeps): void {
@@ -115,12 +111,13 @@ export class Communication {
                         return;
                     }
                     
-                    // The following message types are related to coordination and require special handling
+                    // Votes and belief reports are stored in the peer inbox for the coordinator/negotiator.
                     case PeerKind.BeliefsReport:
                     case PeerKind.RendezvousVote:
                     case PeerKind.RedLightVote:
                     case PeerKind.GotoVote:
-                        this.handleCoordinationMessage(senderId, msg);
+                    case PeerKind.HandoffVote:
+                        deps.peerInbox.record(senderId, msg);
                         return;
                     
                     // When receiving a beliefs request, reply with the current beliefs report
@@ -131,7 +128,7 @@ export class Communication {
                         return;
                     }
                     
-                    // When receiving a proposal (rendezvous, red light, goto, handpass), evaluate the proposal 
+                    // When receiving a proposal (rendezvous, red light, goto, handoff), evaluate the proposal
                     // using the appropriate function and reply with a vote message indicating acceptance or rejection.
                     case PeerKind.RendezvousPropose: {
                         const accept = evaluateRendezvousVote(deps.beliefs, deps.ruleStore, msg.args);
@@ -154,18 +151,11 @@ export class Communication {
                         await this.send(senderId, PeerKind.GotoVote, { roundId, accept });
                         return;
                     }
-                    case PeerKind.HandpassPropose: {
-                        const accept = evaluateHandpassVote(deps.beliefs, deps.ruleStore, msg.args);
+                    case PeerKind.HandoffPropose: {
+                        const accept = evaluateHandoffVote(deps.beliefs, deps.ruleStore, msg.args);
                         const roundId = extractRoundId(msg.args);
-                        this.log.debug(`handpass_propose from ${senderName}: accept=${accept} (roundId=${roundId})`);
-                        await this.send(senderId, PeerKind.HandpassVote, { roundId, accept });
-                        return;
-                    }
-                    case PeerKind.HandpassVote: {
-                        const args = msg.args as Record<string, unknown>;
-                        const roundId = extractRoundId(args);
-                        const accept = typeof args.accept === "boolean" ? args.accept : false;
-                        this.handpassVoteHook?.(senderId, roundId, accept);
+                        this.log.debug(`handoff_propose from ${senderName}: accept=${accept} (roundId=${roundId})`);
+                        await this.send(senderId, PeerKind.HandoffVote, { roundId, accept });
                         return;
                     }
                     
@@ -178,8 +168,8 @@ export class Communication {
                             removeInjectedDesiresByType: deps.removeInjectedDesiresByType,
                             setGameStrategy: deps.setGameStrategy,
                             sourceId: senderId,
-                            armHandpass: deps.armHandpass,
-                            disarmHandpass: deps.disarmHandpass,
+                            armHandoff: deps.armHandoff,
+                            disarmHandoff: deps.disarmHandoff,
                         };
                         const result = applyInjection(msg.tool, msg.args, injDeps);
                         if ("error" in result) this.log.warn(`injection error (${msg.tool}):`, result.error);
@@ -203,8 +193,6 @@ export class Communication {
         }, config.beliefs.positionBeaconIntervalMs);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    protected handleCoordinationMessage(_senderId: string, _msg: PeerInjectionMessage): void {}
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     protected handleRawMessage(_senderId: string, _senderName: string, _content: string): void {}
 }
