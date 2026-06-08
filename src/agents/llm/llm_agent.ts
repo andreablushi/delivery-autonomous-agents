@@ -2,8 +2,6 @@ import { BDIAgent } from "../bdi/bdi_agent.js";
 import { LLMCommunication } from "../communication/llm_communication.js";
 import { LLMClient } from "./client/llm_client.js";
 import { CooperationLoop } from "./cooperation/cooperation_loop.js";
-import { PeerInbox } from "../coordination/peer_inbox.js";
-import { Negotiator } from "../coordination/negotiator.js";
 import { TeamStrategyAssigner } from "../cooperation/strategy/strategy_assigner.js";
 import { PerformanceTracker } from "../cooperation/strategy/performance_tracker.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
@@ -23,21 +21,16 @@ export class LLMAgent {
             (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; });
 
         const beliefs = this.bdi.getBeliefs();
+        const peerInbox = this.bdi.getPeerInbox();
+        const negotiator = this.bdi.getNegotiator();
 
-        const peerInbox = new PeerInbox();
-        const negotiator = new Negotiator(
-            beliefs,
-            comm,
-            peerInbox,
-            entry => this.bdi.addInjectedDesire(entry),
-        );
         const strategyAssigner = new TeamStrategyAssigner(
             beliefs,
             comm,
             entry => this.bdi.addInjectedDesire(entry),
             strategy => this.bdi.setGameStrategy(strategy),
-            (bonus, ttlMs) => this.bdi.armHandpass(bonus, ttlMs),
-            () => this.bdi.disarmHandpass(),
+            (bonus, ttlMs) => this.bdi.armHandoff(bonus, ttlMs),
+            () => this.bdi.disarmHandoff(),
         );
         const performanceTracker = new PerformanceTracker();
 
@@ -64,9 +57,6 @@ export class LLMAgent {
             () => this.missionNote,
         );
         this.loop.start();
-
-        // Inbound coordination messages from teammates are stored in the peer inbox.
-        comm.onCoordination((senderId, msg) => peerInbox.record(senderId, msg));
 
         // Handler for mission chat messages from the mission emitter. Passed to the LLM client.
         // Also triggers an immediate cooperation round so strategy changes take effect right away.

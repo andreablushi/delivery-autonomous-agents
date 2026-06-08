@@ -32,6 +32,36 @@ export class Negotiator {
         return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     }
 
+    /**
+     * Propose a handoff to a specific partner (OPPORTUNISTIC strategy).
+     * Runs the 2PC with handoff_propose/vote/commit/abort.
+     * On commit: calls `onCommit` so the initiator can set its own PASSER GameStrategy.
+     * The commit message carries `commitExtras` (receiver approach coords) in addition to the meet args.
+     * @param partnerId  The teammate this agent wants to hand off to.
+     * @param meetArgs   The meet tile and reward/ttl to include in both propose and commit.
+     * @param commitExtras Extra fields sent only in the commit message (receiver approach coords).
+     * @param onCommit   Called after all peers accept, before the commit message is sent.
+     */
+    async proposeHandoff(
+        partnerId: string,
+        meetArgs: { meet_x: number; meet_y: number; reward: number; ttl_seconds: number },
+        commitExtras: { approach_x: number; approach_y: number },
+        onCommit: () => void,
+    ): Promise<string> {
+        const roundId = this.newRoundId("hp");
+        const proposeArgs = { roundId, ...meetArgs };
+        const commitArgs  = { roundId, ...meetArgs, ...commitExtras };
+        return this.runTwoPhaseCommit({
+            label: "Handoff", roundId,
+            proposeKind: PeerKind.HandoffPropose,
+            commitKind:  PeerKind.HandoffCommit,
+            abortKind:   PeerKind.HandoffAbort,
+            proposeArgs, commitArgs,
+            recipients: [partnerId],
+            onCommit,
+        });
+    }
+
     /** Propose a goto action to a teammate */
     async proposeGoto(agentId: string, rawArgs: unknown): Promise<string> {
         // Parse and validate the proposal arguments
@@ -120,12 +150,15 @@ export class Negotiator {
         commitKind: Exclude<PeerInjectionKind, "beliefs_report">;
         abortKind: Exclude<PeerInjectionKind, "beliefs_report">;
         proposeArgs: Record<string, unknown>;
+        /** Payload for the commit message. Defaults to `proposeArgs` when omitted. */
+        commitArgs?: Record<string, unknown>;
         onCommit: () => void;
         /** Subset of peers to address. Defaults to all teammates. */
         recipients?: string[];
     }): Promise<string> {
-        
+
         const { label, roundId, proposeKind, commitKind, abortKind, proposeArgs, onCommit } = opts;
+        const commitArgs = opts.commitArgs ?? proposeArgs;
         
         // Determine the teammates to involve in the proposal. 
         // If no specific recipients are provided, default to all known teammates.
@@ -149,7 +182,7 @@ export class Negotiator {
         if (this.inbox.allAccepted(teammateIds, roundId, proposeSentAt)) {
             this.log.debug(`${label} ${roundId}: all peers accepted — committing`);
             for (const id of teammateIds) {
-                await this.comm.send(id, commitKind, proposeArgs);
+                await this.comm.send(id, commitKind, commitArgs);
             }
             onCommit();
             return JSON.stringify({ ok: true });

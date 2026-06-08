@@ -8,7 +8,9 @@ import { Intentions } from "./intention/intentions.js";
 import { Executor } from "./execution/executor.js";
 import { Planner } from "./plan/planner.js";
 import { Communication } from "../communication/communication.js";
-import { HandpassInitiator } from "../cooperation/handpass_initiator.js";
+import { HandoffInitiator } from "../cooperation/handoff_initiator.js";
+import { PeerInbox } from "../coordination/peer_inbox.js";
+import { Negotiator } from "../coordination/negotiator.js";
 import { createLogger } from "../../utils/logger.js";
 
 /**
@@ -25,7 +27,9 @@ export class BDIAgent {
     private intentions: Intentions;
     private executor: Executor;
     private comm: Communication;
-    private handpass: HandpassInitiator;
+    private peerInbox: PeerInbox;
+    private negotiator: Negotiator;
+    private handoff: HandoffInitiator;
     private perceiveLog;
     private deliberateLog;
 
@@ -45,23 +49,30 @@ export class BDIAgent {
         this.comm = commFactory
             ? commFactory(socket, this.beliefs, agentId)
             : new Communication(socket, this.beliefs, agentId);
-        this.handpass = new HandpassInitiator(
+        this.peerInbox = new PeerInbox();
+        this.negotiator = new Negotiator(
             this.beliefs,
-            (toId, tool, args) => this.comm.send(toId, tool, args),
+            this.comm,
+            this.peerInbox,
+            entry => this.addInjectedDesire(entry),
+        );
+        this.handoff = new HandoffInitiator(
+            this.beliefs,
+            this.negotiator,
             strategy => this.setGameStrategy(strategy),
             createLogger("coordination", agentId),
         );
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId,
-            () => { void this.handpass.maybeInitiate(); });
-        this.comm.onHandpassVote((id, roundId, accept) => this.handpass.handleVote(id, roundId, accept));
+            () => { void this.handoff.maybeInitiate(); });
         this.comm.start({
             beliefs: this.beliefs,
             ruleStore: this.ruleStore,
             addInjectedDesire: entry => this.addInjectedDesire(entry),
             removeInjectedDesiresByType: type => this.removeInjectedDesiresByType(type),
             setGameStrategy: strategy => this.setGameStrategy(strategy),
-            armHandpass: (bonus, ttlMs) => this.handpass.arm(bonus, ttlMs),
-            disarmHandpass: () => this.handpass.disarm(),
+            armHandoff: (bonus, ttlMs) => this.handoff.arm(bonus, ttlMs),
+            disarmHandoff: () => this.handoff.disarm(),
+            peerInbox: this.peerInbox,
         });
 
         this.socket.once('controller', (status: string, agent: { id: string; name: string; teamId: string; teamName: string; score: number }) => {
@@ -91,6 +102,22 @@ export class BDIAgent {
      */
     getRuleStore(): RuleStore {
         return this.ruleStore;
+    }
+
+    /**
+     * Expose the Negotiator for external use (e.g. by LLMAgent's coordination tools).
+     * @returns The agent's Negotiator instance.
+     */
+    getNegotiator(): Negotiator {
+        return this.negotiator;
+    }
+
+    /**
+     * Expose the PeerInbox for external use (e.g. by CooperationLoop).
+     * @returns The agent's PeerInbox instance.
+     */
+    getPeerInbox(): PeerInbox {
+        return this.peerInbox;
     }
 
     /**
@@ -126,14 +153,14 @@ export class BDIAgent {
         this.intentions.clearGameStrategy();
     }
 
-    /** Arm the handpass initiator (called by the coordinator when OPPORTUNISTIC is selected). */
-    armHandpass(bonus: number | undefined, ttlMs: number): void {
-        this.handpass.arm(bonus, ttlMs);
+    /** Arm the handoff initiator (called by the coordinator when OPPORTUNISTIC is selected). */
+    armHandoff(bonus: number | undefined, ttlMs: number): void {
+        this.handoff.arm(bonus, ttlMs);
     }
 
-    /** Disarm the handpass initiator (called by the coordinator on NONE or ZONAL_RELAY). */
-    disarmHandpass(): void {
-        this.handpass.disarm();
+    /** Disarm the handoff initiator (called by the coordinator on NONE or ZONAL_RELAY). */
+    disarmHandoff(): void {
+        this.handoff.disarm();
     }
 
     /**

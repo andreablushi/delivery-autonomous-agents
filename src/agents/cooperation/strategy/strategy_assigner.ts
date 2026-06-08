@@ -19,9 +19,9 @@ import { config } from "../../../config.js";
  *   ZONAL_RELAY  — one PICKUP_AGENT (sweeps the full spawn region, drops at the spawn-side edge tile)
  *                  + one DELIVER_AGENT (waits at the edge tile, ferries parcels to real deliveries).
  *                  Requires ≥2 agents and a valid spawnEdge; otherwise assigns nothing.
- *   OPPORTUNISTIC — arms the HandpassInitiator on both agents. Both search autonomously; the first
- *                   to pick up initiates a handshake handpass via the BDI-layer HandpassInitiator.
- *   NONE          — disarms handpass on both agents; active strategies lapse on their TTL.
+ *   OPPORTUNISTIC — arms the HandoffInitiator on both agents. Both search autonomously; the first
+ *                   to pick up initiates a handshake handoff via the BDI-layer HandoffInitiator.
+ *   NONE          — disarms handoff on both agents; active strategies lapse on their TTL.
  */
 export class TeamStrategyAssigner {
     private readonly log: Logger;
@@ -31,24 +31,24 @@ export class TeamStrategyAssigner {
         private readonly comm: Communication,
         private readonly addInjectedDesire: (entry: InjectedDesire) => void,
         private readonly setGameStrategy: (strategy: GameStrategy) => void,
-        private readonly armHandpass: (bonus: number | undefined, ttlMs: number) => void = () => {},
-        private readonly disarmHandpass: () => void = () => {},
+        private readonly armHandoff: (bonus: number | undefined, ttlMs: number) => void = () => {},
+        private readonly disarmHandoff: () => void = () => {},
     ) {
         this.log = createLogger("coordination");
     }
 
     async applyTeamStrategy(strategy: StrategyType | "NONE", ctx: { geometry: TeamGeometry; reports: Map<string, BeliefsReport>; bonus?: number }): Promise<string> {
         if (strategy === "NONE") {
-            this.disarmHandpass();
-            await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: false });
+            this.disarmHandoff();
+            await this.comm.broadcast(PeerKind.SetHandoffMode, { armed: false });
             this.log.debug("applyTeamStrategy: NONE — strategies will lapse on TTL");
             return JSON.stringify({ ok: true, strategy: "NONE" });
         }
 
         if (strategy === StrategyType.Opportunistic) {
             const ttlSeconds = Math.min(120, Math.ceil(config.coordination.intervalMs / 1000) * 2);
-            this.armHandpass(ctx.bonus, ttlSeconds * 1_000);
-            await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: true, bonus: ctx.bonus ?? null, ttl_seconds: ttlSeconds });
+            this.armHandoff(ctx.bonus, ttlSeconds * 1_000);
+            await this.comm.broadcast(PeerKind.SetHandoffMode, { armed: true, bonus: ctx.bonus ?? null, ttl_seconds: ttlSeconds });
             this.log.debug(`applyTeamStrategy: OPPORTUNISTIC armed, bonus=${ctx.bonus ?? 0}, ttl=${ttlSeconds}s`);
             return JSON.stringify({ ok: true, strategy: StrategyType.Opportunistic, bonus: ctx.bonus });
         }
@@ -56,8 +56,8 @@ export class TeamStrategyAssigner {
         if (strategy !== StrategyType.ZonalRelay) return JSON.stringify({ error: `Unknown strategy: ${strategy}` });
 
         // Disarm opportunistic mode when switching to ZONAL_RELAY
-        this.disarmHandpass();
-        await this.comm.broadcast(PeerKind.SetHandpassMode, { armed: false });
+        this.disarmHandoff();
+        await this.comm.broadcast(PeerKind.SetHandoffMode, { armed: false });
 
         const map = this.beliefs.map.getMap();
         if (!map) return JSON.stringify({ error: "Map not yet loaded" });
