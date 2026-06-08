@@ -8,21 +8,22 @@ The mission controller can issue requests that fall into three broad categories:
 Each category is handled through a different mechanism in the BDI core, chosen to integrate naturally with the existing deliberation loop rather than bypassing it.
 
 \subsection{Adapting Behavior Through Goal Injection}
-The simplest requests are navigation goals: move to a tile, or deliver at a specific location.
-These are translated into desires that enter the BDI intention queue and compete with existing goals through the standard scoring mechanism.
-A \emph{go-to} request creates a \texttt{REACH\_TILE} desire with a configurable reward and expiry time; the reward determines how aggressively the desire competes against parcel collection.
-A \emph{deliver-at} request creates a \texttt{DELIVER\_PARCEL} desire targeting a specific tile, with an optional bonus reward that biases the delivery score for that destination (Section~\ref{sec:scoring_rules}).
 
-All those requests have a limited duration to be executed. The generated desire are made persistent for the duration of the specified TTL, so that they can be continuously re-evaluated and pursued until completion or expiry.
+Navigation requests, more specifically, moving to a tile (\emph{go-to}) or delivering at a specific location (\emph{deliver-at}), are translated into \texttt{REACH\_TILE} and \texttt{DELIVER\_PARCEL} desires, respectively. 
+These injected goals enter the BDI intention queue and persist for a specified Time-To-Live (TTL), allowing them to be continuously re-evaluated against existing tasks until completion or expiry.
 
-Both desire types use the same rate formula as their BDI counterparts (Section~\ref{sec:desires}).
-A \texttt{REACH\_TILE} desire is scored as:
-\begin{equation*}
-  S = \frac{r_{\text{inj}} + \sum_{c \in C} r_c}{d}
-\end{equation*}
-where $r_{\text{inj}}$ is the configurable reward supplied by the mission controller and $\sum_{c \in C} r_c$ is the total estimated value of currently carried parcels.
-This mirrors the \texttt{ReachParcel} formula, so a navigation goal with a reward equal to a typical parcel value competes on equal footing with parcel collection.
-A \texttt{DELIVER\_PARCEL} desire applies the same rule-adjusted scoring as the BDI delivery desire, with an optional additive bonus applied after the rule combination, allowing the mission controller to bias delivery toward a specific tile.
+Both injected desires utilize the standard BDI rate formulas (Section~\ref{sec:desires}), 
+but incorporate configurable rewards from the mission controller to dictate their competitive priority:
+
+\begin{itemize}
+    \item \textbf{\texttt{REACH\_TILE}:} Scored identically to \texttt{ReachParcel}:
+    \begin{equation*}
+      S = \frac{r_{\text{inj}} + \sum_{c \in C} r_c}{d}
+    \end{equation*}
+    where $r_{\text{inj}}$ is the injected reward. Setting this reward equal to a typical parcel value allows the navigation goal to compete on equal footing with standard parcel collection.
+
+    \item \textbf{\texttt{DELIVER\_PARCEL}:} Similarly, applies the standard rule-adjusted scoring for deliveries (Section~\ref{sec:scoring_rules}), including an optional additive bonus after the rule combination to successfully bias the agent toward the requested destination tile.
+\end{itemize}
 
 \subsection{Adapting Strategy via Rule Injection}
 \label{sec:scoring_rules}
@@ -64,29 +65,40 @@ Coordination in our system is fully decentralized and message-driven: there is n
 Since only the LLM-driven agent is wired to the mission controller, it is the one that interprets admin queries and is therefore the sole agent able to issue proposals.
 
 \paragraph{Beacon Communication:}
-To handle the critical need for up-to-date position information in coordination maneuvers, each agent continuously broadcasts its current position 
-to all configured teammates as a \texttt{position\_beacon} message at a fixed interval.
+To handle the critical need for up-to-date position information in coordination maneuvers, each agent repeatedly broadcasts its current position 
+to all configured teammates as a \texttt{position\_beacon} message at a fixed interval. 
+This continuous broadcast is essential for enabling reliable coordination, even with teammates that fall outside of an agent's direct sensory range.
 
 \paragraph{Peer Communication:}
-Simple team-level commands (navigation goals, scoring rules, traversal penalties) follow a uniform two-step pattern: the injection is applied to the issuing agent locally, then packaged as a peer-injection message and broadcast to all teammates.
+Simple agent-level commands (navigation goals, scoring rules, traversal penalties) follow a uniform two-step pattern: 
+the injection is applied to the issuing agent locally, then packaged as a peer-injection message and broadcast to all teammates.
+
 Commands that carry stronger team-synchronisation requirements (rendezvous and traffic control) instead use a two-phase commit protocol described below.
 
-\paragraph{Two Phase Protocol:}
-Both \texttt{request\_rendezvous} and \texttt{request\_red\_light} make an agent hold, i.e. inject a \texttt{HOLD\_TILE} desire that anchors it on a tile.
-Before any hold, they employ a two-phase commit (2PC) protocol, ensuring the team only stops when it is collectively optimal to do so.
+\paragraph{Two-Phase Commit Protocol:}
+Commands that carry stronger team-synchronization requirements utilize a generalized two-phase commit (2PC) protocol. 
+This ensures the team only commits to a synchronized interruption of their current tasks when it is collectively optimal to do so.
 
-In Phase~1, the proposing agent broadcasts a \emph{propose} message carrying a unique round identifier (\texttt{rid}) and the command parameters.
-Each command offers a set of candidate hold tiles: for rendezvous, the tiles around the meeting point; for traffic control, the tiles lying on alternate rows or columns.
-Each teammate scores these candidate tiles and keeps the best \texttt{HOLD\_TILE} score, which reuses the same reward-over-distance form as the desires of Section~\ref{sec:desires}.
-To keep the subsequent comparison fair while the agent stands still, the carried value is first discounted by the parcel-reward decay expected during the wait: until the slowest teammate arrives in the case of a rendezvous, or over the full hold duration in the case of traffic control.
-The teammate then replies with a \emph{vote} carrying the \texttt{rid} and its accept/reject decision, based on comparing the hold score against its own current desires.
+\begin{itemize}
+    \item \textbf{Phase 1: Propose.} The proposing agent broadcasts a \emph{propose} message carrying a unique round identifier (\texttt{rid}) and the command parameters. 
+    Each teammate evaluates the proposal based on its current local state and replies with a \emph{vote} message indicating its accept or reject decision for that \texttt{rid}.
+    \item \textbf{Phase 2: Commit.} After a fixed collection window, the proposer checks for unanimity. 
+    If every expected teammate voted \emph{accept}, the proposer broadcasts a \emph{commit} message, and all agents (including the proposer) execute the command. 
+    If any vote is missing or negative, the proposer broadcasts \emph{abort}, and the command is discarded globally.
+\end{itemize}
 
-In Phase~2, after a fixed collection window, the proposer checks for unanimity.
-If every expected teammate voted \emph{accept} for the current \texttt{rid}, the proposer broadcasts a \emph{commit} message; each agent (including the proposer) then injects the \texttt{HOLD\_TILE} desires into its intention pool.
-If any vote is missing or negative, the proposer broadcasts \emph{abort} and no holds are injected on any agent.
+\paragraph{Protocol Evaluation and Execution:}
+We specifically apply this 2PC protocol to coordination maneuvers that force an agent to hold its position, namely \texttt{request\_rendezvous} and \texttt{request\_red\_light}. 
+In both cases, the successfully committed action results in the injection of a \texttt{HOLD\_TILE} desire.
 
-A rendezvous hold releases itself once the position beacons confirm all teammates have gathered within the agreed radius, with no further message needed.
-A traffic-control hold instead persists until its time limit expires or the controller issues an explicit green-light command that releases the whole team at once.
+During Phase 1, the proposal payload offers a set of candidate hold tiles: for rendezvous, the tiles around the meeting point; for traffic control, the tiles lying on alternate rows or columns. 
+A teammate evaluates this proposal by scoring the candidates and keeping the best \texttt{HOLD\_TILE} score, reusing the reward-over-distance formulation from Section~\ref{sec:desires}. 
+To keep the comparison fair, the carried value is first discounted by the parcel-reward decay expected during the wait—either until the slowest teammate arrives for a rendezvous, or over the full duration for traffic control. 
+The teammate votes \emph{accept} only if this discounted hold score outweighs its current active desires.
+
+Once committed, holds are released based on their specific command semantics. 
+A rendezvous hold releases itself automatically once position beacons confirm all teammates have gathered within the agreed radius, requiring no further messages. 
+Conversely, a traffic-control hold persists until its time limit expires or the mission controller issues an explicit green-light command that releases the whole team at once.
 
 \subsection{Cooperation}
 

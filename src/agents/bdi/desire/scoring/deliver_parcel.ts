@@ -5,7 +5,9 @@ import { posKey } from "../../../../utils/metrics.js";
 import { penalizedDistance } from "./utils.js";
 
 /**
- * Score a DELIVER_PARCEL desire applying stack_count, delivery_tile, and parcel_value rules.
+ * Score a DELIVER_PARCEL desire applying stack_count and delivery_tile rules.
+ * parcel_value rules are already folded into carriedValue (applied per-parcel in
+ * carriedEffectiveValue); applying them again here would square the multiplier.
  * Falls back to 0 when nothing is carried, the target is unreachable, or effective score ≤ 0.
  */
 export function scoreDeliverDesire(
@@ -27,10 +29,9 @@ export function scoreDeliverDesire(
     // Retrieve rule effects
     const stackEffect = ruleStore.stackCountEffect(carriedCount);
     const tileEffect = ruleStore.deliveryTileEffect(desire.target);
-    const parcelEffect = ruleStore.parcelValueEffect(carriedValue);
 
-    const effectiveScore = carriedValue * stackEffect.multiplier * tileEffect.multiplier * parcelEffect.multiplier
-        + stackEffect.additive + tileEffect.additive + parcelEffect.additive
+    const effectiveScore = carriedValue * stackEffect.multiplier * tileEffect.multiplier
+        + stackEffect.additive + tileEffect.additive
         + (desire.bonus ?? 0);
     if (effectiveScore <= 0) return 0;
 
