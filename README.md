@@ -23,35 +23,27 @@ A project focused on the development and analysis of autonomous software agents,
   </tr>
 </table>
 
-<p align="center">
-<img width="600" height="338" alt="Image" src="https://github.com/user-attachments/assets/990ac01f-7788-4e38-980b-6435b28f980d" />
-</p>
-
 ## Demos
 
 <table align="center">
   <tr>
     <td align="center" width="50%">
       <strong>Collision Management</strong><br><br>
-      https://github.com/user-attachments/assets/83d9eda0-3e09-4e0a-b74c-f668ed17043f
-      <em>Video coming soon</em>
+      <video src="https://github.com/user-attachments/assets/83d9eda0-3e09-4e0a-b74c-f668ed17043f" width="100%" controls></video>
     </td>
     <td align="center" width="50%">
       <strong>PDDL Crate-Clearing</strong><br><br>
-      https://github.com/user-attachments/assets/1945034c-ecf3-4311-84e9-fa081c7e069e
-      <em>Video coming soon</em>
+      <video src="https://github.com/user-attachments/assets/1945034c-ecf3-4311-84e9-fa081c7e069e" width="100%" controls></video>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
       <strong>Safe SCC Reachability</strong><br><br>
-      https://github.com/user-attachments/assets/10aa9e26-08c1-4351-a29c-93ce53e8458f
-      <em>Video coming soon</em>
+      <video src="https://github.com/user-attachments/assets/10aa9e26-08c1-4351-a29c-93ce53e8458f" width="100%" controls></video>
     </td>
     <td align="center" width="50%">
       <strong>Cooperation Showcase</strong><br><br>
-      https://github.com/user-attachments/assets/bb8cab17-84e4-4b3c-8e1f-1fcb714c1a21
-      <em>Video coming soon</em>
+      <video src="https://github.com/user-attachments/assets/bb8cab17-84e4-4b3c-8e1f-1fcb714c1a21" width="100%" controls></video>
     </td>
   </tr>
 </table>
