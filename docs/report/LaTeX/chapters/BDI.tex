@@ -1,20 +1,11 @@
 \section{BDI Agent}
-The agent operates on a continuous cycle driven by the \texttt{sensing} socket event emitted by the server.
-Rather than relying on a static script, the agent dynamically reacts to the environment through a strict, four-stage pipeline.
-Upon receiving a \texttt{sensing} event, the following sequence executes:
-\begin{enumerate}
-    \item \textbf{Perception (\texttt{perceive()}):} The agent integrates the new sensory data into its belief state trough a Belief Revision process (detailed in Section~\ref{sec:belief}).
-    The actions we perform that modify the belief state automatically updates the beliefs, without having to wait for the next sensing event.
-
-    \item \textbf{Deliberation (\texttt{deliberate()}):} Using its updated beliefs, the agent generates potential goals (desires) and calculates a score for each.
-    It then rebuilds its intention queue, prioritizing the most valuable task (detailed in Section~\ref{sec:desires}).
-
-    \item \textbf{Planning (\texttt{Planner.plan()}):} The planner extracts the highest-ranked intention from the queue and translates it into a concrete sequence of
-    executable, typed steps (detailed in Section~\ref{sec:planning}).
-
-    \item \textbf{Execution (\texttt{Executor}):} Finally, the planned actions are asynchronously emitted to the server via socket events.
-    To maintain responsiveness, the executor triggers an action at each server clock tick, instead of waiting for a perception update or an acknowledgment from the server.
-\end{enumerate}
+Each \texttt{sensing} event from the server drives one turn of the standard BDI cycle:
+\emph{perception} integrates the new observations into the belief state via a Belief Revision process (Section~\ref{sec:belief});
+\emph{deliberation} regenerates and scores desires, rebuilding the ranked desire queue whose head is the agent's active intention (Section~\ref{sec:desires});
+\emph{planning} translates that intention into typed, executable steps (Section~\ref{sec:planning});
+and \emph{execution} emits the corresponding socket actions.
+Two choices keep the agent responsive: belief-modifying actions update beliefs immediately rather than waiting for the next sensing event,
+and the executor fires one action per server clock tick instead of blocking on an acknowledgment.
 
 \subsection{Belief Revision}
 \label{sec:belief}
@@ -80,7 +71,7 @@ For the BDI layer, we define a fixed set of 3 core desire types, each parameteri
 \end{itemize}
 
 \subsubsection{Queue reconstruction}
-At each deliberation step, the intention queue is fully reconstructed from the current belief state.
+At each deliberation step, the desire queue is fully reconstructed from the current belief state; its head is the committed intention the planner acts on.
 The queue is sorted by priority first, then by descending score within each desire type.
 Both \texttt{ReachParcel} and \texttt{DeliverParcel} desires have a priority of 1, while \texttt{Explore} has a lower priority of 0.
 This ensures that the agent always prefers tangible parcel-related goals over exploration when any are available.

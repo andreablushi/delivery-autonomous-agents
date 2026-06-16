@@ -1,0 +1,44 @@
+% LLM goal injection: local inject + peer broadcast, located at the BDI merge stage.
+% Requires tikz libraries: positioning, arrows.meta, fit, backgrounds.
+\begin{tikzpicture}[
+  font=\small,
+  node distance=6mm,
+  box/.style={draw=black!60, rounded corners=2pt, align=center, inner sep=4pt,
+              minimum height=0.75cm},
+  llm/.style={box, draw=purple!60!black, fill=purple!8},
+  core/.style={box, draw=blue!60!black, fill=blue!6},
+  merge/.style={box, draw=blue!60!black, fill=blue!14, font=\small\bfseries},
+  peer/.style={box, draw=teal!55!black, fill=teal!8},
+  flow/.style={-{Latex[length=2mm]}, line width=0.8pt},
+  inject/.style={-{Latex[length=2mm]}, line width=1pt, purple!60!black},
+  bcast/.style={-{Latex[length=2mm]}, line width=1pt, teal!55!black, dashed},
+]
+  % --- mission controller + LLM agent ---
+  \node[box, fill=gray!8] (mc) {Mission\\controller};
+  \node[llm, right=10mm of mc] (tool) {LLM agent\\\footnotesize tool handler};
+  \draw[flow] (mc) -- (tool) node[midway, above, font=\scriptsize] {text cmd};
+
+  % --- this agent's BDI core (compact: only the injection point) ---
+  \node[core, right=22mm of tool, yshift=9mm] (bel)
+    {belief-derived desires\\ generation};
+  \node[merge, below=7mm of bel] (queue) {Desire queue};
+  \node[core, below=7mm of queue] (exec) {Planner $\rightarrow$ Executor};
+  \draw[flow] (bel) -- (queue);
+  \draw[flow] (queue) -- node[right, font=\scriptsize] {head = intention} (exec);
+
+  \begin{scope}[on background layer]
+    \node[draw=blue!55!black, dashed, rounded corners=4pt, fill=blue!2,
+          fit=(bel)(queue)(exec), inner sep=8pt,
+          label={[blue!55!black,font=\scriptsize]above:BDI core (this agent)}] (corebox) {};
+  \end{scope}
+
+  % --- teammates ---
+  \node[peer, below=20mm of tool] (peeragents)
+    {Teammate BDI agent(s)\\\footnotesize $\rightarrow$ their desire queue};
+
+  % --- injections ---
+  \draw[inject] (tool.east) to[out=0, in=180]
+    node[above, font=\scriptsize, pos=0.25] {local inject} (queue.west);
+  \draw[bcast] (tool.south) --
+    node[left, font=\scriptsize, align=right] {peer-injection\\(broadcast)} (peeragents.north);
+\end{tikzpicture}

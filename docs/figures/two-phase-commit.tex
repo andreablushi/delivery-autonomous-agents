@@ -1,0 +1,49 @@
+% Two-phase commit sequence diagram for synchronized holds.
+% Requires tikz libraries: arrows.meta, calc, decorations.pathreplacing.
+\begin{tikzpicture}[
+  font=\small,
+  head/.style={draw=blue!70!black, fill=blue!8, rounded corners=2pt,
+               minimum height=0.7cm, inner xsep=6pt, font=\small\bfseries},
+  msg/.style={-{Latex[length=2.2mm]}, line width=0.9pt},
+  commit/.style={-{Latex[length=2.2mm]}, line width=1pt, green!50!black},
+  evalbrace/.style={decorate, decoration={brace, amplitude=4pt}, gray!70},
+]
+  % --- lifeline x positions ---
+  \def\P{0} \def\A{4.4} \def\B{7.6}
+  \def\Bot{-4.3}
+
+  % --- heads ---
+  \node[head] (hP) at (\P,0) {Proposer (LLM agent)};
+  \node[head] (hA) at (\A,0) {Teammate A};
+  \node[head] (hB) at (\B,0) {Teammate B};
+
+  % --- lifelines ---
+  \foreach \x in {\P,\A,\B}{ \draw[gray!55, dashed] (\x,-0.45) -- (\x,\Bot); }
+
+  % --- Phase 1: propose (broadcast) ---
+  \draw[msg] (\P,-1.0) -- (\A,-1.0);
+  \draw[msg] (\P,-1.22) -- (\B,-1.22);
+  \node[above, font=\footnotesize] at ($(\P,-1.0)!0.5!(\A,-1.0)$) {\texttt{propose(rid, params)}};
+
+  % --- each teammate evaluates the proposal locally (brace, like the collection window) ---
+  \draw[evalbrace] (\A+0.15,-1.4) -- (\A+0.15,-2.25);
+  \draw[evalbrace] (\B+0.15,-1.4) -- (\B+0.15,-2.25);
+  \node[anchor=west, font=\footnotesize, text width=2.5cm, align=left]
+    at (\B+0.35,-1.83) {each teammate scores it locally};
+
+  % --- votes ---
+  \draw[msg] (\A,-2.55) -- (\P,-2.55);
+  \draw[msg] (\B,-2.77) -- (\P,-2.77);
+  \node[above, font=\footnotesize] at ($(\A,-2.55)!0.5!(\P,-2.55)$) {\texttt{vote(accept | reject)}};
+
+  % --- collection window on proposer ---
+  \draw[evalbrace] (\P-0.15,-1.0) -- (\P-0.15,-2.77);
+  \node[anchor=east, font=\footnotesize, text width=1.9cm, align=right]
+    at (\P-0.35,-1.88) {collection window (fixed)};
+
+  % --- Phase 2: commit (if unanimous accept) ---
+  \draw[commit] (\P,-3.55) -- (\A,-3.55);
+  \draw[commit] (\P,-3.77) -- (\B,-3.77);
+  \node[above, font=\footnotesize, green!45!black]
+    at ($(\P,-3.55)!0.5!(\A,-3.55)$) {\texttt{commit(rid)} \footnotesize[all accept]};
+\end{tikzpicture}

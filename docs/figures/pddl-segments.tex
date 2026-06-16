@@ -1,0 +1,48 @@
+% Three-segment path decomposition (A* -> PDDL -> A*).
+% Requires tikz libraries: arrows.meta, backgrounds, shapes.geometric.
+\begin{tikzpicture}[
+  x=0.95cm, y=0.95cm,
+  tile/.style={draw=gray!35, fill=gray!4, minimum size=0.86cm, inner sep=0},
+  crate/.style={draw=brown!70!black, fill=brown!45, minimum size=0.72cm, inner sep=0, rounded corners=1.5pt},
+  ghost/.style={draw=brown!40, fill=brown!12, minimum size=0.72cm, inner sep=0, rounded corners=1.5pt, dashed},
+  agent/.style={draw=black, fill=blue!55, circle, minimum size=0.55cm, inner sep=0},
+  goal/.style={star, star points=5, star point ratio=2.2, draw=black, fill=yellow!85!orange, minimum size=0.62cm, inner sep=0},
+  push/.style={-{Latex[length=2mm]}, brown!70!black, line width=0.9pt},
+]
+  % --- tile grid: 8 cols (0..7) x 3 rows (0..2) ---
+  \foreach \x in {0,...,7}{
+    \foreach \y in {0,1,2}{ \node[tile] at (\x,\y) {}; }
+  }
+
+  % --- PDDL cluster region highlight ---
+  \begin{scope}[on background layer]
+    \fill[orange!18, rounded corners=4pt] (1.55,-0.55) rectangle (5.45,2.55);
+  \end{scope}
+  \draw[orange!65!black, dashed, rounded corners=4pt] (1.55,-0.55) rectangle (5.45,2.55);
+  \node[orange!55!black, font=\footnotesize\bfseries] at (3.5,2.9) {PDDL: crate clearing};
+
+  % --- A* segments (green approach, blue exit) ---
+  \draw[green!55!black, line width=1.7pt, -{Latex[length=2.5mm]}] (0,1) -- (1.85,1)
+    node[midway, above=1pt, font=\scriptsize\bfseries, green!45!black] {A$^\star$};
+  \draw[blue!70, line width=1.7pt, -{Latex[length=2.5mm]}] (5.15,1) -- (7,1)
+    node[midway, above=1pt, font=\scriptsize\bfseries, blue!70] {A$^\star$};
+
+  % --- PDDL traversal arrow through the cleared corridor ---
+  \draw[orange!75!black, line width=1.5pt, -{Latex[length=2.5mm]}] (2,1) -- (5,1);
+
+  % --- crates: ghost in original blocking spot, solid after push ---
+  \node[ghost] at (3,1) {};
+  \node[ghost] at (4,1) {};
+  \node[crate] at (3,0) {};
+  \node[crate] at (4,0) {};
+  \draw[push] (3,0.62) -- (3,0.38);
+  \draw[push] (4,0.62) -- (4,0.38);
+
+  % --- agent, goal, entry/exit markers ---
+  \node[agent] at (0,1) {};
+  \node[goal]  at (7,1) {};
+  \draw[orange!65!black, line width=1pt] (2,1) circle (0.36);
+  \draw[orange!65!black, line width=1pt] (5,1) circle (0.36);
+  \node[font=\scriptsize, below=0.30cm] at (0,0.6) {start};
+  \node[font=\scriptsize, below=0.30cm] at (7,0.6) {goal};
+\end{tikzpicture}
