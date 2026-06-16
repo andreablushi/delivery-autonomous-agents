@@ -63,3 +63,12 @@ The overall plan is decomposed into three distinct segments:
 \end{itemize}
 Under this paradigm, the PDDL problem is anchored to the cluster's entry tile rather than the agent's live position.
 Computed maneuvers are stored in a FIFO cache, utilizing the tuple $(\text{entry},\, \text{exit},\, \{\text{crate positions}\})$ as the key.
+
+\begin{figure}[H]
+  \centering
+  \input{../../figures/pddl-segments.tex}
+  \caption{Three-segment path decomposition. The agent uses A$^\star$ for the initial approach and final exit, 
+  restricting computationally expensive PDDL crate-clearing to the localized cluster. 
+  This isolation enables efficient, position-invariant plan caching.}
+  \label{fig:pddl-segments}
+\end{figure}
