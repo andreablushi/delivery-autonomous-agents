@@ -10,7 +10,7 @@ Each category is handled through a different mechanism in the BDI core, chosen t
 \subsection{Adapting Behavior Through Goal Injection}
 
 Navigation requests, more specifically, moving to a tile (\emph{go-to}) or delivering at a specific location (\emph{deliver-at}), are translated into \texttt{REACH\_TILE} and \texttt{DELIVER\_PARCEL} desires, respectively. 
-These injected goals enter the BDI intention queue and persist for a specified Time-To-Live (TTL), allowing them to be continuously re-evaluated against existing tasks until completion or expiry.
+These injected goals enter the BDI desire queue and persist for a specified Time-To-Live (TTL), allowing them to be continuously re-evaluated against existing tasks until completion or expiry.
 
 Both injected desires utilize the standard BDI rate formulas (Section~\ref{sec:desires}), 
 but incorporate configurable rewards from the mission controller to dictate their competitive priority:

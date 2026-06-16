@@ -20,11 +20,11 @@
 
   % --- this agent's BDI core (compact: only the injection point) ---
   \node[core, right=22mm of tool, yshift=9mm] (bel)
-    {belief-derived desires\\\footnotesize\{ReachParcel, Deliver, Explore\}};
-  \node[merge, below=7mm of bel] (queue) {Intention queue\\\footnotesize merge + sort (TTL)};
+    {belief-derived desires\\ generation};
+  \node[merge, below=7mm of bel] (queue) {Desire queue};
   \node[core, below=7mm of queue] (exec) {Planner $\rightarrow$ Executor};
   \draw[flow] (bel) -- (queue);
-  \draw[flow] (queue) -- (exec);
+  \draw[flow] (queue) -- node[right, font=\scriptsize] {head = intention} (exec);
 
   \begin{scope}[on background layer]
     \node[draw=blue!55!black, dashed, rounded corners=4pt, fill=blue!2,
@@ -34,11 +34,11 @@
 
   % --- teammates ---
   \node[peer, below=20mm of tool] (peeragents)
-    {Teammate BDI agent(s)\\\footnotesize $\rightarrow$ their intention queue};
+    {Teammate BDI agent(s)\\\footnotesize $\rightarrow$ their desire queue};
 
   % --- injections ---
   \draw[inject] (tool.east) to[out=0, in=180]
-    node[above, font=\scriptsize, pos=0.55] {local inject} (queue.west);
+    node[above, font=\scriptsize, pos=0.25] {local inject} (queue.west);
   \draw[bcast] (tool.south) --
     node[left, font=\scriptsize, align=right] {peer-injection\\(broadcast)} (peeragents.north);
 \end{tikzpicture}
