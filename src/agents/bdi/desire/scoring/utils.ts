@@ -1,4 +1,5 @@
 import type { Position } from "../../../../models/position.js";
+import type { ScoringContext } from "../../../../models/scoring.js";
 import type { Beliefs } from "../../belief/beliefs.js";
 import type { RuleStore } from "../rule_store.js";
 import { bfsDistancesFrom } from "../../../../utils/metrics.js";
@@ -8,15 +9,6 @@ import { MapBeliefs } from "../../belief/modules/map_beliefs.js";
 export function penalizedDistance(distance: number, target: Position, beliefs: Beliefs): number {
     return distance + beliefs.map.getTilePenalty(target);
 }
-
-export type ScoringContext = {
-    me: { id: string; lastPosition: Position };
-    meDist: Map<string, number>;
-    friendDists: Map<string, number>[];
-    enemyDists: Map<string, number>[];
-    carriedCount: number;
-    carriedValue: number;
-};
 
 /**
  * Build the BFS-based scoring context shared by the desire sorter and vote evaluators.
@@ -28,7 +20,7 @@ export function buildScoringContext(beliefs: Beliefs, ruleStore: RuleStore): Sco
 
     const map = beliefs.map.getMap();
     if (!map) return null;
-
+    
     const walkable = (from: Position, to: Position) =>
         MapBeliefs.isStaticWalkable(map.tiles, map.width, map.height, from, to);
     const meDist = bfsDistancesFrom(me.lastPosition, walkable);
