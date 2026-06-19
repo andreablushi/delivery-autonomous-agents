@@ -1,7 +1,5 @@
 import type { Beliefs } from "../agents/bdi/belief/beliefs.js";
-import type { RuleStore } from "../agents/bdi/desire/rule_store.js";
-import type { InjectedDesire } from "./desires.js";
-import type { DesireType } from "./desires.js";
+import type { AgentControl } from "./agent_control.js";
 import type { ScoringRule } from "./rules.js";
 import { SCORING_AXIS } from "./rules.js";
 import type { GameStrategy } from "./game_strategy.js";
@@ -19,16 +17,14 @@ import {
 } from "./injection_args.js";
 import { buildRendezvousHolds, buildHolds } from "../agents/cooperation/holds.js";
 
-export interface InjectionDeps {
+export type InjectionDeps = Pick<AgentControl,
+    "ruleStore" | "addInjectedDesire" | "removeInjectedDesiresByType" | "setGameStrategy"
+> & {
     beliefs: Beliefs;
-    ruleStore: RuleStore;
-    addInjectedDesire: (entry: InjectedDesire) => void;
-    removeInjectedDesiresByType: (type: DesireType["type"]) => void;
-    setGameStrategy: (strategy: GameStrategy) => void;
     sourceId: string;
-    armHandoff?: (bonus: number | undefined, ttlMs: number) => void;
-    disarmHandoff?: () => void;
-}
+    armHandoff?: AgentControl["armHandoff"];
+    disarmHandoff?: AgentControl["disarmHandoff"];
+};
 
 export type InjectionResult = { ok: true } | { error: string };
 
