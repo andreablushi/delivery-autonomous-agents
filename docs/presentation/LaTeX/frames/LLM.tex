@@ -3,7 +3,7 @@
 % ----- LLM Layer Overview --------------------------------------
 \begin{frame}{LLM Layer Overview}
   \begin{itemize}
-    \item Thin wrapper around the BDI agent
+    \item Thin wrapper around the BDI core
     \item Listens and interprets mission-controller chat messages
     \item Modifies the BDI behaviour accordingly
     \item Four command categories: \textbf{goal injection}, \textbf{rules}, \textbf{coordination} and \textbf{cooperation}
@@ -12,6 +12,15 @@
 
 % ----- Goal Injection ------------------------------------------
 \begin{frame}{Goal Injection}
+  \begin{exampleblock}{Trigger Examples}
+    \begin{itemize}
+      \item \textit{``Move to coordinate (4,7) and you get +10pts''}
+      \item \textit{``Drop a package in the leftmost tile to get 5pt''}
+    \end{itemize}
+  \end{exampleblock}
+  
+  \vspace{1em}
+  
   \begin{itemize}
     \item LLM can inject new goals into the BDI agent (e.g. \texttt{go-to}, \texttt{deliver-at})
     \item Compete with existing BDI desires; may be accepted or rejected
@@ -28,11 +37,19 @@
 
 % ----- Rule Injection ------------------------------------------
 \begin{frame}{Rule Injection}
+  \begin{exampleblock}{Trigger Examples}
+    \begin{itemize}
+      \item \textit{``Deliver stacks of exactly 3 parcels at a time to double the reward''}
+      \item \textit{``Every time you deliver in (x1,y1) you get 0 pts''}
+    \end{itemize}
+  \end{exampleblock}
+  
+  \vspace{1em}
+  
   \begin{itemize}
-    \item \texttt{RuleStore}: condition + multiplier $m$ + offset $a$
-    \item Example: incentivise collecting $n$ parcels before delivery
-    \item Applied each cycle: scales/shifts baseline desire scores
-    \item \textbf{Special case}: Stack rule automatically elevates Explore to priority~1
+    \item \texttt{RuleStore}: Defines a condition, multiplier ($m$), and offset ($a$)
+    \item \textbf{Effect}: Dynamically scales and shifts the BDI score for any desire matching the condition
+    \item \textbf{Special case}: The \textbf{Stack rule} automatically elevates \textbf{Explore} to priority~1
   \end{itemize}
 \end{frame}
 
@@ -47,12 +64,20 @@
 
 % ----- Coordination: 2-Phase Commit -----------------------------------
 \begin{frame}{Coordination: 2-Phase Commit}
-    Used for complex coordination tasks (commit together or not at all):
+  \begin{exampleblock}{Trigger Example}
     \begin{itemize}
+      \item \textit{``Move both agents to the neighborhood of position (x,y) within a maximum distance of 3, and have them wait for each other. You will receive 500pts.''}
+    \end{itemize}
+  \end{exampleblock}
+  
+  \vspace{1em}
+  
+  Used for complex coordination tasks (commit together or not at all):
+  \begin{itemize}
     \item \textbf{Phase 1 - Propose}: proposer broadcasts candidate hold tiles; each agent scores them
     \item \textbf{Vote}: \emph{accept} if the hold outweighs current desires; \emph{reject} if current desires are better
     \item \textbf{Phase 2 - Decide}: unanimous accept $\to$ commit (all inject); any miss or reject $\to$ abort
-    \end{itemize}
+  \end{itemize}
 \end{frame}
 
 % ----- Coordination: 2-Phase Commit (diagram) ------------------
@@ -61,36 +86,56 @@
   \resizebox{0.95\textwidth}{!}{\input{../../figures/two-phase-commit.tex}}
 \end{frame}
 
-% ----- Cooperation: Context -------------------------
-\begin{frame}{Cooperation: Context}
+% ----- Cooperation: Motivation -------------------------
+\begin{frame}{Cooperation: Motivation}
+  \begin{exampleblock}{Origin: Admin Directive}
+    \textit{``If a parcel is initially picked up by one agent and later delivered by the other agent, you will receive a 200 points bonus.''}
+  \end{exampleblock}
+
+  \vspace{1em}
   \begin{itemize}
-    \item Every $\Delta t$ seconds the LLM agent opens a \emph{cooperation round}
-    \item Requests teammates' beliefs $\to$ builds a compact context:
+    \item A one-shot \emph{check-and-coordinate} is insufficient: requires dynamic pickups, meeting tile computations, and joint commitments.
+    \item[$\Rightarrow$] Solution: Dedicated \textbf{roles} with specific behaviours, agreed upon via a \textbf{2-phase commit} (2PC).
+    \item Generalised into a reusable framework of \textbf{strategies} and \textbf{roles}.
+  \end{itemize}
+\end{frame}
+
+% ----- Cooperation: Generalisation -------------------------
+\begin{frame}{Cooperation: Generalisation}
+  \begin{itemize}
+    \item A \textbf{cooperation round} opens every $\Delta t$ seconds (or immediately upon a mission directive).
+    \item Agents request teammates' beliefs to build a \textbf{shared compact context}:
+  \end{itemize}
+  
+  \begin{block}{Context State}
       \begin{itemize}
-        \item \textbf{Roster}: positions, payloads, sensed enemies
-        \item \textbf{Map geometry}: spawn/delivery clusters, separation, corridor flag
-        \item \textbf{Performance}: avg score/round per strategy (sliding window)
+        \item \textbf{Roster}: Positions, payloads, sensed enemies.
+        \item \textbf{Map Geometry}: Spawn/delivery clusters, separation, corridor flags.
+        \item \textbf{Performance}: Average score/round per strategy (sliding window).
       \end{itemize}
-    \item From this context the LLM picks one shared strategy for the team
+  \end{block}
+
+  \begin{itemize}
+    \item[$\Rightarrow$] The \textbf{LLM} evaluates this context to select the optimal shared strategy for the team.
   \end{itemize}
 \end{frame}
 
 % ----- Cooperation: Strategies ---------------------------------
 \begin{frame}{Cooperation: Strategies}
   \begin{itemize}
-    \item \textbf{\texttt{ZONAL\_RELAY}}: one agent sweeps the spawn region and drops at a fixed midpoint; the other ferries parcels to delivery
-    \item \textbf{\texttt{OPPORTUNISTIC}}: agents forage independently and hand off parcels dynamically on pickup
-    \item \textbf{\texttt{NONE}}: fully autonomous baseline
+    \item \texttt{ZONAL\_RELAY}: One agent sweeps the spawn region and drops at a fixed midpoint; the companion ferries parcels to delivery.
+    \item \texttt{OPPORTUNISTIC}: Agents forage independently and hand off parcels dynamically upon pickup.
+    \item \texttt{NONE}: Fully autonomous baseline (no cooperation).
   \end{itemize}
 \end{frame}
 
 % ----- Cooperation: Roles --------------------------------------
 \begin{frame}{Cooperation: Roles}
   \begin{itemize}
-    \item Each strategy assigns every agent a \emph{role}
-    \item BDI desire generation is blocked
-    \item Role-specific FSM generates desires based on the context and internal state
-    \item Positioning are computed deterministically from map geometry
+    \item Each strategy assigns every agent a specific \textbf{role}.
+    \item Standard BDI desire generation is \emph{blocked}.
+    \item A role-specific \textbf{FSM} generates desires dynamically based on the shared context and internal state.
+    \item Meeting points and positioning are computed \emph{deterministically} from the map's geometry.
   \end{itemize}
 \end{frame}
 
@@ -98,15 +143,14 @@
 \begin{frame}{Cooperation: Handpass}
   \begin{columns}
     \column{0.60\textwidth}
-      Both strategies culminate in a \emph{handpass}:
+      Both strategies culminate in a \textbf{handpass}:
+      \vspace{0.5em}
       \begin{itemize}
-        \item \textbf{\texttt{ZONAL\_RELAY}}: the exchange loops indefinitely
-        \item \textbf{\texttt{OPPORTUNISTIC}}: the agent that acquires a parcel proposes a handpass via 2PC
-        \begin{itemize}
-            \item Receiver accepts only if the meeting tile is reachable
-        \end{itemize}
-        \item Admin directive are enforced by setting the opportunistic strategy
+        \item \texttt{ZONAL\_RELAY}:\\ The exchange loops indefinitely at the designated midpoint.
+        \vspace{0.5em}
+        \item \texttt{OPPORTUNISTIC}:\\ The agent acquiring a parcel proposes a handpass via 2PC.
       \end{itemize}
+      
     \column{0.38\textwidth}
       %#TODO: uncomment this for video demo
       %\animategraphics[autoplay,loop,width=\linewidth]{12}{../../media/cooperation/frame-}{1}{196}

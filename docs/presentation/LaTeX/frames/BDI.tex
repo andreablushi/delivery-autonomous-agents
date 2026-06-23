@@ -47,7 +47,7 @@
     \begin{itemize}
         \item Map is represented as a directed graph with edges for valid movements;
         \item Tarjan's algorithm identifies SCCs in this graph;
-        \item An SCC is \emph{safe} iff it contains $\geq 1$ spawn tile \textbf{and} $\geq 1$ delivery tile;
+        \item An SCC is \emph{safe} iff it contains $\geq 1$ spawn tile \emph{and} $\geq 1$ delivery tile;
         \item All tiles outside safe SCCs are reclassified as walls.
     \end{itemize}
 
@@ -148,7 +148,7 @@
 \begin{frame}{Collision: Detection}
   Checked before every move step. Target tile is \emph{occupied} if:
   \begin{itemize}
-    \item An enemy is currently observed on it, \textbf{or}
+    \item An enemy is currently observed on it, \emph{or}
     \item An enemy's \emph{predicted} next position matches it with sufficient confidence
   \end{itemize}
   \begin{block}{Enemy position prediction}
@@ -183,6 +183,6 @@
 \begin{frame}{Collision with Friends}
     \begin{itemize}
         \item The escalation above applies only to enemies; 
-        \item Asymmetric by agent id: the \textbf{lower-id} agent yields;
+        \item Asymmetric by agent id: the \emph{lower-id} agent yields;
     \end{itemize}
 \end{frame}
