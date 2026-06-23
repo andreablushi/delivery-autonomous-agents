@@ -1,7 +1,5 @@
 import { IOConfig, IOTile, IOAgent, IOSensing } from "../../models/djs.js";
-import type { InjectedDesire } from "../../models/desires.js";
-import type { DesireType } from "../../models/desires.js";
-import type { GameStrategy } from "../../models/game_strategy.js";
+import type { AgentControl } from "../../models/agent_control.js";
 import { Beliefs } from "./belief/beliefs.js";
 import { RuleStore } from "./desire/rule_store.js";
 import { Intentions } from "./intention/intentions.js";
@@ -30,6 +28,7 @@ export class BDIAgent {
     private peerInbox: PeerInbox;
     private negotiator: Negotiator;
     private handoff: HandoffInitiator;
+    private readonly _control: AgentControl;
     private perceiveLog;
     private deliberateLog;
 
@@ -54,24 +53,41 @@ export class BDIAgent {
             this.beliefs,
             this.comm,
             this.peerInbox,
-            entry => this.addInjectedDesire(entry),
+            entry => this.intentions.addInjectedDesire(entry),
         );
         this.handoff = new HandoffInitiator(
             this.beliefs,
             this.negotiator,
-            strategy => this.setGameStrategy(strategy),
+            strategy => this.intentions.setGameStrategy(strategy),
             createLogger("coordination", agentId),
         );
+
+        // Single control surface used both by external strategic layers (e.g. the LLM)
+        // and by the internal wiring below. Bundles every cross-cutting operation an
+        // outside caller may perform; the reactive loop itself is not exposed.
+        this._control = {
+            beliefs: this.beliefs,
+            ruleStore: this.ruleStore,
+            negotiator: this.negotiator,
+            peerInbox: this.peerInbox,
+            addInjectedDesire: entry => this.intentions.addInjectedDesire(entry),
+            removeInjectedDesiresByType: type => this.intentions.removeInjectedDesiresByType(type),
+            setGameStrategy: strategy => this.intentions.setGameStrategy(strategy),
+            getGameStrategy: () => this.intentions.getGameStrategy(),
+            armHandoff: (bonus, ttlMs) => this.handoff.arm(bonus, ttlMs),
+            disarmHandoff: () => this.handoff.disarm(),
+        };
+
         this.executor = new Executor(socket, this.beliefs, this.intentions, this.planner, this.ruleStore, agentId,
             () => { void this.handoff.maybeInitiate(); });
         this.comm.start({
             beliefs: this.beliefs,
             ruleStore: this.ruleStore,
-            addInjectedDesire: entry => this.addInjectedDesire(entry),
-            removeInjectedDesiresByType: type => this.removeInjectedDesiresByType(type),
-            setGameStrategy: strategy => this.setGameStrategy(strategy),
-            armHandoff: (bonus, ttlMs) => this.handoff.arm(bonus, ttlMs),
-            disarmHandoff: () => this.handoff.disarm(),
+            addInjectedDesire: this._control.addInjectedDesire,
+            removeInjectedDesiresByType: this._control.removeInjectedDesiresByType,
+            setGameStrategy: this._control.setGameStrategy,
+            armHandoff: this._control.armHandoff,
+            disarmHandoff: this._control.disarmHandoff,
             peerInbox: this.peerInbox,
         });
 
@@ -89,78 +105,13 @@ export class BDIAgent {
     }
 
     /**
-     * Return current beliefs for external inspection (e.g. by an LLM)
-     * @returns Beliefs object, which is readonly and updated in-place by socket listeners.
+     * Control surface for external strategic layers (e.g. the LLM): read beliefs,
+     * inject/revoke desires, set strategy, and arm handoff. The perceive→deliberate→
+     * execute loop is intentionally not part of this port.
+     * @returns The agent's {@link AgentControl}.
      */
-    getBeliefs(): Readonly<Beliefs> {
-        return this.beliefs;
-    }
-
-    /**
-     * Expose the rule store for external mutation (e.g. by LLM tool handlers).
-     * @returns The agent's RuleStore instance.
-     */
-    getRuleStore(): RuleStore {
-        return this.ruleStore;
-    }
-
-    /**
-     * Expose the Negotiator for external use (e.g. by LLMAgent's coordination tools).
-     * @returns The agent's Negotiator instance.
-     */
-    getNegotiator(): Negotiator {
-        return this.negotiator;
-    }
-
-    /**
-     * Expose the PeerInbox for external use (e.g. by CooperationLoop).
-     * @returns The agent's PeerInbox instance.
-     */
-    getPeerInbox(): PeerInbox {
-        return this.peerInbox;
-    }
-
-    /**
-     * Add an injected desire that will be included in the desire queue each cycle until it expires.
-     * Useful for desires injected by an LLM or other external system that should persist across multiple cycles.
-     * @param entry The injected desire entry, including the desire itself and its expiration time.
-     */
-    addInjectedDesire(entry: InjectedDesire): void {
-        this.intentions.addInjectedDesire(entry);
-    }
-
-    /**
-     * Remove all injected desires of a given type from the desire queue.
-     * Useful for revoking desires injected by an LLM or other external system.
-     * @param type The type of desire to remove.
-     */
-    removeInjectedDesiresByType(type: DesireType["type"]): void {
-        this.intentions.removeInjectedDesiresByType(type);
-    }
-
-    /** Set the active cooperation strategy assigned by the coordinator. */
-    setGameStrategy(strategy: GameStrategy): void {
-        this.intentions.setGameStrategy(strategy);
-    }
-
-    /** Returns the active cooperation strategy, or null if none. */
-    getGameStrategy(): GameStrategy | null {
-        return this.intentions.getGameStrategy();
-    }
-
-    /** Clear the active cooperation strategy. */
-    clearGameStrategy(): void {
-        this.intentions.clearGameStrategy();
-    }
-
-    /** Arm the handoff initiator (called by the coordinator when OPPORTUNISTIC is selected). */
-    armHandoff(bonus: number | undefined, ttlMs: number): void {
-        this.handoff.arm(bonus, ttlMs);
-    }
-
-    /** Disarm the handoff initiator (called by the coordinator on NONE or ZONAL_RELAY). */
-    disarmHandoff(): void {
-        this.handoff.disarm();
+    control(): AgentControl {
+        return this._control;
     }
 
     /**

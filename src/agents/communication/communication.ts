@@ -3,10 +3,7 @@ import { applyInjection, type InjectionDeps } from "../../models/apply_injection
 import { evaluateRendezvousVote, evaluateRedLightVote, evaluateGotoVote, evaluateHandoffVote } from "../bdi/desire/scoring/vote.js";
 import type { PeerInbox } from "../coordination/peer_inbox.js";
 import type { Beliefs } from "../bdi/belief/beliefs.js";
-import type { RuleStore } from "../bdi/desire/rule_store.js";
-import type { InjectedDesire } from "../../models/desires.js";
-import type { DesireType } from "../../models/desires.js";
-import type { GameStrategy } from "../../models/game_strategy.js";
+import type { AgentControl } from "../../models/agent_control.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 
@@ -17,15 +14,13 @@ function extractRoundId(args: unknown): string {
 }
 
 /** Dependencies for handling incoming peer-injection messages. */
-export type IncomingDeps = {
+export type IncomingDeps = Pick<AgentControl,
+    "ruleStore" | "addInjectedDesire" | "removeInjectedDesiresByType" | "setGameStrategy"
+> & {
     beliefs: Beliefs;
-    ruleStore: RuleStore;
-    addInjectedDesire: (e: InjectedDesire) => void;
-    removeInjectedDesiresByType: (t: DesireType["type"]) => void;
-    setGameStrategy: (s: GameStrategy) => void;
-    armHandoff?: (bonus: number | undefined, ttlMs: number) => void;
-    disarmHandoff?: () => void;
     peerInbox: PeerInbox;
+    armHandoff?: AgentControl["armHandoff"];
+    disarmHandoff?: AgentControl["disarmHandoff"];
 };
 
 /**

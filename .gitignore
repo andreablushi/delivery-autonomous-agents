@@ -12,3 +12,6 @@ dist/
 .claude/
 .venv/
 /docs/media/collision
+/docs/media/cooperation
+/docs/media/PDDL
+/docs/media/pothole

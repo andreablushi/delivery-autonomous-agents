@@ -20,27 +20,26 @@ export class LLMAgent {
         this.bdi = new BDIAgent(socket, agentId, teammateIds,
             (s, b, id) => { comm = new LLMCommunication(s, b, id); return comm; });
 
-        const beliefs = this.bdi.getBeliefs();
-        const peerInbox = this.bdi.getPeerInbox();
-        const negotiator = this.bdi.getNegotiator();
+        const control = this.bdi.control();
+        const negotiator = control.negotiator;
 
         const strategyAssigner = new TeamStrategyAssigner(
-            beliefs,
+            control.beliefs,
             comm,
-            entry => this.bdi.addInjectedDesire(entry),
-            strategy => this.bdi.setGameStrategy(strategy),
-            (bonus, ttlMs) => this.bdi.armHandoff(bonus, ttlMs),
-            () => this.bdi.disarmHandoff(),
+            control.addInjectedDesire,
+            control.setGameStrategy,
+            control.armHandoff,
+            control.disarmHandoff,
         );
         const performanceTracker = new PerformanceTracker();
 
         this.client = new LLMClient(
-            entry => this.bdi.addInjectedDesire(entry),
-            type => this.bdi.removeInjectedDesiresByType(type),
-            strategy => this.bdi.setGameStrategy(strategy),
-            () => this.bdi.getGameStrategy(),
+            control.addInjectedDesire,
+            control.removeInjectedDesiresByType,
+            control.setGameStrategy,
+            control.getGameStrategy,
             comm,
-            this.bdi.getRuleStore(),
+            control.ruleStore,
             rawArgs => negotiator.proposeRendezvous(rawArgs),
             rawArgs => negotiator.proposeRedLight(rawArgs),
             (agentId2, rawArgs) => negotiator.proposeGoto(agentId2, rawArgs),
@@ -48,10 +47,10 @@ export class LLMAgent {
         );
 
         this.loop = new CooperationLoop(
-            beliefs,
+            control.beliefs,
             comm,
             this.client,
-            peerInbox,
+            control.peerInbox,
             strategyAssigner,
             performanceTracker,
             () => this.missionNote,
@@ -66,7 +65,7 @@ export class LLMAgent {
             void this.loop.runRound({ force: true });
             this.log.debug(`mission msg from ${senderName} (${senderId}): "${content}"`);
             this.client
-                .processMessage(senderId, senderName, content, this.bdi.getBeliefs())
+                .processMessage(senderId, senderName, content, control.beliefs)
                 .catch((err: unknown) => this.log.error("LLM call failed:", err));
         });
     }

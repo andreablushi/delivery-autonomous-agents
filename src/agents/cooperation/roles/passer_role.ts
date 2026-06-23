@@ -39,6 +39,7 @@ export class PasserRole implements RoleFSM<PasserState> {
         if (!me) return;
         const myPos = beliefs.agents.getCurrentPosition();
         if (!myPos) return;
+        
         const M = strategy.meetTile;
         const approachTile = strategy.approachTile;
         if (!approachTile) {

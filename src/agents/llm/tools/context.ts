@@ -1,19 +1,13 @@
 import type { Beliefs } from "../../bdi/belief/beliefs.js";
-import type { InjectedDesire } from "../../../models/desires.js";
-import type { DesireType } from "../../../models/desires.js";
-import type { GameStrategy } from "../../../models/game_strategy.js";
 import type { Communication } from "../../communication/communication.js";
-import type { RuleStore } from "../../bdi/desire/rule_store.js";
+import type { AgentControl } from "../../../models/agent_control.js";
 
-export interface ToolContext {
+export interface ToolContext extends Pick<AgentControl,
+    "ruleStore" | "addInjectedDesire" | "removeInjectedDesiresByType" | "setGameStrategy" | "getGameStrategy"
+> {
     beliefs: Beliefs;
-    addInjectedDesire: (entry: InjectedDesire) => void;
-    removeInjectedDesiresByType: (type: DesireType["type"]) => void;
-    setGameStrategy: (strategy: GameStrategy) => void;
-    getGameStrategy: () => GameStrategy | null;
     comm: Communication;
     sourceId: string;
-    ruleStore: RuleStore;
     /** Run the two-phase rendezvous commit protocol; returns a JSON result string. */
     proposeRendezvous?: (rawArgs: unknown) => Promise<string>;
     /** Run the two-phase red-light commit protocol; returns a JSON result string. */
