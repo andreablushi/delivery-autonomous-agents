@@ -26,20 +26,6 @@
   \end{columns}
 \end{frame}
 
-% ----- The PDDL Domain -----------------------------------------
-\begin{frame}{The PDDL Domain}
-  \begin{itemize}
-    \item STRIPS: two object types - \texttt{tile} and \texttt{crate}
-    \item 4 directional \textbf{move} actions (step into crate-free tile)
-    \item 4 directional \textbf{push} actions:
-    \begin{itemize}
-      \item Agent adjacent on opposite side of push direction
-      \item Destination must be a valid, crate-free tile
-    \end{itemize}
-    \item Push relocates crate; agent steps onto its former tile
-  \end{itemize}
-\end{frame}
-
 % ----- Performance Bottlenecks ----------------------------------
 \begin{frame}{Performance Bottlenecks}
   \begin{itemize}
