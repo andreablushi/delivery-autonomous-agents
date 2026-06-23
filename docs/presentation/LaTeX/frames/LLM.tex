@@ -4,18 +4,19 @@
 \begin{frame}{LLM Layer Overview}
   \begin{itemize}
     \item Thin wrapper around the BDI agent
-    \item Listens for mission-controller chat messages
-    \item Three command categories: \textbf{goals}, \textbf{rules}, \textbf{coordination}
+    \item Listens and interprets mission-controller chat messages
+    \item Modifies the BDI behaviour accordingly
+    \item Four command categories: \textbf{goal injection}, \textbf{rules}, \textbf{coordination} and \textbf{cooperation}
   \end{itemize}
 \end{frame}
 
 % ----- Goal Injection ------------------------------------------
 \begin{frame}{Goal Injection}
   \begin{itemize}
-    \item \textbf{go-to} $\to$ \texttt{REACH\_TILE} desire (configurable reward + TTL)
-    \item \textbf{deliver-at} $\to$ \texttt{DELIVER\_PARCEL} at specific tile
-    \item Both compete with parcel goals via standard scoring
+    \item LLM can inject new goals into the BDI agent (e.g. \texttt{go-to}, \texttt{deliver-at})
+    \item Compete with existing BDI desires; may be accepted or rejected
     \item Persist and re-evaluated until executed or TTL expires
+    \item \textbf{Peer-injection}: the LLM applies the command locally, then repackages it and broadcasts it
   \end{itemize}
 \end{frame}
 
@@ -29,19 +30,9 @@
 \begin{frame}{Rule Injection}
   \begin{itemize}
     \item \texttt{RuleStore}: condition + multiplier $m$ + offset $a$
-    \item Applied each cycle: scales/shifts baseline desire scores
     \item Example: incentivise collecting $n$ parcels before delivery
-    \item Stack rule automatically elevates Explore to priority~1
-  \end{itemize}
-\end{frame}
-
-% ----- Traversal Penalties -------------------------------------
-\begin{frame}{Traversal Penalties}
-  \begin{itemize}
-    \item Adds additive cost to A* edge leading onto a tile
-    \item Agent prefers detour if detour $<$ penalty length
-    \item Tile not forbidden, used as last resort
-    \item Operates at the planning layer, not the deliberation layer
+    \item Applied each cycle: scales/shifts baseline desire scores
+    \item \textbf{Special case}: Stack rule automatically elevates Explore to priority~1
   \end{itemize}
 \end{frame}
 
@@ -52,16 +43,6 @@
     \item Ensures up-to-date peer positions beyond sensing radius
     \item Needed for coordination when agents are outside each other's sensing radius
   \end{itemize}
-\end{frame}
-
-% ----- Coordination: Peer Injection --------------------------------------
-\begin{frame}{Coordination: Peer Injection}
-    \begin{itemize}
-        \item Only the LLM-driven agent is connected to the mission controller
-        \item \textbf{Peer-injection}: the LLM applies the command locally, then repackages it and broadcasts it
-        \item Applies to any \emph{stateless} command
-        \item No acknowledgement needed: fire-and-forget
-    \end{itemize}
 \end{frame}
 
 % ----- Coordination: 2-Phase Commit -----------------------------------
@@ -107,10 +88,9 @@
 \begin{frame}{Cooperation: Roles}
   \begin{itemize}
     \item Each strategy assigns every agent a \emph{role}
-    \item A deterministic FSM per role supersedes BDI deliberation
-    \item The FSM's filtered desires enforce the role's behaviour 
+    \item BDI desire generation is blocked
+    \item Role-specific FSM generates desires based on the context and internal state
     \item Positioning are computed deterministically from map geometry
-    \item The approach cell is injected as a high-reward \texttt{REACH\_TILE} desire
   \end{itemize}
 \end{frame}
 
@@ -125,13 +105,13 @@
         \begin{itemize}
             \item Receiver accepts only if the meeting tile is reachable
         \end{itemize}
-        \item Admin directive adds a reward bonus to the handpass desire 
+        \item Admin directive are enforced by setting the opportunistic strategy
       \end{itemize}
     \column{0.38\textwidth}
-      % TODO: populate media/cooperation/ with frame images, then uncomment:
-      % \animategraphics[autoplay,loop,width=\linewidth]{12}{media/cooperation/frame-}{0}{47}
+      %#TODO: uncomment this for video demo
+      %\animategraphics[autoplay,loop,width=\linewidth]{12}{../../media/cooperation/frame-}{1}{196}
       \begin{block}{}
-        \centering\textit{[cooperation]}
+        \centering\textit{[Collaboration demo]}
       \end{block}
   \end{columns}
 \end{frame}

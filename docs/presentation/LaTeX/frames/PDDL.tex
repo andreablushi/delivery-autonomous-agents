@@ -10,11 +10,20 @@
 
 % ----- PDDL  -------------------------------------------
 \begin{frame}{PDDL}
-  \begin{itemize}
-    \item Cluster detected $\to$ PDDL problem built from current beliefs
-    \item Solver finds \texttt{move} + \texttt{push} sequence to reach goal
-    \item Result translated back to agent's action plan
-  \end{itemize}
+  \begin{columns}
+    \column{0.55\textwidth}
+      \begin{itemize}
+        \item Cluster detected $\to$ PDDL problem built from current beliefs
+        \item Solver finds \texttt{move} + \texttt{push} sequence to reach goal
+        \item Result translated back to agent's action plan
+      \end{itemize}
+    \column{0.43\textwidth}
+      %#TODO: uncomment this for video demo
+      %\animategraphics[autoplay,loop,width=\linewidth]{12}{../../media/PDDL/frame-}{1}{256}
+      \begin{block}{}
+        \centering\textit{[PDDL demo]}
+      \end{block}
+  \end{columns}
 \end{frame}
 
 % ----- The PDDL Domain -----------------------------------------
